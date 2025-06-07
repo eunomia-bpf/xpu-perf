@@ -256,37 +256,23 @@ static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
 	result = blazesym_symbolize(symbolizer, &src, 1, (const uint64_t *)stack, stack_sz);
 
 	for (i = 0; i < stack_sz; i++) {
+		if (!stack[i])
+			continue;
+
 		if (!result || result->size <= i || !result->entries[i].size) {
-			printf("  %d [<%016llx>]\n", i, stack[i]);
+			printf("    [unknown]\n");
 			continue;
 		}
 
 		if (result->entries[i].size == 1) {
 			sym = &result->entries[i].syms[0];
-			if (sym->path && sym->path[0]) {
-				printf("  %d [<%016llx>] %s+0x%llx %s:%ld\n",
-				       i, stack[i], sym->symbol,
-				       stack[i] - sym->start_address,
-				       sym->path, sym->line_no);
-			} else {
-				printf("  %d [<%016llx>] %s+0x%llx\n",
-				       i, stack[i], sym->symbol,
-				       stack[i] - sym->start_address);
-			}
+			printf("    %s\n", sym->symbol);
 			continue;
 		}
 
-		printf("  %d [<%016llx>]\n", i, stack[i]);
 		for (j = 0; j < result->entries[i].size; j++) {
 			sym = &result->entries[i].syms[j];
-			if (sym->path && sym->path[0]) {
-				printf("        %s+0x%llx %s:%ld\n",
-				       sym->symbol, stack[i] - sym->start_address,
-				       sym->path, sym->line_no);
-			} else {
-				printf("        %s+0x%llx\n", sym->symbol,
-				       stack[i] - sym->start_address);
-			}
+			printf("    %s\n", sym->symbol);
 		}
 	}
 
@@ -325,10 +311,7 @@ static void print_map(struct offcputime_bpf *obj)
 			goto print_ustack;
 		}
 
-		printf("Kernel stack trace (TID %d) (TGID %d) (OFF-CPU time %lld us):\n",
-		       next_key.pid, next_key.tgid, val.delta);
 		show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, 0);
-		printf("\n");
 
 print_ustack:
 		if (next_key.user_stack_id == -1)
@@ -336,13 +319,11 @@ print_ustack:
 
 		if (bpf_map_lookup_elem(fd_stackid, &next_key.user_stack_id, ip) != 0) {
 			fprintf(stderr, "    [Missed User Stack]\n");
-			continue;
+			goto skip_ustack;
 		}
 
-		printf("User stack trace (TID %d) (TGID %d) (OFF-CPU time %lld us):\n",
-		       next_key.pid, next_key.tgid, val.delta);
 		show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, next_key.tgid);
-		printf("\n");
+
 skip_ustack:
 		printf("    %-16s %s (%d)\n", "-", val.comm, next_key.pid);
 		printf("        %lld\n\n", val.delta);
