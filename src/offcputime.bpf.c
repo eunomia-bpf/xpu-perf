@@ -5,7 +5,6 @@
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 #include "offcputime.h"
-#include "core_fixes.bpf.h"
 
 #define PF_KTHREAD		0x00200000	/* I am a kernel thread */
 #define MAX_ENTRIES		10240
@@ -55,6 +54,30 @@ struct {
 	__type(value, u8);
 	__uint(max_entries, MAX_TID_NR);
 } pids SEC(".maps");
+
+
+/**
+ * commit 2f064a59a1 ("sched: Change task_struct::state") changes
+ * the name of task_struct::state to task_struct::__state
+ * see:
+ *     https://github.com/torvalds/linux/commit/2f064a59a1
+ */
+struct task_struct___o {
+	volatile long int state;
+} __attribute__((preserve_access_index));
+
+struct task_struct___x {
+	unsigned int __state;
+} __attribute__((preserve_access_index));
+
+static __always_inline __s64 get_task_state(void *task)
+{
+	struct task_struct___x *t = task;
+
+	if (bpf_core_field_exists(t->__state))
+		return BPF_CORE_READ(t, __state);
+	return BPF_CORE_READ((struct task_struct___o *)task, state);
+}
 
 static bool allow_record(struct task_struct *t)
 {

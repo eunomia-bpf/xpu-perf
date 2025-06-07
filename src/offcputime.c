@@ -7,13 +7,54 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <time.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include "offcputime.h"
 #include "offcputime.skel.h"
-#include "trace_helpers.h"
+#include "blazesym.h"
+
+// Helper functions to replace trace_helpers
+static int split_convert(char *s, const char* delim, void *elems, size_t elems_size,
+                   size_t elem_size, int (*convert)(const char *, void *))
+{
+    char *token;
+    int ret;
+    char *pos = (char *)elems;
+
+    if (!s || !delim || !elems)
+        return -1;
+
+    token = strtok(s, delim);
+    while (token) {
+        if (pos + elem_size > (char*)elems + elems_size)
+            return -1;
+
+        ret = convert(token, pos);
+        if (ret)
+            return ret;
+
+        pos += elem_size;
+        token = strtok(NULL, delim);
+    }
+
+    return 0;
+}
+
+static int str_to_int(const char *src, void *dest)
+{
+    *(int*)dest = strtol(src, NULL, 10);
+    return 0;
+}
+
+// Helper function to load kallsyms
+static int load_kallsyms(void)
+{
+    // Simple stub - in real implementation this would parse /proc/kallsyms
+    return 0;
+}
 
 static struct env {
 	pid_t pids[MAX_PID_NR];
@@ -194,17 +235,70 @@ static void sig_handler(int sig)
 {
 }
 
-static void print_map(struct ksyms *ksyms, struct syms_cache *syms_cache,
-		      struct offcputime_bpf *obj)
+static struct blazesym *symbolizer;
+
+static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
+{
+	const struct blazesym_result *result;
+	const struct blazesym_csym *sym;
+	struct sym_src_cfg src = {0};
+	int i, j;
+
+	if (pid) {
+		src.src_type = SRC_T_PROCESS;
+		src.params.process.pid = pid;
+	} else {
+		src.src_type = SRC_T_KERNEL;
+		src.params.kernel.kallsyms = NULL;
+		src.params.kernel.kernel_image = NULL;
+	}
+
+	result = blazesym_symbolize(symbolizer, &src, 1, (const uint64_t *)stack, stack_sz);
+
+	for (i = 0; i < stack_sz; i++) {
+		if (!result || result->size <= i || !result->entries[i].size) {
+			printf("  %d [<%016llx>]\n", i, stack[i]);
+			continue;
+		}
+
+		if (result->entries[i].size == 1) {
+			sym = &result->entries[i].syms[0];
+			if (sym->path && sym->path[0]) {
+				printf("  %d [<%016llx>] %s+0x%llx %s:%ld\n",
+				       i, stack[i], sym->symbol,
+				       stack[i] - sym->start_address,
+				       sym->path, sym->line_no);
+			} else {
+				printf("  %d [<%016llx>] %s+0x%llx\n",
+				       i, stack[i], sym->symbol,
+				       stack[i] - sym->start_address);
+			}
+			continue;
+		}
+
+		printf("  %d [<%016llx>]\n", i, stack[i]);
+		for (j = 0; j < result->entries[i].size; j++) {
+			sym = &result->entries[i].syms[j];
+			if (sym->path && sym->path[0]) {
+				printf("        %s+0x%llx %s:%ld\n",
+				       sym->symbol, stack[i] - sym->start_address,
+				       sym->path, sym->line_no);
+			} else {
+				printf("        %s+0x%llx\n", sym->symbol,
+				       stack[i] - sym->start_address);
+			}
+		}
+	}
+
+	blazesym_result_free(result);
+}
+
+static void print_map(struct offcputime_bpf *obj)
 {
 	struct key_t lookup_key = {}, next_key;
-	const struct ksym *ksym;
-	const struct syms *syms;
-	const struct sym *sym;
-	int err, i, ifd, sfd;
+	int err, fd_stackid, fd_info;
 	unsigned long *ip;
 	struct val_t val;
-	struct sym_info sinfo;
 	int idx;
 
 	ip = calloc(env.perf_max_stack_depth, sizeof(*ip));
@@ -213,12 +307,12 @@ static void print_map(struct ksyms *ksyms, struct syms_cache *syms_cache,
 		return;
 	}
 
-	ifd = bpf_map__fd(obj->maps.info);
-	sfd = bpf_map__fd(obj->maps.stackmap);
-	while (!bpf_map_get_next_key(ifd, &lookup_key, &next_key)) {
+	fd_info = bpf_map__fd(obj->maps.info);
+	fd_stackid = bpf_map__fd(obj->maps.stackmap);
+	while (!bpf_map_get_next_key(fd_info, &lookup_key, &next_key)) {
 		idx = 0;
 
-		err = bpf_map_lookup_elem(ifd, &next_key, &val);
+		err = bpf_map_lookup_elem(fd_info, &next_key, &val);
 		if (err < 0) {
 			fprintf(stderr, "failed to lookup info: %d\n", err);
 			goto cleanup;
@@ -226,61 +320,29 @@ static void print_map(struct ksyms *ksyms, struct syms_cache *syms_cache,
 		lookup_key = next_key;
 		if (val.delta == 0)
 			continue;
-		if (bpf_map_lookup_elem(sfd, &next_key.kern_stack_id, ip) != 0) {
+		if (bpf_map_lookup_elem(fd_stackid, &next_key.kern_stack_id, ip) != 0) {
 			fprintf(stderr, "    [Missed Kernel Stack]\n");
 			goto print_ustack;
 		}
 
-		for (i = 0; i < env.perf_max_stack_depth && ip[i]; i++) {
-			ksym = ksyms__map_addr(ksyms, ip[i]);
-			if (!env.verbose) {
-				printf("    %s\n", ksym ? ksym->name : "unknown");
-			} else {
-				if (ksym)
-					printf("    #%-2d 0x%lx %s+0x%lx\n", idx++, ip[i], ksym->name, ip[i] - ksym->addr);
-				else
-					printf("    #%-2d 0x%lx [unknown]\n", idx++, ip[i]);
-			}
-		}
+		printf("Kernel stack trace (TID %d) (TGID %d) (OFF-CPU time %lld us):\n",
+		       next_key.pid, next_key.tgid, val.delta);
+		show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, 0);
+		printf("\n");
 
 print_ustack:
 		if (next_key.user_stack_id == -1)
 			goto skip_ustack;
 
-		if (bpf_map_lookup_elem(sfd, &next_key.user_stack_id, ip) != 0) {
+		if (bpf_map_lookup_elem(fd_stackid, &next_key.user_stack_id, ip) != 0) {
 			fprintf(stderr, "    [Missed User Stack]\n");
-			goto skip_ustack;
+			continue;
 		}
 
-		syms = syms_cache__get_syms(syms_cache, next_key.tgid);
-		if (!syms) {
-			if (!env.verbose) {
-				fprintf(stderr, "failed to get syms\n");
-			} else {
-				for (i = 0; i < env.perf_max_stack_depth && ip[i]; i++)
-					printf("    #%-2d 0x%016lx [unknown]\n", idx++, ip[i]);
-			}
-			goto skip_ustack;
-		}
-		for (i = 0; i < env.perf_max_stack_depth && ip[i]; i++) {
-			if (!env.verbose) {
-				sym = syms__map_addr(syms, ip[i]);
-				if (sym)
-					printf("    %s\n", sym->name);
-				else
-					printf("    [unknown]\n");
-			} else {
-				printf("    #%-2d 0x%016lx", idx++, ip[i]);
-				err = syms__map_addr_dso(syms, ip[i], &sinfo);
-				if (err == 0) {
-					if (sinfo.sym_name)
-						printf(" %s+0x%lx", sinfo.sym_name, sinfo.sym_offset);
-					printf(" (%s+0x%lx)", sinfo.dso_name, sinfo.dso_offset);
-				}
-				printf("\n");
-			}
-		}
-
+		printf("User stack trace (TID %d) (TGID %d) (OFF-CPU time %lld us):\n",
+		       next_key.pid, next_key.tgid, val.delta);
+		show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, next_key.tgid);
+		printf("\n");
 skip_ustack:
 		printf("    %-16s %s (%d)\n", "-", val.comm, next_key.pid);
 		printf("        %lld\n\n", val.delta);
@@ -288,6 +350,22 @@ skip_ustack:
 
 cleanup:
 	free(ip);
+}
+
+static bool probe_tp_btf(const char *name)
+{
+	LIBBPF_OPTS(bpf_prog_load_opts, opts, .expected_attach_type = BPF_TRACE_RAW_TP);
+	struct bpf_insn insns[] = {
+		{ .code = BPF_ALU64 | BPF_MOV | BPF_K, .dst_reg = BPF_REG_0, .imm = 0 },
+		{ .code = BPF_JMP | BPF_EXIT },
+	};
+	int fd, insn_cnt = sizeof(insns) / sizeof(struct bpf_insn);
+
+	opts.attach_btf_id = libbpf_find_vmlinux_btf_id(name, BPF_TRACE_RAW_TP);
+	fd = bpf_prog_load(BPF_PROG_TYPE_TRACING, NULL, "GPL", insns, insn_cnt, &opts);
+	if (fd >= 0)
+		close(fd);
+	return fd >= 0;
 }
 
 static bool print_header_threads()
@@ -332,8 +410,6 @@ int main(int argc, char **argv)
 		.parser = parse_arg,
 		.doc = argp_program_doc,
 	};
-	struct syms_cache *syms_cache = NULL;
-	struct ksyms *ksyms = NULL;
 	struct offcputime_bpf *obj;
 	int pids_fd, tids_fd;
 	int err, i;
@@ -389,7 +465,7 @@ int main(int argc, char **argv)
 
 	if (env.pids[0]) {
 		/* User pids_fd points to the tgids map in the BPF program */
-		pids_fd = bpf_map__fd(obj->maps.tgids);
+		int pids_fd = bpf_map__fd(obj->maps.tgids);
 		for (i = 0; i < MAX_PID_NR && env.pids[i]; i++) {
 			if (bpf_map_update_elem(pids_fd, &(env.pids[i]), &val, BPF_ANY) != 0) {
 				fprintf(stderr, "failed to init pids map: %s\n", strerror(errno));
@@ -399,7 +475,7 @@ int main(int argc, char **argv)
 	}
 	if (env.tids[0]) {
 		/* User tids_fd points to the pids map in the BPF program */
-		tids_fd = bpf_map__fd(obj->maps.pids);
+		int tids_fd = bpf_map__fd(obj->maps.pids);
 		for (i = 0; i < MAX_TID_NR && env.tids[i]; i++) {
 			if (bpf_map_update_elem(tids_fd, &(env.tids[i]), &val, BPF_ANY) != 0) {
 				fprintf(stderr, "failed to init tids map: %s\n", strerror(errno));
@@ -408,19 +484,16 @@ int main(int argc, char **argv)
 		}
 	}
 
-	ksyms = ksyms__load();
-	if (!ksyms) {
-		fprintf(stderr, "failed to load kallsyms\n");
-		goto cleanup;
-	}
-	syms_cache = syms_cache__new(0);
-	if (!syms_cache) {
-		fprintf(stderr, "failed to create syms_cache\n");
-		goto cleanup;
-	}
 	err = offcputime_bpf__attach(obj);
 	if (err) {
 		fprintf(stderr, "failed to attach BPF programs\n");
+		goto cleanup;
+	}
+
+	symbolizer = blazesym_new();
+	if (!symbolizer) {
+		fprintf(stderr, "Failed to create a symbolizer\n");
+		err = 1;
 		goto cleanup;
 	}
 
@@ -428,17 +501,14 @@ int main(int argc, char **argv)
 
 	print_headers();
 
-	/*
-	 * We'll get sleep interrupted when someone presses Ctrl-C (which will
-	 * be "handled" with noop by sig_handler).
-	 */
 	sleep(env.duration);
 
-	print_map(ksyms, syms_cache, obj);
+	/* Get traces from info map and print them to stdout */
+	print_map(obj);
 
 cleanup:
+	blazesym_free(symbolizer);
 	offcputime_bpf__destroy(obj);
-	syms_cache__free(syms_cache);
-	ksyms__free(ksyms);
+
 	return err != 0;
 }
