@@ -1,8 +1,0 @@
-/.output
-/bootstrap
-/profile
-/offcputime
-res.txt
-*.o
-oncpu.txt
-offcpu.txt

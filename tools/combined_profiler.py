@@ -446,6 +446,9 @@ class CombinedProfiler:
             print("No stack traces collected from either tool")
             return None, None
         
+        # Calculate time statistics for single thread case
+        single_thread_times = self.calculate_thread_times(self.profile_output, self.offcpu_output)
+        
         # Sort by value for better visualization
         sorted_stacks = sorted(combined_stacks.items(), key=lambda x: x[1], reverse=True)
         
@@ -466,6 +469,9 @@ class CombinedProfiler:
         # Generate SVG flamegraph
         svg_file = self.generate_svg_from_folded(folded_file, svg_file)
         
+        # Generate time analysis file for single thread
+        self.generate_single_thread_analysis_file(output_prefix, single_thread_times)
+        
         # Print summary
         print(f"\nSummary:")
         print(f"Total unique stack traces: {len(sorted_stacks)}")
@@ -473,6 +479,13 @@ class CombinedProfiler:
         offcpu_stacks = sum(1 for stack, _ in sorted_stacks if stack.endswith("_[o]"))
         print(f"On-CPU stack traces: {oncpu_stacks}")
         print(f"Off-CPU stack traces: {offcpu_stacks}")
+        
+        # Print time verification
+        print(f"\nTime Analysis:")
+        print(f"On-CPU time: {single_thread_times['oncpu_time_sec']:.3f}s")
+        print(f"Off-CPU time: {single_thread_times['offcpu_time_sec']:.3f}s")
+        print(f"Total measured time: {single_thread_times['total_time_sec']:.3f}s")
+        print(f"Wall clock coverage: {single_thread_times['wall_clock_coverage_pct']:.1f}% of {self.duration}s profiling duration")
         
         return folded_file, svg_file
 
@@ -614,6 +627,19 @@ class CombinedProfiler:
         """Generate thread analysis summary file"""
         summary_file = f"{output_dir}/{base_name}_thread_analysis.txt"
         
+        # Calculate time statistics for all threads
+        total_process_oncpu_time = 0
+        total_process_offcpu_time = 0
+        thread_time_data = {}
+        
+        for tid, data in self.thread_results.items():
+            time_stats = self.calculate_thread_times(data['oncpu_data'], data['offcpu_data'])
+            thread_time_data[tid] = time_stats
+            total_process_oncpu_time += time_stats['oncpu_time_sec']
+            total_process_offcpu_time += time_stats['offcpu_time_sec']
+        
+        total_process_time = total_process_oncpu_time + total_process_offcpu_time
+        
         with open(summary_file, 'w') as f:
             f.write("Multi-Thread Analysis Report\n")
             f.write("="*50 + "\n\n")
@@ -622,21 +648,130 @@ class CombinedProfiler:
             f.write(f"Profiling duration: {self.duration} seconds\n")
             f.write(f"Sampling frequency: {self.freq} Hz\n\n")
             
+            # Wall clock time analysis
+            f.write("Time Analysis Summary:\n")
+            f.write("-" * 40 + "\n")
+            f.write(f"Expected wall clock time: {self.duration:.1f} seconds\n")
+            f.write(f"Total measured on-CPU time: {total_process_oncpu_time:.3f} seconds\n")
+            f.write(f"Total measured off-CPU time: {total_process_offcpu_time:.3f} seconds\n")
+            f.write(f"Total measured time: {total_process_time:.3f} seconds\n")
+            
+            if self.duration > 0:
+                coverage_pct = (total_process_time / self.duration) * 100
+                f.write(f"Wall clock coverage: {coverage_pct:.1f}% of expected duration\n")
+                
+                if coverage_pct < 50:
+                    f.write("⚠️  Low coverage - threads may be mostly idle or data collection incomplete\n")
+                elif coverage_pct > 150:
+                    f.write("⚠️  High coverage - possible overlap or measurement anomaly\n")
+                else:
+                    f.write("✓ Coverage appears reasonable for active threads\n")
+            f.write("\n")
+            
             f.write("Thread Details:\n")
             f.write("-" * 40 + "\n")
             for tid, data in self.thread_results.items():
                 role = self.get_thread_role(tid, data['cmd'])
                 oncpu_count = len(data['oncpu_data'])
                 offcpu_count = len(data['offcpu_data'])
-                f.write(f"TID {tid:8} ({role:15}): {data['cmd']} (on-CPU: {oncpu_count}, off-CPU: {offcpu_count})\n")
+                time_stats = thread_time_data[tid]
+                
+                f.write(f"TID {tid:8} ({role:15}): {data['cmd']}\n")
+                f.write(f"  Events: on-CPU: {oncpu_count}, off-CPU: {offcpu_count}\n")
+                f.write(f"  Times:  on-CPU: {time_stats['oncpu_time_sec']:.3f}s, off-CPU: {time_stats['offcpu_time_sec']:.3f}s\n")
+                f.write(f"  Total:  {time_stats['total_time_sec']:.3f}s ({time_stats['wall_clock_coverage_pct']:.1f}% of wall clock)\n")
+                f.write(f"  Samples: on-CPU: {time_stats['oncpu_samples']}, off-CPU: {time_stats['offcpu_us']}μs\n\n")
             
-            f.write(f"\nIndividual Analysis:\n")
+            f.write(f"Individual Analysis:\n")
             f.write("-" * 40 + "\n")
             f.write(f"Each thread has been profiled separately.\n")
             f.write(f"Individual flamegraph files show per-thread behavior.\n")
-            f.write(f"Compare thread profiles to identify bottlenecks and parallelization opportunities.\n")
+            f.write(f"Compare thread profiles to identify bottlenecks and parallelization opportunities.\n\n")
+            
+            f.write(f"Time Verification Notes:\n")
+            f.write("-" * 40 + "\n")
+            f.write(f"• On-CPU time = samples / sampling_frequency ({self.freq} Hz)\n")
+            f.write(f"• Off-CPU time = blocking_time_microseconds / 1,000,000\n")
+            f.write(f"• Total time per thread = on-CPU + off-CPU time\n")
+            f.write(f"• Wall clock coverage shows how much of the profiling period was active\n")
+            f.write(f"• Low coverage may indicate idle threads or missed events\n")
+            f.write(f"• High coverage (>100%) may indicate overlapping measurements or high activity\n")
         
         print(f"Thread analysis saved to: {summary_file}")
+
+    def calculate_thread_times(self, oncpu_data, offcpu_data):
+        """Calculate actual wall clock times from profiling data"""
+        # Calculate on-CPU time from samples
+        oncpu_samples = 0
+        for line in oncpu_data:
+            parts = line.rsplit(' ', 1)
+            if len(parts) == 2:
+                try:
+                    count = int(parts[1])
+                    oncpu_samples += count
+                except ValueError:
+                    continue
+        
+        # Calculate off-CPU time from microseconds
+        offcpu_us = 0
+        for line in offcpu_data:
+            parts = line.rsplit(' ', 1)
+            if len(parts) == 2:
+                try:
+                    time_us = int(parts[1])
+                    offcpu_us += time_us
+                except ValueError:
+                    continue
+        
+        # Convert to wall clock times
+        oncpu_time_sec = oncpu_samples / self.freq if self.freq > 0 else 0
+        offcpu_time_sec = offcpu_us / 1_000_000
+        total_time_sec = oncpu_time_sec + offcpu_time_sec
+        
+        return {
+            'oncpu_samples': oncpu_samples,
+            'oncpu_time_sec': oncpu_time_sec,
+            'offcpu_us': offcpu_us,
+            'offcpu_time_sec': offcpu_time_sec,
+            'total_time_sec': total_time_sec,
+            'wall_clock_coverage_pct': (total_time_sec / self.duration * 100) if self.duration > 0 else 0
+        }
+
+    def generate_single_thread_analysis_file(self, output_prefix, single_thread_times):
+        """Generate single thread analysis file"""
+        analysis_file = f"{output_prefix}_single_thread_analysis.txt"
+        
+        with open(analysis_file, 'w') as f:
+            f.write("Single-Thread Analysis Report\n")
+            f.write("="*50 + "\n\n")
+            f.write(f"Process ID: {self.pid}\n")
+            f.write(f"Profiling duration: {self.duration} seconds\n")
+            f.write(f"Sampling frequency: {self.freq} Hz\n\n")
+            
+            # Time analysis
+            f.write("Time Analysis:\n")
+            f.write("-" * 40 + "\n")
+            f.write(f"On-CPU time: {single_thread_times['oncpu_time_sec']:.3f}s\n")
+            f.write(f"Off-CPU time: {single_thread_times['offcpu_time_sec']:.3f}s\n")
+            f.write(f"Total measured time: {single_thread_times['total_time_sec']:.3f}s\n")
+            f.write(f"Wall clock coverage: {single_thread_times['wall_clock_coverage_pct']:.1f}% of {self.duration}s profiling duration\n")
+            
+            if single_thread_times['wall_clock_coverage_pct'] < 50:
+                f.write("⚠️  Low coverage - thread may be mostly idle or data collection incomplete\n")
+            elif single_thread_times['wall_clock_coverage_pct'] > 150:
+                f.write("⚠️  High coverage - possible overlap or measurement anomaly\n")
+            else:
+                f.write("✓ Coverage appears reasonable for active thread\n")
+            
+            f.write(f"\nTime Verification Notes:\n")
+            f.write("-" * 40 + "\n")
+            f.write(f"• On-CPU time = samples / sampling_frequency ({self.freq} Hz)\n")
+            f.write(f"• Off-CPU time = blocking_time_microseconds / 1,000,000\n")
+            f.write(f"• Total time = on-CPU + off-CPU time\n")
+            f.write(f"• Wall clock coverage shows how much of the profiling period was active\n")
+            f.write(f"• Coverage values depend on thread activity and system load\n")
+        
+        print(f"Single thread analysis saved to: {analysis_file}")
 
 def main():
     parser = argparse.ArgumentParser(
