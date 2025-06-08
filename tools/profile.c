@@ -22,39 +22,7 @@
 #include "profile.h"
 #include "profile.skel.h"
 #include "blazesym.h"
-
-// Helper functions to replace trace_helpers
-static int split_convert(char *s, const char* delim, void *elems, size_t elems_size,
-                   size_t elem_size, int (*convert)(const char *, void *))
-{
-    char *token;
-    int ret;
-    char *pos = (char *)elems;
-
-    if (!s || !delim || !elems)
-        return -1;
-
-    token = strtok(s, delim);
-    while (token) {
-        if (pos + elem_size > (char*)elems + elems_size)
-            return -ENOBUFS;
-
-        ret = convert(token, pos);
-        if (ret)
-            return ret;
-
-        pos += elem_size;
-        token = strtok(NULL, delim);
-    }
-
-    return 0;
-}
-
-static int str_to_int(const char *src, void *dest)
-{
-    *(int*)dest = strtol(src, NULL, 10);
-    return 0;
-}
+#include "common.h"
 
 #define OPT_PERF_MAX_STACK_DEPTH	1 /* --perf-max-stack-depth */
 #define OPT_STACK_STORAGE_SIZE		2 /* --stack-storage-size */
@@ -83,48 +51,6 @@ struct key_ext_t {
 };
 
 static struct blazesym *symbolizer;
-
-static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
-{
-	const struct blazesym_result *result;
-	const struct blazesym_csym *sym;
-	struct sym_src_cfg src = {0};
-	int i, j;
-
-	if (pid) {
-		src.src_type = SRC_T_PROCESS;
-		src.params.process.pid = pid;
-	} else {
-		src.src_type = SRC_T_KERNEL;
-		src.params.kernel.kallsyms = NULL;
-		src.params.kernel.kernel_image = NULL;
-	}
-
-	result = blazesym_symbolize(symbolizer, &src, 1, (const uint64_t *)stack, stack_sz);
-
-	for (i = 0; i < stack_sz; i++) {
-		if (!stack[i])
-			continue;
-
-		if (!result || result->size <= i || !result->entries[i].size) {
-			printf("    [unknown]\n");
-			continue;
-		}
-
-		if (result->entries[i].size == 1) {
-			sym = &result->entries[i].syms[0];
-			printf("    %s\n", sym->symbol);
-			continue;
-		}
-
-		for (j = 0; j < result->entries[i].size; j++) {
-			sym = &result->entries[i].syms[j];
-			printf("    %s\n", sym->symbol);
-		}
-	}
-
-	blazesym_result_free(result);
-}
 
 static struct env {
 	pid_t pids[MAX_PID_NR];
@@ -203,11 +129,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		env.verbose = true;
 		break;
 	case 'p':
-		arg_copy = strdup(arg);
-		if (!arg_copy) {
-			fprintf(stderr, "failed to allocate memory for pid list\n");
-			return -ENOMEM;
-		}
+		arg_copy = safe_strdup(arg);
 		ret = split_convert(arg_copy, ",", env.pids, sizeof(env.pids),
 				    sizeof(pid_t), str_to_int);
 		free(arg_copy);
@@ -222,11 +144,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		}
 		break;
 	case 'L':
-		arg_copy = strdup(arg);
-		if (!arg_copy) {
-			fprintf(stderr, "failed to allocate memory for tid list\n");
-			return -ENOMEM;
-		}
+		arg_copy = safe_strdup(arg);
 		ret = split_convert(arg_copy, ",", env.tids, sizeof(env.tids),
 				    sizeof(pid_t), str_to_int);
 		free(arg_copy);
@@ -411,7 +329,7 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 			if (bpf_map_lookup_elem(stack_map, &event->kern_stack_id, ip) != 0) {
 				fprintf(stderr, "    [Missed Kernel Stack]\n");
 			} else {
-				show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, 0);
+				show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, 0);
 			}
 		}
 
@@ -425,7 +343,7 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 			if (bpf_map_lookup_elem(stack_map, &event->user_stack_id, ip) != 0) {
 				fprintf(stderr, "    [Missed User Stack]\n");
 			} else {
-				show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, event->pid);
+				show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, event->pid);
 			}
 		}
 

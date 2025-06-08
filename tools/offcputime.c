@@ -15,39 +15,7 @@
 #include "offcputime.h"
 #include "offcputime.skel.h"
 #include "blazesym.h"
-
-// Helper functions to replace trace_helpers
-static int split_convert(char *s, const char* delim, void *elems, size_t elems_size,
-                   size_t elem_size, int (*convert)(const char *, void *))
-{
-    char *token;
-    int ret;
-    char *pos = (char *)elems;
-
-    if (!s || !delim || !elems)
-        return -1;
-
-    token = strtok(s, delim);
-    while (token) {
-        if (pos + elem_size > (char*)elems + elems_size)
-            return -1;
-
-        ret = convert(token, pos);
-        if (ret)
-            return ret;
-
-        pos += elem_size;
-        token = strtok(NULL, delim);
-    }
-
-    return 0;
-}
-
-static int str_to_int(const char *src, void *dest)
-{
-    *(int*)dest = strtol(src, NULL, 10);
-    return 0;
-}
+#include "common.h"
 
 // Helper function to load kallsyms
 static int load_kallsyms(void)
@@ -125,6 +93,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 {
 	static int pos_args;
 	int ret;
+	char *arg_copy;
 
 	switch (key) {
 	case 'h':
@@ -134,8 +103,10 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		env.verbose = true;
 		break;
 	case 'p':
-		ret = split_convert(strdup(arg), ",", env.pids, sizeof(env.pids),
+		arg_copy = safe_strdup(arg);
+		ret = split_convert(arg_copy, ",", env.pids, sizeof(env.pids),
 				    sizeof(pid_t), str_to_int);
+		free(arg_copy);
 		if (ret) {
 			if (ret == -ENOBUFS)
 				fprintf(stderr, "the number of pid is too big, please "
@@ -147,8 +118,10 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		}
 		break;
 	case 't':
-		ret = split_convert(strdup(arg), ",", env.tids, sizeof(env.tids),
+		arg_copy = safe_strdup(arg);
+		ret = split_convert(arg_copy, ",", env.tids, sizeof(env.tids),
 				    sizeof(pid_t), str_to_int);
+		free(arg_copy);
 		if (ret) {
 			if (ret == -ENOBUFS)
 				fprintf(stderr, "the number of tid is too big, please "
@@ -237,48 +210,6 @@ static void sig_handler(int sig)
 
 static struct blazesym *symbolizer;
 
-static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
-{
-	const struct blazesym_result *result;
-	const struct blazesym_csym *sym;
-	struct sym_src_cfg src = {0};
-	int i, j;
-
-	if (pid) {
-		src.src_type = SRC_T_PROCESS;
-		src.params.process.pid = pid;
-	} else {
-		src.src_type = SRC_T_KERNEL;
-		src.params.kernel.kallsyms = NULL;
-		src.params.kernel.kernel_image = NULL;
-	}
-
-	result = blazesym_symbolize(symbolizer, &src, 1, (const uint64_t *)stack, stack_sz);
-
-	for (i = 0; i < stack_sz; i++) {
-		if (!stack[i])
-			continue;
-
-		if (!result || result->size <= i || !result->entries[i].size) {
-			printf("    [unknown]\n");
-			continue;
-		}
-
-		if (result->entries[i].size == 1) {
-			sym = &result->entries[i].syms[0];
-			printf("    %s\n", sym->symbol);
-			continue;
-		}
-
-		for (j = 0; j < result->entries[i].size; j++) {
-			sym = &result->entries[i].syms[j];
-			printf("    %s\n", sym->symbol);
-		}
-	}
-
-	blazesym_result_free(result);
-}
-
 static void print_map(struct offcputime_bpf *obj)
 {
 	struct key_t lookup_key = {}, next_key;
@@ -311,7 +242,7 @@ static void print_map(struct offcputime_bpf *obj)
 			goto print_ustack;
 		}
 
-		show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, 0);
+		show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, 0);
 
 print_ustack:
 		if (next_key.user_stack_id == -1)
@@ -322,7 +253,7 @@ print_ustack:
 			goto skip_ustack;
 		}
 
-		show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, next_key.tgid);
+		show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, next_key.tgid);
 
 skip_ustack:
 		printf("    %-16s %s (%d)\n", "-", val.comm, next_key.pid);
