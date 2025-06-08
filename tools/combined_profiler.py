@@ -18,6 +18,7 @@ import threading
 import time
 import tempfile
 from pathlib import Path
+from collections import defaultdict
 
 class CombinedProfiler:
     def __init__(self, pid, duration=30, freq=49, min_block_us=1000):
@@ -40,6 +41,32 @@ class CombinedProfiler:
             raise FileNotFoundError(f"Profile tool not found at {self.profile_tool}")
         if not self.offcpu_tool.exists():
             raise FileNotFoundError(f"Offcputime tool not found at {self.offcpu_tool}")
+
+    def discover_threads(self):
+        """Discover threads and determine if multi-threaded"""
+        try:
+            result = subprocess.run(
+                ["ps", "-T", "-p", str(self.pid)], 
+                capture_output=True, text=True
+            )
+            
+            if result.returncode != 0:
+                return False, []
+            
+            lines = result.stdout.strip().split('\n')[1:]  # Skip header
+            threads = []
+            for line in lines:
+                parts = line.split()
+                if len(parts) >= 4:
+                    pid, tid, tty, time_str, *cmd_parts = parts
+                    tid = int(tid)
+                    cmd = ' '.join(cmd_parts)
+                    threads.append((tid, cmd))
+            
+            return len(threads) > 1, threads
+            
+        except Exception:
+            return False, []
 
     def run_profile_tool(self):
         """Run the profile tool in a separate thread"""
@@ -93,28 +120,141 @@ class CombinedProfiler:
 
     def run_profiling(self):
         """Run both profiling tools simultaneously"""
-        print(f"Starting combined profiling for PID {self.pid} for {self.duration} seconds...")
+        # Check if multi-threaded first
+        is_multithread, threads = self.discover_threads()
         
-        # Create threads for both tools
-        profile_thread = threading.Thread(target=self.run_profile_tool)
-        offcpu_thread = threading.Thread(target=self.run_offcpu_tool)
-        
-        # Start both threads
-        profile_thread.start()
-        offcpu_thread.start()
-        
-        # Wait for both to complete
-        profile_thread.join()
-        offcpu_thread.join()
-        
-        # Check for errors
-        if self.profile_error:
-            print(f"Profile tool error: {self.profile_error}", file=sys.stderr)
-        if self.offcpu_error:
-            print(f"Offcpu tool error: {self.offcpu_error}", file=sys.stderr)
+        if is_multithread:
+            print(f"Multi-threaded application detected ({len(threads)} threads)")
+            print(f"Profiling each thread separately...")
+            self.profile_individual_threads(threads)
+        else:
+            print(f"Starting combined profiling for PID {self.pid} for {self.duration} seconds...")
             
-        if self.profile_error and self.offcpu_error:
-            raise RuntimeError("Both profiling tools failed")
+            # Create threads for both tools
+            profile_thread = threading.Thread(target=self.run_profile_tool)
+            offcpu_thread = threading.Thread(target=self.run_offcpu_tool)
+            
+            # Start both threads
+            profile_thread.start()
+            offcpu_thread.start()
+            
+            # Wait for both to complete
+            profile_thread.join()
+            offcpu_thread.join()
+            
+            # Check for errors
+            if self.profile_error:
+                print(f"Profile tool error: {self.profile_error}", file=sys.stderr)
+            if self.offcpu_error:
+                print(f"Offcpu tool error: {self.offcpu_error}", file=sys.stderr)
+                
+            if self.profile_error and self.offcpu_error:
+                raise RuntimeError("Both profiling tools failed")
+
+    def profile_individual_threads(self, threads):
+        """Profile each thread individually but simultaneously"""
+        self.thread_results = {}
+        
+        print(f"Starting simultaneous profiling of all {len(threads)} threads for {self.duration} seconds...")
+        
+        # Create profiling threads for parallel execution
+        profiling_threads = []
+        thread_data = {}
+        
+        for tid, cmd in threads:
+            # Initialize result storage
+            thread_data[tid] = {
+                'cmd': cmd,
+                'oncpu_data': [],
+                'offcpu_data': [],
+                'oncpu_error': None,
+                'offcpu_error': None
+            }
+            
+            # Create on-CPU profiling thread
+            oncpu_thread = threading.Thread(
+                target=self._profile_thread_oncpu_worker,
+                args=(tid, thread_data[tid])
+            )
+            profiling_threads.append(oncpu_thread)
+            
+            # Create off-CPU profiling thread  
+            offcpu_thread = threading.Thread(
+                target=self._profile_thread_offcpu_worker,
+                args=(tid, thread_data[tid])
+            )
+            profiling_threads.append(offcpu_thread)
+        
+        # Start all profiling threads simultaneously
+        start_time = time.time()
+        for thread in profiling_threads:
+            thread.start()
+        
+        # Wait for all to complete
+        for thread in profiling_threads:
+            thread.join()
+        
+        end_time = time.time()
+        actual_duration = end_time - start_time
+        print(f"Profiling completed in {actual_duration:.1f} seconds")
+        
+        # Store results
+        self.thread_results = thread_data
+        
+        # Report any errors
+        for tid, data in thread_data.items():
+            if data['oncpu_error']:
+                print(f"On-CPU profiling error for thread {tid}: {data['oncpu_error']}")
+            if data['offcpu_error']:
+                print(f"Off-CPU profiling error for thread {tid}: {data['offcpu_error']}")
+
+    def _profile_thread_oncpu_worker(self, tid, thread_data):
+        """Worker function for on-CPU profiling of a specific thread"""
+        try:
+            cmd = [
+                str(self.profile_tool),
+                "-L", str(tid),  # Specific thread
+                "-F", str(self.freq),
+                "-f",  # Folded output
+                str(self.duration)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.duration + 10)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                thread_data['oncpu_data'] = result.stdout.strip().split('\n')
+            else:
+                thread_data['oncpu_data'] = []
+                if result.stderr:
+                    thread_data['oncpu_error'] = result.stderr
+                
+        except Exception as e:
+            thread_data['oncpu_error'] = str(e)
+            thread_data['oncpu_data'] = []
+
+    def _profile_thread_offcpu_worker(self, tid, thread_data):
+        """Worker function for off-CPU profiling of a specific thread"""
+        try:
+            cmd = [
+                str(self.offcpu_tool),
+                "-t", str(tid),  # Specific thread
+                "-m", str(self.min_block_us),
+                "-f",  # Folded output
+                str(self.duration)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.duration + 10)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                thread_data['offcpu_data'] = result.stdout.strip().split('\n')
+            else:
+                thread_data['offcpu_data'] = []
+                if result.stderr:
+                    thread_data['offcpu_error'] = result.stderr
+                
+        except Exception as e:
+            thread_data['offcpu_error'] = str(e)
+            thread_data['offcpu_data'] = []
 
     def parse_folded_line(self, line):
         """Parse a folded format line into stack trace and value"""
@@ -181,7 +321,11 @@ class CombinedProfiler:
             avg_oncpu_sample_us = (1.0 / self.freq) * 1_000_000  # microseconds per sample
             normalization_factor = avg_oncpu_sample_us
             
-            print(f"On-CPU: {oncpu_total_samples} samples ({oncpu_total_samples/self.freq:.2f} seconds)")
+            # Calculate expected vs actual samples
+            expected_samples = self.duration * self.freq
+            sample_rate = (oncpu_total_samples / expected_samples) * 100 if expected_samples > 0 else 0
+            
+            print(f"On-CPU: {oncpu_total_samples} samples (expected: {expected_samples}, {sample_rate:.1f}% sampled)")
             print(f"Off-CPU: {offcpu_total_us} microseconds ({offcpu_total_us/1_000_000:.2f} seconds)")
             print(f"Normalization factor: {normalization_factor:.0f} us/sample")
             
@@ -280,6 +424,16 @@ class CombinedProfiler:
 
     def generate_flamegraph_data(self, output_prefix=None):
         """Generate combined flamegraph data and SVG"""
+        # Check if multi-threaded
+        is_multithread, threads = self.discover_threads()
+        
+        if is_multithread and hasattr(self, 'thread_results'):
+            return self.generate_multithread_flamegraphs(output_prefix)
+        else:
+            return self.generate_single_flamegraph(output_prefix)
+
+    def generate_single_flamegraph(self, output_prefix):
+        """Generate single flamegraph for single-threaded or combined analysis"""
         if output_prefix is None:
             output_prefix = f"combined_profile_pid{self.pid}_{int(time.time())}"
         
@@ -310,42 +464,179 @@ class CombinedProfiler:
             return None, None
         
         # Generate SVG flamegraph
-        flamegraph_script = self.setup_flamegraph_tools()
-        if flamegraph_script:
-            try:
-                print("Generating flamegraph SVG...")
-                
-                # Generate flamegraph with our custom combined color palette
-                result = subprocess.run([
-                    "perl", str(flamegraph_script), 
-                    "--colors", "combined",  # Use our custom color palette
-                    "--title", "Combined On-CPU and Off-CPU Profile",
-                    folded_file
-                ], capture_output=True, text=True)
-                
-                if result.returncode == 0:
-                    with open(svg_file, 'w') as f:
-                        f.write(result.stdout)
-                    print(f"Flamegraph SVG generated: {svg_file}")
-                else:
-                    print(f"Error generating flamegraph: {result.stderr}")
-                    svg_file = None
-            except Exception as e:
-                print(f"Error running flamegraph.pl: {e}")
-                svg_file = None
-        else:
-            print("FlameGraph tools not available, skipping SVG generation")
-            svg_file = None
+        svg_file = self.generate_svg_from_folded(folded_file, svg_file)
         
         # Print summary
         print(f"\nSummary:")
         print(f"Total unique stack traces: {len(sorted_stacks)}")
-        oncpu_stacks = sum(1 for stack, _ in sorted_stacks if stack.startswith("oncpu:"))
-        offcpu_stacks = sum(1 for stack, _ in sorted_stacks if stack.startswith("offcpu:"))
+        oncpu_stacks = sum(1 for stack, _ in sorted_stacks if stack.endswith("_[c]"))
+        offcpu_stacks = sum(1 for stack, _ in sorted_stacks if stack.endswith("_[o]"))
         print(f"On-CPU stack traces: {oncpu_stacks}")
         print(f"Off-CPU stack traces: {offcpu_stacks}")
         
         return folded_file, svg_file
+
+    def generate_multithread_flamegraphs(self, output_prefix):
+        """Generate separate flamegraphs for each thread"""
+        base_name = f"combined_profile_pid{self.pid}_{int(time.time())}"
+        output_dir = f"multithread_{base_name}"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        print(f"Results will be saved to: {output_dir}/")
+        
+        generated_files = []
+        total_threads_with_data = 0
+        
+        for tid, thread_data in self.thread_results.items():
+            cmd = thread_data['cmd']
+            oncpu_data = thread_data['oncpu_data']
+            offcpu_data = thread_data['offcpu_data']
+            
+            # Skip threads with no data
+            if not oncpu_data and not offcpu_data:
+                continue
+                
+            total_threads_with_data += 1
+            
+            # Determine thread role
+            role = self.get_thread_role(tid, cmd)
+            
+            # Generate combined folded file for this thread
+            folded_file = f"{output_dir}/thread_{tid}_{role}.folded"
+            
+            combined_stacks = self.combine_thread_stacks(oncpu_data, offcpu_data)
+            
+            if combined_stacks:
+                # Write folded data
+                with open(folded_file, 'w') as f:
+                    for stack, value in sorted(combined_stacks.items(), key=lambda x: x[1], reverse=True):
+                        f.write(f"{stack} {value}\n")
+                
+                # Generate SVG
+                svg_file = f"{output_dir}/thread_{tid}_{role}.svg"
+                svg_file = self.generate_svg_from_folded(folded_file, svg_file, f"Thread {tid} ({role})")
+                
+                generated_files.append((folded_file, svg_file))
+                print(f"Generated: {folded_file} and {svg_file}")
+        
+        # Generate thread analysis
+        self.generate_thread_analysis_file(output_dir, base_name)
+        
+        print(f"\nGenerated {len(generated_files)} thread profiles with data out of {len(self.thread_results)} total threads")
+        
+        return generated_files[0] if generated_files else (None, None)
+
+    def get_thread_role(self, tid, cmd):
+        """Get thread role based on TID and command"""
+        if tid == self.pid:
+            return "main"
+        elif "cuda" in cmd.lower() and "evthandlr" in cmd.lower():
+            return "cuda-event"
+        elif "cuda" in cmd.lower():
+            return "cuda-compute"
+        elif "eal-intr" in cmd.lower():
+            return "dpdk-interrupt"
+        elif "rte_mp" in cmd.lower():
+            return "dpdk-multiprocess"
+        elif "telemetry" in cmd.lower():
+            return "telemetry"
+        else:
+            return cmd.lower().replace(' ', '_').replace('-', '_') + f"_{tid}"
+
+    def combine_thread_stacks(self, oncpu_data, offcpu_data):
+        """Combine on-CPU and off-CPU data for a single thread"""
+        combined_stacks = {}
+        
+        # Process on-CPU data
+        for line in oncpu_data:
+            parts = line.rsplit(' ', 1)
+            if len(parts) == 2:
+                stack, count_str = parts
+                try:
+                    count = int(count_str)
+                    # Remove process name prefix and add CPU annotation
+                    clean_stack = ';'.join(stack.split(';')[1:]) + '_[c]'
+                    combined_stacks[clean_stack] = combined_stacks.get(clean_stack, 0) + count
+                except ValueError:
+                    continue
+        
+        # Process off-CPU data with normalization
+        if offcpu_data:
+            norm_factor = (1.0 / self.freq) * 1_000_000  # μs per sample
+            for line in offcpu_data:
+                parts = line.rsplit(' ', 1)
+                if len(parts) == 2:
+                    stack, time_str = parts
+                    try:
+                        time_us = int(time_str)
+                        normalized_samples = max(1, int(time_us / norm_factor))
+                        # Remove process name prefix and add off-CPU annotation
+                        clean_stack = ';'.join(stack.split(';')[1:]) + '_[o]'
+                        combined_stacks[clean_stack] = combined_stacks.get(clean_stack, 0) + normalized_samples
+                    except ValueError:
+                        continue
+        
+        return combined_stacks
+
+    def generate_svg_from_folded(self, folded_file, svg_file, title=None):
+        """Generate SVG flamegraph from folded file"""
+        flamegraph_script = self.setup_flamegraph_tools()
+        if flamegraph_script:
+            try:
+                cmd_args = [
+                    "perl", str(flamegraph_script), 
+                    "--colors", "combined",
+                    folded_file
+                ]
+                
+                if title:
+                    cmd_args.extend(["--title", title])
+                else:
+                    cmd_args.extend(["--title", "Combined On-CPU and Off-CPU Profile"])
+                
+                result = subprocess.run(cmd_args, capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    with open(svg_file, 'w') as f:
+                        f.write(result.stdout)
+                    return svg_file
+                else:
+                    print(f"Error generating flamegraph {svg_file}: {result.stderr}")
+                    return None
+            except Exception as e:
+                print(f"Error running flamegraph.pl: {e}")
+                return None
+        else:
+            print("FlameGraph tools not available, skipping SVG generation")
+            return None
+
+    def generate_thread_analysis_file(self, output_dir, base_name):
+        """Generate thread analysis summary file"""
+        summary_file = f"{output_dir}/{base_name}_thread_analysis.txt"
+        
+        with open(summary_file, 'w') as f:
+            f.write("Multi-Thread Analysis Report\n")
+            f.write("="*50 + "\n\n")
+            f.write(f"Process ID: {self.pid}\n")
+            f.write(f"Total threads: {len(self.thread_results)}\n")
+            f.write(f"Profiling duration: {self.duration} seconds\n")
+            f.write(f"Sampling frequency: {self.freq} Hz\n\n")
+            
+            f.write("Thread Details:\n")
+            f.write("-" * 40 + "\n")
+            for tid, data in self.thread_results.items():
+                role = self.get_thread_role(tid, data['cmd'])
+                oncpu_count = len(data['oncpu_data'])
+                offcpu_count = len(data['offcpu_data'])
+                f.write(f"TID {tid:8} ({role:15}): {data['cmd']} (on-CPU: {oncpu_count}, off-CPU: {offcpu_count})\n")
+            
+            f.write(f"\nIndividual Analysis:\n")
+            f.write("-" * 40 + "\n")
+            f.write(f"Each thread has been profiled separately.\n")
+            f.write(f"Individual flamegraph files show per-thread behavior.\n")
+            f.write(f"Compare thread profiles to identify bottlenecks and parallelization opportunities.\n")
+        
+        print(f"Thread analysis saved to: {summary_file}")
 
 def main():
     parser = argparse.ArgumentParser(

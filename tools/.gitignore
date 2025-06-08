@@ -15,4 +15,6 @@ test_program
 combined_profile_pid*.svg
 combined_profile_pid*.folded
 combined_flamegraph.pl
+multithread_combined_profile_pid*
 
+test_multithread
