@@ -406,14 +406,7 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 
 	if (!env.folded) {
 		/* multi-line stack output */
-		if (!env.kernel_stacks_only && !STACK_ID_EFAULT(event->user_stack_id)) {
-			if (bpf_map_lookup_elem(stack_map, &event->user_stack_id, ip) != 0) {
-				fprintf(stderr, "    [Missed User Stack]\n");
-			} else {
-				show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, event->pid);
-			}
-		}
-
+		/* Show kernel stack first */
 		if (!env.user_stacks_only && !STACK_ID_EFAULT(event->kern_stack_id)) {
 			if (bpf_map_lookup_elem(stack_map, &event->kern_stack_id, ip) != 0) {
 				fprintf(stderr, "    [Missed Kernel Stack]\n");
@@ -422,10 +415,24 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 			}
 		}
 
+		if (env.delimiter && !env.user_stacks_only && !env.kernel_stacks_only &&
+		    !STACK_ID_EFAULT(event->user_stack_id) && !STACK_ID_EFAULT(event->kern_stack_id)) {
+			printf("    --\n");
+		}
+
+		/* Then show user stack */
+		if (!env.kernel_stacks_only && !STACK_ID_EFAULT(event->user_stack_id)) {
+			if (bpf_map_lookup_elem(stack_map, &event->user_stack_id, ip) != 0) {
+				fprintf(stderr, "    [Missed User Stack]\n");
+			} else {
+				show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, event->pid);
+			}
+		}
+
 		printf("    %-16s %s (%d)\n", "-", event->name, event->pid);
-		printf("        %lld\n\n", count);
+		printf("        %lld\n", count);
 	} else {
-		/* folded stack output - not fully implemented in this version */
+		/* folded stack output */
 		printf("%s", event->name);
 		printf(" %lld\n", count);
 	}
@@ -462,6 +469,10 @@ static int print_counts(int counts_map, int stack_map)
 		count = counts[i].v;
 
 		print_count(event, count, stack_map);
+		
+		/* Add a newline between stack traces for better readability */
+		if (!env.folded && i < nr_count - 1)
+			printf("\n");
 
 		/* handle stack id errors */
 		nr_missing_stacks += MISSING_STACKS(event->user_stack_id, event->kern_stack_id);
