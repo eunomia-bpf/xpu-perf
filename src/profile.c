@@ -21,6 +21,7 @@
 #include <string.h>
 #include "profile.h"
 #include "profile.skel.h"
+#include "blazesym.h"
 
 // Helper functions to replace trace_helpers
 static int split_convert(char *s, const char* delim, void *elems, size_t elems_size,
@@ -55,113 +56,6 @@ static int str_to_int(const char *src, void *dest)
     return 0;
 }
 
-// Simple blazesym and symbol handling implementation
-struct ksym {
-    unsigned long addr;
-    char *name;
-};
-
-struct ksyms {
-    struct ksym *syms;
-    int syms_sz;
-    int syms_cap;
-};
-
-struct sym {
-    unsigned long addr;
-    char *name;
-};
-
-struct syms {
-    struct sym *syms;
-    int syms_sz;
-    int syms_cap;
-};
-
-struct syms_cache {
-    struct syms *syms;
-};
-
-struct sym_info {
-    const char *sym_name;
-    unsigned long sym_offset;
-    const char *dso_name;
-    unsigned long dso_offset;
-};
-
-// Symbol handling functions
-static struct ksyms *ksyms__load(void)
-{
-    struct ksyms *ksyms;
-    ksyms = calloc(1, sizeof(*ksyms));
-    if (!ksyms)
-        return NULL;
-    return ksyms;
-}
-
-static void ksyms__free(struct ksyms *ksyms)
-{
-    if (ksyms) {
-        free(ksyms);
-    }
-}
-
-static const struct ksym *ksyms__map_addr(const struct ksyms *ksyms, unsigned long addr)
-{
-    // Simple implementation
-    static struct ksym sym;
-    sym.addr = addr;
-    sym.name = "[unknown]";
-    return &sym;
-}
-
-static struct syms_cache *syms_cache__new(int size)
-{
-    struct syms_cache *syms_cache;
-    syms_cache = calloc(1, sizeof(*syms_cache));
-    return syms_cache;
-}
-
-static void syms_cache__free(struct syms_cache *syms_cache)
-{
-    if (syms_cache) {
-        free(syms_cache);
-    }
-}
-
-static struct syms *syms_cache__get_syms(struct syms_cache *syms_cache, int pid)
-{
-    // Simple implementation
-    struct syms *syms;
-    syms = calloc(1, sizeof(*syms));
-    return syms;
-}
-
-static const struct sym *syms__map_addr(const struct syms *syms, unsigned long addr)
-{
-    // Simple implementation
-    static struct sym sym;
-    sym.addr = addr;
-    sym.name = "[unknown]";
-    return &sym;
-}
-
-static int syms__map_addr_dso(const struct syms *syms, unsigned long addr, struct sym_info *sinfo)
-{
-    // Simple implementation - no actual mapping
-    sinfo->sym_name = "[unknown]";
-    sinfo->sym_offset = 0;
-    sinfo->dso_name = "[unknown]";
-    sinfo->dso_offset = 0;
-    return 0;
-}
-
-static bool probe_bpf_ns_current_pid_tgid(void)
-{
-    // Simple implementation - always return true
-    return true;
-}
-
 #define OPT_PERF_MAX_STACK_DEPTH	1 /* --perf-max-stack-depth */
 #define OPT_STACK_STORAGE_SIZE		2 /* --stack-storage-size */
 
@@ -188,22 +82,49 @@ struct key_ext_t {
 	__u64 v;
 };
 
-typedef const char* (*symname_fn_t)(unsigned long);
+static struct blazesym *symbolizer;
 
-/* This structure represents output format-dependent attributes. */
-struct fmt_t {
-	bool folded;
-	char *prefix;
-	char *suffix;
-	char *delim;
-};
+static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
+{
+	const struct blazesym_result *result;
+	const struct blazesym_csym *sym;
+	struct sym_src_cfg src = {0};
+	int i, j;
 
-struct fmt_t stacktrace_formats[] = {
-	{ false, "    ", "\n", "--" },	/* multi-line */
-	{ true, ";", "", "-" }		/* folded */
-};
+	if (pid) {
+		src.src_type = SRC_T_PROCESS;
+		src.params.process.pid = pid;
+	} else {
+		src.src_type = SRC_T_KERNEL;
+		src.params.kernel.kallsyms = NULL;
+		src.params.kernel.kernel_image = NULL;
+	}
 
-#define pr_format(str, fmt)		printf("%s%s%s", fmt->prefix, str, fmt->suffix)
+	result = blazesym_symbolize(symbolizer, &src, 1, (const uint64_t *)stack, stack_sz);
+
+	for (i = 0; i < stack_sz; i++) {
+		if (!stack[i])
+			continue;
+
+		if (!result || result->size <= i || !result->entries[i].size) {
+			printf("    [unknown]\n");
+			continue;
+		}
+
+		if (result->entries[i].size == 1) {
+			sym = &result->entries[i].syms[0];
+			printf("    %s\n", sym->symbol);
+			continue;
+		}
+
+		for (j = 0; j < result->entries[i].size; j++) {
+			sym = &result->entries[i].syms[j];
+			printf("    %s\n", sym->symbol);
+		}
+	}
+
+	blazesym_result_free(result);
+}
 
 static struct env {
 	pid_t pids[MAX_PID_NR];
@@ -267,11 +188,6 @@ static const struct argp_option opts[] = {
 	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help", 0 },
 	{},
 };
-
-struct ksyms *ksyms;
-struct syms_cache *syms_cache;
-struct syms *syms;
-static char syminfo[SYM_INFO_LEN];
 
 static error_t parse_arg(int key, char *arg, struct argp_state *state)
 {
@@ -477,118 +393,10 @@ static int read_counts_map(int fd, struct key_ext_t *items, __u32 *count)
 	return 0;
 }
 
-static const char *ksymname(unsigned long addr)
-{
-	const struct ksym *ksym = ksyms__map_addr(ksyms, addr);
-
-	if (!env.verbose)
-		return ksym ? ksym->name : "[unknown]";
-
-	if (ksym)
-		snprintf(syminfo, SYM_INFO_LEN, "0x%lx %s+0x%lx", addr,
-			 ksym->name, addr - ksym->addr);
-	else
-		snprintf(syminfo, SYM_INFO_LEN, "0x%lx [unknown]", addr);
-
-	return syminfo;
-}
-
-static const char *usyminfo(unsigned long addr)
-{
-	struct sym_info sinfo;
-	int err;
-	int c;
-
-	c = snprintf(syminfo, SYM_INFO_LEN, "0x%016lx", addr);
-
-	err = syms__map_addr_dso(syms, addr, &sinfo);
-	if (err == 0) {
-		if (sinfo.sym_name) {
-			c += snprintf(syminfo + c, SYM_INFO_LEN - c, " %s+0x%lx",
-				      sinfo.sym_name, sinfo.sym_offset);
-		}
-
-		snprintf(syminfo + c, SYM_INFO_LEN - c, " (%s+0x%lx)",
-			 sinfo.dso_name, sinfo.dso_offset);
-	}
-
-	return syminfo;
-}
-
-static const char *usymname(unsigned long addr)
-{
-	const struct sym *sym;
-
-	if (!env.verbose) {
-		sym = syms__map_addr(syms, addr);
-		return sym ? sym->name : "[unknown]";
-	}
-
-	return usyminfo(addr);
-}
-
-static void print_stacktrace(unsigned long *ip, symname_fn_t symname, struct fmt_t *f)
-{
-	int i;
-
-	if (!f->folded) {
-		for (i = 0; ip[i] && i < env.perf_max_stack_depth; i++)
-			pr_format(symname(ip[i]), f);
-		return;
-	} else {
-		for (i = env.perf_max_stack_depth - 1; i >= 0; i--) {
-			if (!ip[i])
-				continue;
-
-			pr_format(symname(ip[i]), f);
-		}
-	}
-}
-
-static bool print_user_stacktrace(struct key_t *event, int stack_map,
-				  unsigned long *ip, struct fmt_t *f, bool delim)
-{
-	if (env.kernel_stacks_only || STACK_ID_EFAULT(event->user_stack_id))
-		return false;
-
-	if (delim)
-		pr_format(f->delim, f);
-
-	if (bpf_map_lookup_elem(stack_map, &event->user_stack_id, ip) != 0) {
-		pr_format("[Missed User Stack]", f);
-	} else {
-		syms = syms_cache__get_syms(syms_cache, event->pid);
-		if (syms)
-			print_stacktrace(ip, usymname, f);
-		else if (!f->folded)
-			fprintf(stderr, "failed to get syms\n");
-	}
-
-	return true;
-}
-
-static bool print_kern_stacktrace(struct key_t *event, int stack_map,
-				  unsigned long *ip, struct fmt_t *f, bool delim)
-{
-	if (env.user_stacks_only || STACK_ID_EFAULT(event->kern_stack_id))
-		return false;
-
-	if (delim)
-		pr_format(f->delim, f);
-
-	if (bpf_map_lookup_elem(stack_map, &event->kern_stack_id, ip) != 0)
-		pr_format("[Missed Kernel Stack]", f);
-	else
-		print_stacktrace(ip, ksymname, f);
-
-	return true;
-}
-
-static int print_count(struct key_t *event, __u64 count, int stack_map, bool folded)
+static int print_count(struct key_t *event, __u64 count, int stack_map)
 {
 	unsigned long *ip;
 	int ret;
-	struct fmt_t *fmt = &stacktrace_formats[folded];
 
 	ip = calloc(env.perf_max_stack_depth, sizeof(unsigned long));
 	if (!ip) {
@@ -596,17 +404,29 @@ static int print_count(struct key_t *event, __u64 count, int stack_map, bool fol
 		return -ENOMEM;
 	}
 
-	if (!folded) {
+	if (!env.folded) {
 		/* multi-line stack output */
-		ret = print_kern_stacktrace(event, stack_map, ip, fmt, false);
-		print_user_stacktrace(event, stack_map, ip, fmt, ret && env.delimiter);
+		if (!env.kernel_stacks_only && !STACK_ID_EFAULT(event->user_stack_id)) {
+			if (bpf_map_lookup_elem(stack_map, &event->user_stack_id, ip) != 0) {
+				fprintf(stderr, "    [Missed User Stack]\n");
+			} else {
+				show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, event->pid);
+			}
+		}
+
+		if (!env.user_stacks_only && !STACK_ID_EFAULT(event->kern_stack_id)) {
+			if (bpf_map_lookup_elem(stack_map, &event->kern_stack_id, ip) != 0) {
+				fprintf(stderr, "    [Missed Kernel Stack]\n");
+			} else {
+				show_stack_trace((__u64 *)ip, env.perf_max_stack_depth, 0);
+			}
+		}
+
 		printf("    %-16s %s (%d)\n", "-", event->name, event->pid);
 		printf("        %lld\n\n", count);
 	} else {
-		/* folded stack output */
+		/* folded stack output - not fully implemented in this version */
 		printf("%s", event->name);
-		ret = print_user_stacktrace(event, stack_map, ip, fmt, false);
-		print_kern_stacktrace(event, stack_map, ip, fmt, ret && env.delimiter);
 		printf(" %lld\n", count);
 	}
 
@@ -641,7 +461,7 @@ static int print_counts(int counts_map, int stack_map)
 		event = &counts[i].k;
 		count = counts[i].v;
 
-		print_count(event, count, stack_map, env.folded);
+		print_count(event, count, stack_map);
 
 		/* handle stack id errors */
 		nr_missing_stacks += MISSING_STACKS(event->user_stack_id, event->kern_stack_id);
@@ -658,6 +478,22 @@ cleanup:
 	free(counts);
 
 	return ret;
+}
+
+static bool probe_bpf_ns_current_pid_tgid(void)
+{
+	LIBBPF_OPTS(bpf_prog_load_opts, opts, .expected_attach_type = BPF_TRACE_RAW_TP);
+	struct bpf_insn insns[] = {
+		{ .code = BPF_ALU64 | BPF_MOV | BPF_K, .dst_reg = BPF_REG_0, .imm = 0 },
+		{ .code = BPF_JMP | BPF_EXIT },
+	};
+	int fd, insn_cnt = sizeof(insns) / sizeof(struct bpf_insn);
+
+	opts.attach_btf_id = libbpf_find_vmlinux_btf_id("bpf_ns_current_pid_tgid", BPF_TRACE_RAW_TP);
+	fd = bpf_prog_load(BPF_PROG_TYPE_TRACING, NULL, "GPL", insns, insn_cnt, &opts);
+	if (fd >= 0)
+		close(fd);
+	return fd >= 0;
 }
 
 static int set_pidns(const struct profile_bpf *obj)
@@ -747,9 +583,16 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	symbolizer = blazesym_new();
+	if (!symbolizer) {
+		fprintf(stderr, "Failed to create a symbolizer\n");
+		return 1;
+	}
+
 	obj = profile_bpf__open();
 	if (!obj) {
 		fprintf(stderr, "failed to open BPF object\n");
+		blazesym_free(symbolizer);
 		return 1;
 	}
 
@@ -795,18 +638,6 @@ int main(int argc, char **argv)
 		}
 	}
 
-	ksyms = ksyms__load();
-	if (!ksyms) {
-		fprintf(stderr, "failed to load kallsyms\n");
-		goto cleanup;
-	}
-
-	syms_cache = syms_cache__new(0);
-	if (!syms_cache) {
-		fprintf(stderr, "failed to create syms_cache\n");
-		goto cleanup;
-	}
-
 	err = open_and_attach_perf_event(obj->progs.do_perf_event, links);
 	if (err)
 		goto cleanup;
@@ -832,10 +663,8 @@ cleanup:
 		for (i = 0; i < nr_cpus; i++)
 			bpf_link__destroy(links[i]);
 	}
-	if (syms_cache)
-		syms_cache__free(syms_cache);
-	if (ksyms)
-		ksyms__free(ksyms);
+	
+	blazesym_free(symbolizer);
 	profile_bpf__destroy(obj);
 
 	return err != 0;
