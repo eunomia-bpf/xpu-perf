@@ -22,10 +22,7 @@
 #include "profile.h"
 #include "profile.skel.h"
 #include "blazesym.h"
-#include "common.h"
-
-#define OPT_PERF_MAX_STACK_DEPTH	1 /* --perf-max-stack-depth */
-#define OPT_STACK_STORAGE_SIZE		2 /* --stack-storage-size */
+#include "arg_parse.h"
 
 #define SYM_INFO_LEN			2048
 
@@ -51,178 +48,6 @@ struct key_ext_t {
 };
 
 static struct blazesym *symbolizer;
-
-static struct env {
-	pid_t pids[MAX_PID_NR];
-	pid_t tids[MAX_TID_NR];
-	bool user_stacks_only;
-	bool kernel_stacks_only;
-	int stack_storage_size;
-	int perf_max_stack_depth;
-	int duration;
-	bool verbose;
-	bool freq;
-	int sample_freq;
-	bool delimiter;
-	bool include_idle;
-	int cpu;
-	bool folded;
-} env = {
-	.stack_storage_size = 1024,
-	.perf_max_stack_depth = 127,
-	.duration = INT_MAX,
-	.freq = 1,
-	.sample_freq = 49,
-	.cpu = -1,
-};
-
-const char *argp_program_version = "profile 0.1";
-const char *argp_program_bug_address =
-	"https://github.com/iovisor/bcc/tree/master/libbpf-tools";
-const char argp_program_doc[] =
-"Profile CPU usage by sampling stack traces at a timed interval.\n"
-"\n"
-"USAGE: profile [OPTIONS...] [duration]\n"
-"EXAMPLES:\n"
-"    profile             # profile stack traces at 49 Hertz until Ctrl-C\n"
-"    profile -F 99       # profile stack traces at 99 Hertz\n"
-"    profile -c 1000000  # profile stack traces every 1 in a million events\n"
-"    profile 5           # profile at 49 Hertz for 5 seconds only\n"
-"    profile -f          # output in folded format for flame graphs\n"
-"    profile -p 185      # only profile process with PID 185\n"
-"    profile -L 185      # only profile thread with TID 185\n"
-"    profile -U          # only show user space stacks (no kernel)\n"
-"    profile -K          # only show kernel space stacks (no user)\n";
-
-static const struct argp_option opts[] = {
-	{ "pid", 'p', "PID", 0, "profile processes with one or more comma-separated PIDs only", 0 },
-	{ "tid", 'L', "TID", 0, "profile threads with one or more comma-separated TIDs only", 0 },
-	{ "user-stacks-only", 'U', NULL, 0,
-	  "show stacks from user space only (no kernel space stacks)", 0 },
-	{ "kernel-stacks-only", 'K', NULL, 0,
-	  "show stacks from kernel space only (no user space stacks)", 0 },
-	{ "frequency", 'F', "FREQUENCY", 0, "sample frequency, Hertz", 0 },
-	{ "delimited", 'd', NULL, 0, "insert delimiter between kernel/user stacks", 0 },
-	{ "include-idle ", 'I', NULL, 0, "include CPU idle stacks", 0 },
-	{ "folded", 'f', NULL, 0, "output folded format, one line per stack (for flame graphs)", 0 },
-	{ "stack-storage-size", OPT_STACK_STORAGE_SIZE, "STACK-STORAGE-SIZE", 0,
-	  "the number of unique stack traces that can be stored and displayed (default 1024)", 0 },
-	{ "cpu", 'C', "CPU", 0, "cpu number to run profile on", 0 },
-	{ "perf-max-stack-depth", OPT_PERF_MAX_STACK_DEPTH,
-	  "PERF-MAX-STACK-DEPTH", 0, "the limit for both kernel and user stack traces (default 127)", 0 },
-	{ "verbose", 'v', NULL, 0, "Verbose debug output", 0 },
-	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help", 0 },
-	{},
-};
-
-static error_t parse_arg(int key, char *arg, struct argp_state *state)
-{
-	static int pos_args;
-	int ret;
-	char *arg_copy;
-
-	switch (key) {
-	case 'h':
-		argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
-		break;
-	case 'v':
-		env.verbose = true;
-		break;
-	case 'p':
-		arg_copy = safe_strdup(arg);
-		ret = split_convert(arg_copy, ",", env.pids, sizeof(env.pids),
-				    sizeof(pid_t), str_to_int);
-		free(arg_copy);
-		if (ret) {
-			if (ret == -ENOBUFS)
-				fprintf(stderr, "the number of pid is too big, please "
-					"increase MAX_PID_NR's value and recompile\n");
-			else
-				fprintf(stderr, "invalid PID: %s\n", arg);
-
-			argp_usage(state);
-		}
-		break;
-	case 'L':
-		arg_copy = safe_strdup(arg);
-		ret = split_convert(arg_copy, ",", env.tids, sizeof(env.tids),
-				    sizeof(pid_t), str_to_int);
-		free(arg_copy);
-		if (ret) {
-			if (ret == -ENOBUFS)
-				fprintf(stderr, "the number of tid is too big, please "
-					"increase MAX_TID_NR's value and recompile\n");
-			else
-				fprintf(stderr, "invalid TID: %s\n", arg);
-
-			argp_usage(state);
-		}
-		break;
-	case 'U':
-		env.user_stacks_only = true;
-		break;
-	case 'K':
-		env.kernel_stacks_only = true;
-		break;
-	case 'F':
-		errno = 0;
-		env.sample_freq = strtol(arg, NULL, 10);
-		if (errno || env.sample_freq <= 0) {
-			fprintf(stderr, "invalid FREQUENCY: %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	case 'd':
-		env.delimiter = true;
-		break;
-	case 'I':
-		env.include_idle = true;
-		break;
-	case 'C':
-		errno = 0;
-		env.cpu = strtol(arg, NULL, 10);
-		if (errno) {
-			fprintf(stderr, "invalid CPU: %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	case 'f':
-		env.folded = true;
-		break;
-	case OPT_PERF_MAX_STACK_DEPTH:
-		errno = 0;
-		env.perf_max_stack_depth = strtol(arg, NULL, 10);
-		if (errno) {
-			fprintf(stderr, "invalid perf max stack depth: %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	case OPT_STACK_STORAGE_SIZE:
-		errno = 0;
-		env.stack_storage_size = strtol(arg, NULL, 10);
-		if (errno) {
-			fprintf(stderr, "invalid stack storage size: %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	case ARGP_KEY_ARG:
-		if (pos_args++) {
-			fprintf(stderr,
-				"Unrecognized positional argument: %s\n", arg);
-			argp_usage(state);
-		}
-		errno = 0;
-		env.duration = strtol(arg, NULL, 10);
-		if (errno || env.duration <= 0) {
-			fprintf(stderr, "Invalid duration (in s): %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	default:
-		return ARGP_ERR_UNKNOWN;
-	}
-	return 0;
-}
 
 static int nr_cpus;
 
@@ -477,25 +302,19 @@ static void print_headers()
 
 int main(int argc, char **argv)
 {
-	static const struct argp argp = {
-		.options = opts,
-		.parser = parse_arg,
-		.doc = argp_program_doc,
-	};
 	struct bpf_link *links[MAX_CPU_NR] = {};
 	struct profile_bpf *obj;
 	int pids_fd, tids_fd;
 	int err, i;
 	__u8 val = 0;
 
-	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
+	err = parse_common_args(argc, argv, TOOL_PROFILE);
 	if (err)
 		return err;
 
-	if (env.user_stacks_only && env.kernel_stacks_only) {
-		fprintf(stderr, "user_stacks_only and kernel_stacks_only cannot be used together.\n");
-		return 1;
-	}
+	err = validate_common_args();
+	if (err)
+		return err;
 
 	libbpf_set_print(libbpf_print_fn);
 

@@ -15,199 +15,7 @@
 #include "offcputime.h"
 #include "offcputime.skel.h"
 #include "blazesym.h"
-#include "common.h"
-
-// Helper function to load kallsyms
-static int load_kallsyms(void)
-{
-    // Simple stub - in real implementation this would parse /proc/kallsyms
-    return 0;
-}
-
-static struct env {
-	pid_t pids[MAX_PID_NR];
-	pid_t tids[MAX_TID_NR];
-	bool user_threads_only;
-	bool kernel_threads_only;
-	int stack_storage_size;
-	int perf_max_stack_depth;
-	__u64 min_block_time;
-	__u64 max_block_time;
-	long state;
-	int duration;
-	bool verbose;
-	bool folded;
-	bool delimiter;
-} env = {
-	.stack_storage_size = 1024,
-	.perf_max_stack_depth = 127,
-	.min_block_time = 1,
-	.max_block_time = -1,
-	.state = -1,
-	.duration = 99999999,
-};
-
-const char *argp_program_version = "offcputime 0.1";
-const char *argp_program_bug_address =
-	"https://github.com/iovisor/bcc/tree/master/libbpf-tools";
-const char argp_program_doc[] =
-"Summarize off-CPU time by stack trace.\n"
-"\n"
-"USAGE: offcputime [--help] [-p PID | -u | -k] [-m MIN-BLOCK-TIME] "
-"[-M MAX-BLOCK-TIME] [--state] [--perf-max-stack-depth] [--stack-storage-size] "
-"[-f] [-d] [duration]\n"
-"EXAMPLES:\n"
-"    offcputime             # trace off-CPU stack time until Ctrl-C\n"
-"    offcputime 5           # trace for 5 seconds only\n"
-"    offcputime -m 1000     # trace only events that last more than 1000 usec\n"
-"    offcputime -M 10000    # trace only events that last less than 10000 usec\n"
-"    offcputime -p 185,175,165 # only trace threads for PID 185,175,165\n"
-"    offcputime -t 188,120,134 # only trace threads 188,120,134\n"
-"    offcputime -u          # only trace user threads (no kernel)\n"
-"    offcputime -k          # only trace kernel threads (no user)\n"
-"    offcputime -f          # output in folded format for flame graphs\n"
-"    offcputime -fd         # folded format with delimiter between stacks\n";
-
-#define OPT_PERF_MAX_STACK_DEPTH	1 /* --pef-max-stack-depth */
-#define OPT_STACK_STORAGE_SIZE		2 /* --stack-storage-size */
-#define OPT_STATE			3 /* --state */
-
-static const struct argp_option opts[] = {
-	{ "pid", 'p', "PID", 0, "Trace these PIDs only, comma-separated list", 0 },
-	{ "tid", 't', "TID", 0, "Trace these TIDs only, comma-separated list", 0 },
-	{ "user-threads-only", 'u', NULL, 0,
-	  "User threads only (no kernel threads)", 0 },
-	{ "kernel-threads-only", 'k', NULL, 0,
-	  "Kernel threads only (no user threads)", 0 },
-	{ "perf-max-stack-depth", OPT_PERF_MAX_STACK_DEPTH,
-	  "PERF-MAX-STACK-DEPTH", 0, "the limit for both kernel and user stack traces (default 127)", 0 },
-	{ "stack-storage-size", OPT_STACK_STORAGE_SIZE, "STACK-STORAGE-SIZE", 0,
-	  "the number of unique stack traces that can be stored and displayed (default 1024)", 0 },
-	{ "min-block-time", 'm', "MIN-BLOCK-TIME", 0,
-	  "the amount of time in microseconds over which we store traces (default 1)", 0 },
-	{ "max-block-time", 'M', "MAX-BLOCK-TIME", 0,
-	  "the amount of time in microseconds under which we store traces (default U64_MAX)", 0 },
-	{ "state", OPT_STATE, "STATE", 0, "filter on this thread state bitmask (eg, 2 == TASK_UNINTERRUPTIBLE) see include/linux/sched.h", 0 },
-	{ "folded", 'f', NULL, 0, "output folded format, one line per stack (for flame graphs)", 0 },
-	{ "delimited", 'd', NULL, 0, "insert delimiter between kernel/user stacks", 0 },
-	{ "verbose", 'v', NULL, 0, "Verbose debug output", 0 },
-	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help", 0 },
-	{},
-};
-
-static error_t parse_arg(int key, char *arg, struct argp_state *state)
-{
-	static int pos_args;
-	int ret;
-	char *arg_copy;
-
-	switch (key) {
-	case 'h':
-		argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
-		break;
-	case 'v':
-		env.verbose = true;
-		break;
-	case 'f':
-		env.folded = true;
-		break;
-	case 'd':
-		env.delimiter = true;
-		break;
-	case 'p':
-		arg_copy = safe_strdup(arg);
-		ret = split_convert(arg_copy, ",", env.pids, sizeof(env.pids),
-				    sizeof(pid_t), str_to_int);
-		free(arg_copy);
-		if (ret) {
-			if (ret == -ENOBUFS)
-				fprintf(stderr, "the number of pid is too big, please "
-					"increase MAX_PID_NR's value and recompile\n");
-			else
-				fprintf(stderr, "invalid PID: %s\n", arg);
-
-			argp_usage(state);
-		}
-		break;
-	case 't':
-		arg_copy = safe_strdup(arg);
-		ret = split_convert(arg_copy, ",", env.tids, sizeof(env.tids),
-				    sizeof(pid_t), str_to_int);
-		free(arg_copy);
-		if (ret) {
-			if (ret == -ENOBUFS)
-				fprintf(stderr, "the number of tid is too big, please "
-					"increase MAX_TID_NR's value and recompile\n");
-			else
-				fprintf(stderr, "invalid TID: %s\n", arg);
-
-			argp_usage(state);
-		}
-		break;
-	case 'u':
-		env.user_threads_only = true;
-		break;
-	case 'k':
-		env.kernel_threads_only = true;
-		break;
-	case OPT_PERF_MAX_STACK_DEPTH:
-		errno = 0;
-		env.perf_max_stack_depth = strtol(arg, NULL, 10);
-		if (errno) {
-			fprintf(stderr, "invalid perf max stack depth: %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	case OPT_STACK_STORAGE_SIZE:
-		errno = 0;
-		env.stack_storage_size = strtol(arg, NULL, 10);
-		if (errno) {
-			fprintf(stderr, "invalid stack storage size: %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	case 'm':
-		errno = 0;
-		env.min_block_time = strtoll(arg, NULL, 10);
-		if (errno) {
-			fprintf(stderr, "Invalid min block time (in us): %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	case 'M':
-		errno = 0;
-		env.max_block_time = strtoll(arg, NULL, 10);
-		if (errno) {
-			fprintf(stderr, "Invalid min block time (in us): %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	case OPT_STATE:
-		errno = 0;
-		env.state = strtol(arg, NULL, 10);
-		if (errno || env.state < 0 || env.state > 2) {
-			fprintf(stderr, "Invalid task state: %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	case ARGP_KEY_ARG:
-		if (pos_args++) {
-			fprintf(stderr,
-				"Unrecognized positional argument: %s\n", arg);
-			argp_usage(state);
-		}
-		errno = 0;
-		env.duration = strtol(arg, NULL, 10);
-		if (errno || env.duration <= 0) {
-			fprintf(stderr, "Invalid duration (in s): %s\n", arg);
-			argp_usage(state);
-		}
-		break;
-	default:
-		return ARGP_ERR_UNKNOWN;
-	}
-	return 0;
-}
+#include "arg_parse.h"
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
@@ -372,27 +180,18 @@ static void print_headers()
 
 int main(int argc, char **argv)
 {
-	static const struct argp argp = {
-		.options = opts,
-		.parser = parse_arg,
-		.doc = argp_program_doc,
-	};
 	struct offcputime_bpf *obj;
 	int pids_fd, tids_fd;
 	int err, i;
 	__u8 val = 0;
 
-	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
+	err = parse_common_args(argc, argv, TOOL_OFFCPUTIME);
 	if (err)
 		return err;
-	if (env.user_threads_only && env.kernel_threads_only) {
-		fprintf(stderr, "user_threads_only and kernel_threads_only cannot be used together.\n");
-		return 1;
-	}
-	if (env.min_block_time >= env.max_block_time) {
-		fprintf(stderr, "min_block_time should be smaller than max_block_time\n");
-		return 1;
-	}
+
+	err = validate_common_args();
+	if (err)
+		return err;
 
 	libbpf_set_print(libbpf_print_fn);
 
