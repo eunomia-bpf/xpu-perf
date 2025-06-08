@@ -315,6 +315,7 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 {
 	unsigned long *ip;
 	int ret;
+	bool has_kernel_stack, has_user_stack;
 
 	ip = calloc(env.perf_max_stack_depth, sizeof(unsigned long));
 	if (!ip) {
@@ -322,10 +323,13 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 		return -ENOMEM;
 	}
 
+	has_kernel_stack = !STACK_ID_EFAULT(event->kern_stack_id);
+	has_user_stack = !STACK_ID_EFAULT(event->user_stack_id);
+
 	if (!env.folded) {
 		/* multi-line stack output */
 		/* Show kernel stack first */
-		if (!env.user_stacks_only && !STACK_ID_EFAULT(event->kern_stack_id)) {
+		if (!env.user_stacks_only && has_kernel_stack) {
 			if (bpf_map_lookup_elem(stack_map, &event->kern_stack_id, ip) != 0) {
 				fprintf(stderr, "    [Missed Kernel Stack]\n");
 			} else {
@@ -334,12 +338,12 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 		}
 
 		if (env.delimiter && !env.user_stacks_only && !env.kernel_stacks_only &&
-		    !STACK_ID_EFAULT(event->user_stack_id) && !STACK_ID_EFAULT(event->kern_stack_id)) {
+		    has_user_stack && has_kernel_stack) {
 			printf("    --\n");
 		}
 
 		/* Then show user stack */
-		if (!env.kernel_stacks_only && !STACK_ID_EFAULT(event->user_stack_id)) {
+		if (!env.kernel_stacks_only && has_user_stack) {
 			if (bpf_map_lookup_elem(stack_map, &event->user_stack_id, ip) != 0) {
 				fprintf(stderr, "    [Missed User Stack]\n");
 			} else {
@@ -352,6 +356,31 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 	} else {
 		/* folded stack output */
 		printf("%s", event->name);
+		
+		/* Print user stack first for folded format */
+		if (has_user_stack && !env.kernel_stacks_only) {
+			if (bpf_map_lookup_elem(stack_map, &event->user_stack_id, ip) != 0) {
+				printf(";[Missed User Stack]");
+			} else {
+				printf(";");
+				show_stack_trace_folded(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, event->pid, ';', true);
+			}
+		}
+		
+		/* Then print kernel stack if it exists */
+		if (has_kernel_stack && !env.user_stacks_only) {
+			/* Add delimiter between user and kernel stacks if needed */
+			if (has_user_stack && env.delimiter && !env.kernel_stacks_only)
+				printf("-");
+				
+			if (bpf_map_lookup_elem(stack_map, &event->kern_stack_id, ip) != 0) {
+				printf(";[Missed Kernel Stack]");
+			} else {
+				printf(";");
+				show_stack_trace_folded(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, 0, ';', true);
+			}
+		}
+		
 		printf(" %lld\n", count);
 	}
 
@@ -445,6 +474,9 @@ static int set_pidns(const struct profile_bpf *obj)
 static void print_headers()
 {
 	int i;
+
+	if (env.folded)
+		return;  // Don't print headers in folded format
 
 	printf("Sampling at %d Hertz of", env.sample_freq);
 

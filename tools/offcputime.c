@@ -36,6 +36,8 @@ static struct env {
 	long state;
 	int duration;
 	bool verbose;
+	bool folded;
+	bool delimiter;
 } env = {
 	.stack_storage_size = 1024,
 	.perf_max_stack_depth = 127,
@@ -53,7 +55,7 @@ const char argp_program_doc[] =
 "\n"
 "USAGE: offcputime [--help] [-p PID | -u | -k] [-m MIN-BLOCK-TIME] "
 "[-M MAX-BLOCK-TIME] [--state] [--perf-max-stack-depth] [--stack-storage-size] "
-"[duration]\n"
+"[-f] [-d] [duration]\n"
 "EXAMPLES:\n"
 "    offcputime             # trace off-CPU stack time until Ctrl-C\n"
 "    offcputime 5           # trace for 5 seconds only\n"
@@ -62,7 +64,9 @@ const char argp_program_doc[] =
 "    offcputime -p 185,175,165 # only trace threads for PID 185,175,165\n"
 "    offcputime -t 188,120,134 # only trace threads 188,120,134\n"
 "    offcputime -u          # only trace user threads (no kernel)\n"
-"    offcputime -k          # only trace kernel threads (no user)\n";
+"    offcputime -k          # only trace kernel threads (no user)\n"
+"    offcputime -f          # output in folded format for flame graphs\n"
+"    offcputime -fd         # folded format with delimiter between stacks\n";
 
 #define OPT_PERF_MAX_STACK_DEPTH	1 /* --pef-max-stack-depth */
 #define OPT_STACK_STORAGE_SIZE		2 /* --stack-storage-size */
@@ -84,6 +88,8 @@ static const struct argp_option opts[] = {
 	{ "max-block-time", 'M', "MAX-BLOCK-TIME", 0,
 	  "the amount of time in microseconds under which we store traces (default U64_MAX)", 0 },
 	{ "state", OPT_STATE, "STATE", 0, "filter on this thread state bitmask (eg, 2 == TASK_UNINTERRUPTIBLE) see include/linux/sched.h", 0 },
+	{ "folded", 'f', NULL, 0, "output folded format, one line per stack (for flame graphs)", 0 },
+	{ "delimited", 'd', NULL, 0, "insert delimiter between kernel/user stacks", 0 },
 	{ "verbose", 'v', NULL, 0, "Verbose debug output", 0 },
 	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help", 0 },
 	{},
@@ -101,6 +107,12 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		break;
 	case 'v':
 		env.verbose = true;
+		break;
+	case 'f':
+		env.folded = true;
+		break;
+	case 'd':
+		env.delimiter = true;
 		break;
 	case 'p':
 		arg_copy = safe_strdup(arg);
@@ -217,6 +229,7 @@ static void print_map(struct offcputime_bpf *obj)
 	unsigned long *ip;
 	struct val_t val;
 	int idx;
+	bool has_kernel_stack, has_user_stack;
 
 	ip = calloc(env.perf_max_stack_depth, sizeof(*ip));
 	if (!ip) {
@@ -237,27 +250,66 @@ static void print_map(struct offcputime_bpf *obj)
 		lookup_key = next_key;
 		if (val.delta == 0)
 			continue;
-		if (bpf_map_lookup_elem(fd_stackid, &next_key.kern_stack_id, ip) != 0) {
-			fprintf(stderr, "    [Missed Kernel Stack]\n");
-			goto print_ustack;
+
+		has_kernel_stack = next_key.kern_stack_id != -1;
+		has_user_stack = next_key.user_stack_id != -1;
+
+		if (env.folded) {
+			/* folded stack output format */
+			printf("%s", val.comm);
+			
+			/* Print user stack first for folded format */
+			if (has_user_stack && !env.kernel_threads_only) {
+				if (bpf_map_lookup_elem(fd_stackid, &next_key.user_stack_id, ip) != 0) {
+					printf(";[Missed User Stack]");
+				} else {
+					printf(";");
+					show_stack_trace_folded(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, next_key.tgid, ';', true);
+				}
+			}
+			
+			/* Then print kernel stack if it exists */
+			if (has_kernel_stack && !env.user_threads_only) {
+				/* Add delimiter between user and kernel stacks if needed */
+				if (has_user_stack && env.delimiter && !env.kernel_threads_only)
+					printf("-");
+					
+				if (bpf_map_lookup_elem(fd_stackid, &next_key.kern_stack_id, ip) != 0) {
+					printf(";[Missed Kernel Stack]");
+				} else {
+					printf(";");
+					show_stack_trace_folded(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, 0, ';', true);
+				}
+			}
+			
+			printf(" %lld\n", val.delta);
+		} else {
+			/* standard multi-line output format */
+			if (has_kernel_stack && !env.user_threads_only) {
+				if (bpf_map_lookup_elem(fd_stackid, &next_key.kern_stack_id, ip) != 0) {
+					fprintf(stderr, "    [Missed Kernel Stack]\n");
+				} else {
+					show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, 0);
+				}
+			}
+
+			/* Add delimiter between kernel and user stacks if both exist and delimiter is requested */
+			if (env.delimiter && has_kernel_stack && has_user_stack && 
+				!env.user_threads_only && !env.kernel_threads_only) {
+				printf("    --\n");
+			}
+
+			if (has_user_stack && !env.kernel_threads_only) {
+				if (bpf_map_lookup_elem(fd_stackid, &next_key.user_stack_id, ip) != 0) {
+					fprintf(stderr, "    [Missed User Stack]\n");
+				} else {
+					show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, next_key.tgid);
+				}
+			}
+
+			printf("    %-16s %s (%d)\n", "-", val.comm, next_key.pid);
+			printf("        %lld\n\n", val.delta);
 		}
-
-		show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, 0);
-
-print_ustack:
-		if (next_key.user_stack_id == -1)
-			goto skip_ustack;
-
-		if (bpf_map_lookup_elem(fd_stackid, &next_key.user_stack_id, ip) != 0) {
-			fprintf(stderr, "    [Missed User Stack]\n");
-			goto skip_ustack;
-		}
-
-		show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, next_key.tgid);
-
-skip_ustack:
-		printf("    %-16s %s (%d)\n", "-", val.comm, next_key.pid);
-		printf("        %lld\n\n", val.delta);
 	}
 
 cleanup:
@@ -304,6 +356,9 @@ static bool print_header_threads()
 
 static void print_headers()
 {
+	if (env.folded)
+		return;  // Don't print headers in folded format
+
 	printf("Tracing off-CPU time (us) of");
 
 	if (!print_header_threads())
