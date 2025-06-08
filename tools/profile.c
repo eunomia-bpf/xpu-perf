@@ -438,39 +438,6 @@ cleanup:
 	return ret;
 }
 
-static bool probe_bpf_ns_current_pid_tgid(void)
-{
-	LIBBPF_OPTS(bpf_prog_load_opts, opts, .expected_attach_type = BPF_TRACE_RAW_TP);
-	struct bpf_insn insns[] = {
-		{ .code = BPF_ALU64 | BPF_MOV | BPF_K, .dst_reg = BPF_REG_0, .imm = 0 },
-		{ .code = BPF_JMP | BPF_EXIT },
-	};
-	int fd, insn_cnt = sizeof(insns) / sizeof(struct bpf_insn);
-
-	opts.attach_btf_id = libbpf_find_vmlinux_btf_id("bpf_ns_current_pid_tgid", BPF_TRACE_RAW_TP);
-	fd = bpf_prog_load(BPF_PROG_TYPE_TRACING, NULL, "GPL", insns, insn_cnt, &opts);
-	if (fd >= 0)
-		close(fd);
-	return fd >= 0;
-}
-
-static int set_pidns(const struct profile_bpf *obj)
-{
-	struct stat statbuf;
-
-	if (!probe_bpf_ns_current_pid_tgid())
-		return -EPERM;
-
-	if (stat("/proc/self/ns/pid", &statbuf) == -1)
-		return -errno;
-
-	obj->rodata->use_pidns = true;
-	obj->rodata->pidns_dev = statbuf.st_dev;
-	obj->rodata->pidns_ino = statbuf.st_ino;
-
-	return 0;
-}
-
 static void print_headers()
 {
 	int i;
@@ -569,10 +536,6 @@ int main(int argc, char **argv)
 	bpf_map__set_value_size(obj->maps.stackmap,
 				env.perf_max_stack_depth * sizeof(unsigned long));
 	bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
-
-	err = set_pidns(obj);
-	if (err && env.verbose)
-		fprintf(stderr, "failed to translate pidns: %s\n", strerror(-err));
 
 	err = profile_bpf__load(obj);
 	if (err) {
