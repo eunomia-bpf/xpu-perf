@@ -134,7 +134,8 @@ class CombinedProfiler:
 
     def normalize_and_combine_stacks(self):
         """Combine and normalize stack traces from both tools"""
-        combined_stacks = {}
+        oncpu_stacks = {}
+        offcpu_stacks = {}
         
         # Process on-CPU data (profile tool)
         print(f"Processing {len(self.profile_output)} on-CPU stack traces...")
@@ -143,9 +144,11 @@ class CombinedProfiler:
             stack, value = self.parse_folded_line(line)
             if stack and value:
                 oncpu_total_samples += value
-                # Prefix with "oncpu:" to distinguish from off-CPU
-                combined_key = f"oncpu:{stack}"
-                combined_stacks[combined_key] = combined_stacks.get(combined_key, 0) + value
+                # remove the first part of the stack trace and add annotation
+                stack_parts = stack.split(";")[1:]
+                # Add _[c] annotation for CPU-intensive (on-CPU) stacks
+                annotated_stack = ";".join(stack_parts) + "_[c]"
+                oncpu_stacks[annotated_stack] = oncpu_stacks.get(annotated_stack, 0) + value
         
         # Process off-CPU data (offcputime tool) 
         print(f"Processing {len(self.offcpu_output)} off-CPU stack traces...")
@@ -154,13 +157,24 @@ class CombinedProfiler:
             stack, value = self.parse_folded_line(line)
             if stack and value:
                 offcpu_total_us += value
-                # Prefix with "offcpu:" to distinguish from on-CPU
-                combined_key = f"offcpu:{stack}"
-                combined_stacks[combined_key] = combined_stacks.get(combined_key, 0) + value
+                # remove the first part of the stack trace and add annotation
+                stack_parts = stack.split(";")[1:]
+                # Add _[o] annotation for off-CPU (I/O/blocking) stacks
+                annotated_stack = ";".join(stack_parts) + "_[o]"
+                offcpu_stacks[annotated_stack] = offcpu_stacks.get(annotated_stack, 0) + value
         
-        # Normalize off-CPU time to make it comparable with on-CPU samples
-        # Convert microseconds to "equivalent samples" based on sampling frequency
-        # This is a heuristic to make the visualization meaningful
+        # Store counts for summary
+        self.oncpu_count = len(oncpu_stacks)
+        self.offcpu_count = len(offcpu_stacks)
+        
+        # Combine stacks with annotations
+        combined_stacks = {}
+        
+        # Add on-CPU stacks directly
+        for stack, value in oncpu_stacks.items():
+            combined_stacks[stack] = combined_stacks.get(stack, 0) + value
+        
+        # Normalize and add off-CPU stacks
         if offcpu_total_us > 0 and oncpu_total_samples > 0:
             # Calculate normalization factor
             # Assume each on-CPU sample represents 1/freq seconds of CPU time
@@ -171,28 +185,29 @@ class CombinedProfiler:
             print(f"Off-CPU: {offcpu_total_us} microseconds ({offcpu_total_us/1_000_000:.2f} seconds)")
             print(f"Normalization factor: {normalization_factor:.0f} us/sample")
             
-            # Normalize off-CPU values
-            normalized_stacks = {}
-            for key, value in combined_stacks.items():
-                if key.startswith("offcpu:"):
-                    # Convert microseconds to equivalent samples
-                    normalized_value = int(value / normalization_factor)
-                    if normalized_value > 0:  # Only include if it results in at least 1 equivalent sample
-                        normalized_stacks[key] = normalized_value
-                else:
-                    normalized_stacks[key] = value
-            
-            combined_stacks = normalized_stacks
+            # Add normalized off-CPU stacks
+            for stack, value in offcpu_stacks.items():
+                # Convert microseconds to equivalent samples
+                normalized_value = int(value / normalization_factor)
+                if normalized_value > 0:  # Only include if it results in at least 1 equivalent sample
+                    combined_stacks[stack] = combined_stacks.get(stack, 0) + normalized_value
+        else:
+            # If no normalization needed, just add off-CPU stacks as-is
+            for stack, value in offcpu_stacks.items():
+                combined_stacks[stack] = combined_stacks.get(stack, 0) + value
         
         return combined_stacks
 
     def setup_flamegraph_tools(self):
-        """Ensure FlameGraph tools are available"""
+        """Ensure FlameGraph tools are available and create custom color palette"""
         flamegraph_dir = self.script_dir / "FlameGraph"
         flamegraph_script = flamegraph_dir / "flamegraph.pl"
         
         if flamegraph_script.exists():
-            return flamegraph_script
+            # Create a custom flamegraph script with our color palette
+            custom_script = self.script_dir / "combined_flamegraph.pl"
+            self.create_custom_flamegraph_script(flamegraph_script, custom_script)
+            return custom_script
         
         print("FlameGraph tools not found, cloning repository...")
         try:
@@ -210,7 +225,10 @@ class CombinedProfiler:
                 # Make it executable
                 os.chmod(flamegraph_script, 0o755)
                 print("FlameGraph tools cloned successfully")
-                return flamegraph_script
+                # Create custom script
+                custom_script = self.script_dir / "combined_flamegraph.pl"
+                self.create_custom_flamegraph_script(flamegraph_script, custom_script)
+                return custom_script
             else:
                 print("FlameGraph script not found after cloning")
                 return None
@@ -218,6 +236,47 @@ class CombinedProfiler:
         except Exception as e:
             print(f"Error setting up FlameGraph tools: {e}")
             return None
+
+    def create_custom_flamegraph_script(self, original_script, custom_script):
+        """Create a custom flamegraph script with our color palette"""
+        try:
+            with open(original_script, 'r') as f:
+                content = f.read()
+            
+            # Add our custom color palette for combined profiling
+            # Insert after the existing "chain" palette logic
+            custom_palette = '''
+	if (defined $type and $type eq "combined") {
+		if ($name =~ m:_\\[c\\]$:) {	# CPU annotation (on-CPU)
+			$type = "red";
+		} elsif ($name =~ m:_\\[o\\]$:) {	# off-CPU annotation (I/O/blocking)
+			$type = "blue";
+		} else {			# default
+			$type = "yellow";
+		}
+		# fall-through to color palettes
+	}'''
+            
+            # Find the insertion point after the chain palette
+            insertion_point = content.find('	if (defined $type and $type eq "chain") {')
+            if insertion_point != -1:
+                # Find the end of the chain block
+                end_point = content.find('\t# color palettes', insertion_point)
+                if end_point != -1:
+                    # Insert our custom palette before the color palettes section
+                    content = content[:end_point] + custom_palette + '\n\n\t' + content[end_point:]
+            
+            with open(custom_script, 'w') as f:
+                f.write(content)
+            
+            # Make it executable
+            os.chmod(custom_script, 0o755)
+            print("Custom flamegraph script created with combined color palette")
+            
+        except Exception as e:
+            print(f"Error creating custom flamegraph script: {e}")
+            # Fall back to original script
+            return original_script
 
     def generate_flamegraph_data(self, output_prefix=None):
         """Generate combined flamegraph data and SVG"""
@@ -255,8 +314,13 @@ class CombinedProfiler:
         if flamegraph_script:
             try:
                 print("Generating flamegraph SVG...")
+                
+                # Generate flamegraph with our custom combined color palette
                 result = subprocess.run([
-                    "perl", str(flamegraph_script), folded_file
+                    "perl", str(flamegraph_script), 
+                    "--colors", "combined",  # Use our custom color palette
+                    "--title", "Combined On-CPU and Off-CPU Profile",
+                    folded_file
                 ], capture_output=True, text=True)
                 
                 if result.returncode == 0:
@@ -355,9 +419,10 @@ Examples:
                 print(f"   ./FlameGraph/flamegraph.pl {folded_file} > flamegraph.svg")
         
         print("\n📝 Interpretation guide:")
-        print("   • 'oncpu:' prefixed stacks show CPU-intensive code paths")
-        print("   • 'offcpu:' prefixed stacks show blocking/waiting operations")
+        print("   • Red frames show CPU-intensive code paths (on-CPU) marked with _[c]")
+        print("   • Blue frames show blocking/waiting operations (off-CPU) marked with _[o]")
         print("   • Wider sections represent more time spent in those functions")
+        print("   • Values are normalized to make on-CPU and off-CPU time comparable")
         
     except KeyboardInterrupt:
         print("\nProfiling interrupted by user")

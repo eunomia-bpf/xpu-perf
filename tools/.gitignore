@@ -9,6 +9,10 @@ offcpu.txt
 FlameGraph
 pmumon
 pmumon_advanced
-demo_results.svg
+/demo_results.svg
 demo_results.folded
 test_program
+combined_profile_pid*.svg
+combined_profile_pid*.folded
+combined_flamegraph.pl
+
