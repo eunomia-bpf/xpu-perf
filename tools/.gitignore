@@ -6,3 +6,9 @@ res.txt
 *.o
 oncpu.txt
 offcpu.txt
+FlameGraph
+pmumon
+pmumon_advanced
+demo_results.svg
+demo_results.folded
+test_program

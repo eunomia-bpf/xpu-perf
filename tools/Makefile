@@ -68,7 +68,12 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS)
+all: $(APPS) pmumon pmumon_advanced
+
+pmumon:
+	$(Q)$(CLANG) -g -O2 pmumon_basic.c -o pmumon
+pmumon_advanced:
+	$(Q)$(CLANG) -g -O2 pmumon_advanced.c -o pmumon_advanced
 
 .PHONY: clean
 clean:
