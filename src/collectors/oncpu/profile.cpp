@@ -75,43 +75,6 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 	return vfprintf(stderr, format, args);
 }
 
-static void print_headers(const ProfileConfig& config)
-{
-	int i;
-
-	if (config.folded)
-		return;  // Don't print headers in folded format
-
-	printf("Sampling at %d Hertz of", config.sample_freq);
-
-	if (config.pids[0]) {
-		printf(" PID [");
-		for (i = 0; i < MAX_PID_NR && config.pids[i]; i++)
-			printf("%d%s", config.pids[i], (i < MAX_PID_NR - 1 && config.pids[i + 1]) ? ", " : "]");
-	} else if (config.tids[0]) {
-		printf(" TID [");
-		for (i = 0; i < MAX_TID_NR && config.tids[i]; i++)
-			printf("%d%s", config.tids[i], (i < MAX_TID_NR - 1 && config.tids[i + 1]) ? ", " : "]");
-	} else {
-		printf(" all threads");
-	}
-
-	if (config.user_stacks_only)
-		printf(" by user");
-	else if (config.kernel_stacks_only)
-		printf(" by kernel");
-	else
-		printf(" by user + kernel");
-
-	if (config.cpu != -1)
-		printf(" on CPU#%d", config.cpu);
-
-	if (config.duration < INT_MAX)
-		printf(" for %d secs.\n", config.duration);
-	else
-		printf("... Hit Ctrl-C to end.\n");
-}
-
 // ProfileCollector implementation
 ProfileCollector::ProfileCollector() : obj(nullptr), running(false) {
     nr_cpus = 0;
@@ -292,10 +255,6 @@ CollectorData ProfileCollector::get_data() {
     if (!running || !obj) {
         return CollectorData("profile", "", false);
     }
-    
-    // Print headers first (if not in folded mode)
-    if (!config.folded)
-        print_headers(config);
     
     // Collect the data from BPF maps
     ProfileData data = collect_data();

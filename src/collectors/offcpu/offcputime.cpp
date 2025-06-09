@@ -57,44 +57,6 @@ static bool probe_tp_btf(const char *name)
 	return fd >= 0;
 }
 
-static bool print_header_threads(const Config& config)
-{
-	int i;
-	bool printed = false;
-
-	if (config.pids[0]) {
-		printf(" PID [");
-		for (i = 0; i < MAX_PID_NR && config.pids[i]; i++)
-			printf("%d%s", config.pids[i], (i < MAX_PID_NR - 1 && config.pids[i + 1]) ? ", " : "]");
-		printed = true;
-	}
-
-	if (config.tids[0]) {
-		printf(" TID [");
-		for (i = 0; i < MAX_TID_NR && config.tids[i]; i++)
-			printf("%d%s", config.tids[i], (i < MAX_TID_NR - 1 && config.tids[i + 1]) ? ", " : "]");
-		printed = true;
-	}
-
-	return printed;
-}
-
-static void print_headers(const Config& config)
-{
-	if (config.folded)
-		return;  // Don't print headers in folded format
-
-	printf("Tracing off-CPU time (us) of");
-
-	if (!print_header_threads(config))
-		printf(" all threads");
-
-	if (config.duration < 99999999)
-		printf(" for %d secs.\n", config.duration);
-	else
-		printf("... Hit Ctrl-C to end.\n");
-}
-
 // OffCPUTimeCollector implementation
 OffCPUTimeCollector::OffCPUTimeCollector() : obj(nullptr), running(false) {}
 
@@ -253,10 +215,7 @@ CollectorData OffCPUTimeCollector::get_data() {
     if (!running || !obj) {
         return CollectorData("offcputime", "", false);
     }
-    
-    // Print headers first (if not in folded mode)
-    print_headers(config);
-    
+
     // Collect the data from BPF maps
     OffCPUData data = collect_data();
     
