@@ -8,6 +8,7 @@
 #include "collectors/collector_interface.hpp"
 #include "collectors/oncpu/profile.hpp"
 #include "collectors/offcpu/offcputime.hpp"
+#include "sampling_printer.hpp"
 
 static volatile bool running = true;
 
@@ -100,11 +101,42 @@ int main(int argc, char **argv)
 
     printf("\nStopping collector...\n");
 
-    // Get the collected data - this will print the results directly
-    CollectorData data = collector->get_data();
-    if (!data.success) {
+    // Get the collected data using unique_ptr properly
+    auto data = collector->get_data();
+    if (!data || !data->success) {
         fprintf(stderr, "Failed to collect data from %s\n", collector->get_name().c_str());
         return 1;
+    }
+
+    // Check if it's sampling data and use SamplingPrinter if so
+    if (data->type == CollectorData::Type::SAMPLING) {
+        auto* sampling_data = dynamic_cast<SamplingData*>(data.get());
+        if (sampling_data) {
+            // Create a SamplingPrinter instance
+            SamplingPrinter printer;
+            if (!printer.is_valid()) {
+                fprintf(stderr, "Failed to initialize symbolizer for printing\n");
+                return 1;
+            }
+            
+            printf("\nCollected data:\n");
+            printf("%s\n", SamplingPrinter::format_data(*sampling_data, collector->get_name()).c_str());
+            
+            // Get appropriate config from collector and print data
+            if (collector->get_name() == "profile") {
+                auto* profile_collector = dynamic_cast<ProfileCollector*>(collector.get());
+                if (profile_collector) {
+                    std::string output = printer.print_data(*sampling_data, profile_collector->get_config());
+                    printf("%s\n", output.c_str());
+                }
+            } else if (collector->get_name() == "offcputime") {
+                auto* offcpu_collector = dynamic_cast<OffCPUTimeCollector*>(collector.get());
+                if (offcpu_collector) {
+                    std::string output = printer.print_data(*sampling_data, offcpu_collector->get_config());
+                    printf("%s\n", output.c_str());
+                }
+            }
+        }
     }
 
     printf("\nCollector %s finished successfully\n", collector->get_name().c_str());

@@ -25,7 +25,6 @@ extern "C" {
 }
 #endif
 
-#include "collectors/sampling_printer.hpp"
 
 #include "profile.skel.h"
 #include "profile.hpp"
@@ -106,12 +105,6 @@ bool ProfileCollector::start() {
         return false;
     }
 
-    symbolizer.reset(blazesym_new());
-    if (!symbolizer) {
-        fprintf(stderr, "Failed to create a symbolizer\n");
-        return false;
-    }
-
     obj.reset(profile_bpf__open());
     if (!obj) {
         fprintf(stderr, "failed to open BPF object\n");
@@ -169,7 +162,7 @@ cleanup:
 }
 
 ProfileData ProfileCollector::collect_data() {
-    ProfileData data;
+    ProfileData data {"profile"};
     
     if (!running || !obj) {
         return data;
@@ -243,13 +236,6 @@ ProfileData ProfileCollector::collect_data() {
     return data;
 }
 
-std::string ProfileCollector::format_data(const ProfileData& data) {
-    return SamplingPrinter::format_data(data, "profile");
-}
-
-void ProfileCollector::print_data(const ProfileData& data) {
-    SamplingPrinter::print_data(data, symbolizer.get(), config, "");
-}
 
 std::unique_ptr<CollectorData> ProfileCollector::get_data() {
     if (!running || !obj) {

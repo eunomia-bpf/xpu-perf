@@ -42,31 +42,6 @@ public:
         validate();
     }
 
-    // Set configuration values with validation
-    void set_min_block_time(__u64 time) {
-        min_block_time = time;
-        validate();
-    }
-
-    void set_max_block_time(__u64 time) {
-        max_block_time = time;
-        validate();
-    }
-
-    void set_state(long s) {
-        state = s;
-        validate();
-    }
-
-    void set_user_threads_only(bool value) {
-        user_threads_only = value;
-        validate();
-    }
-
-    void set_kernel_threads_only(bool value) {
-        kernel_threads_only = value;
-        validate();
-    }
 
 protected:
     void validate() override {
@@ -97,7 +72,6 @@ class OffCPUTimeCollector : public ICollector {
 private:
     std::unique_ptr<struct offcputime_bpf, OffCPUBPFDeleter> obj;
     bool running;
-    std::unique_ptr<struct blazesym, BlazesymDeleter> symbolizer;
     OffCPUTimeConfig config;
     
 public:
@@ -115,8 +89,6 @@ public:
 private:
     bool probe_tp_btf(const char *name);
     OffCPUData collect_data();
-    std::string format_data(const OffCPUData& data);
-    void print_data(const OffCPUData& data);
 };
 
 #endif /* __OFFCPUTIME_HPP */ 

@@ -26,7 +26,6 @@ extern "C" {
 #include "offcputime.skel.h"
 #include "offcputime.hpp"
 #include "collectors/utils.hpp"
-#include "collectors/sampling_printer.hpp"
 #include <sstream>
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
@@ -135,12 +134,6 @@ bool OffCPUTimeCollector::start() {
         goto cleanup;
     }
 
-    symbolizer.reset(blazesym_new());
-    if (!symbolizer) {
-        fprintf(stderr, "Failed to create a symbolizer\n");
-        goto cleanup;
-    }
-
     running = true;
     return true;
 
@@ -150,7 +143,7 @@ cleanup:
 }
 
 OffCPUData OffCPUTimeCollector::collect_data() {
-    OffCPUData data;
+    OffCPUData data {"offcputime"};
     
     if (!running || !obj) {
         return data;
@@ -203,13 +196,6 @@ OffCPUData OffCPUTimeCollector::collect_data() {
     return data;
 }
 
-std::string OffCPUTimeCollector::format_data(const OffCPUData& data) {
-    return SamplingPrinter::format_data(data, "off-CPU");
-}
-
-void OffCPUTimeCollector::print_data(const OffCPUData& data) {
-    SamplingPrinter::print_data(data, symbolizer.get(), config, "us");
-}
 
 std::unique_ptr<CollectorData> OffCPUTimeCollector::get_data() {
     if (!running || !obj) {

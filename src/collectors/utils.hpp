@@ -14,7 +14,6 @@ extern "C" {
 #endif
 
 #include <linux/types.h>
-#include "blazesym.h"
 
 #ifdef __cplusplus
 }
@@ -27,6 +26,12 @@ extern "C" {
 
 // Forward declaration
 struct blazesym;
+
+// Forward declare blazesym functions until blazesym.h is available
+extern "C" {
+    struct blazesym* blazesym_new(void);
+    void blazesym_free(struct blazesym* symbolizer);
+}
 
 // Common RAII deleter for blazesym
 struct BlazesymDeleter {

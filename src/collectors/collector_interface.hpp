@@ -3,26 +3,28 @@
 
 #include <string>
 #include <memory>
+#include <chrono>
 
 // Abstract base class for collector data
 class CollectorData {
 public:
     virtual ~CollectorData() = default;
-    
-    // Get collector name
-    virtual std::string get_name() const = 0;
-    
-    // Check if collection was successful
-    virtual bool is_success() const = 0;
-    
-    // Get formatted output as string (optional, for backward compatibility)
-    virtual std::string get_output() const { return ""; }
-    
-    // Get data type identifier
-    virtual std::string get_type() const = 0;
 
-protected:
-    CollectorData() = default;
+    std::string name;
+    bool success;
+    enum class Type {
+        SAMPLING,
+    };
+    Type type;
+    unsigned long long timestamp;
+
+    CollectorData(const std::string& name = "", bool success = false, Type type = Type::SAMPLING)
+        : name(name), success(success), type(type) {
+            // get current timestamp
+            timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+        }
 };
 
 class ICollector {

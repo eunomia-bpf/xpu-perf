@@ -41,36 +41,10 @@ public:
         // Profile specific defaults
         duration = INT_MAX;
         freq = true;
-        sample_freq = 49;
+        sample_freq = 50;
         include_idle = false;
         
         // Validate configuration
-        validate();
-    }
-
-    // Set configuration values with validation
-    void set_sample_freq(int freq_val) {
-        sample_freq = freq_val;
-        validate();
-    }
-
-    void set_include_idle(bool value) {
-        include_idle = value;
-        validate();
-    }
-
-    void set_user_stacks_only(bool value) {
-        user_stacks_only = value;
-        validate();
-    }
-
-    void set_kernel_stacks_only(bool value) {
-        kernel_stacks_only = value;
-        validate();
-    }
-
-    void set_cpu(int c) {
-        cpu = c;
         validate();
     }
 
@@ -106,7 +80,6 @@ private:
     std::unique_ptr<struct profile_bpf, ProfileBPFDeleter> obj;
     bool running;
     int nr_cpus;
-    std::unique_ptr<struct blazesym, BlazesymDeleter> symbolizer;
     ProfileConfig config;
     
 public:
@@ -124,8 +97,6 @@ public:
 private:
     int open_and_attach_perf_event(struct bpf_program *prog);
     ProfileData collect_data();
-    std::string format_data(const ProfileData& data);
-    void print_data(const ProfileData& data);
 };
 
 #endif /* __PROFILE_HPP */ 

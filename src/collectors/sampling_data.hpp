@@ -20,21 +20,13 @@ struct SamplingEntry {
     bool has_kernel_stack;
 };
 
-class SamplingData : public CollectorData {
+class SamplingData :  public CollectorData {
 public:
+    ~SamplingData() override = default;
     std::vector<SamplingEntry> entries;
     
     SamplingData(const std::string& collector_name, bool success = true) 
-        : name(collector_name), success(success) {}
-    
-    // Implement CollectorData interface
-    std::string get_name() const override { return name; }
-    bool is_success() const override { return success; }
-    std::string get_type() const override { return "sampling"; }
-    
-private:
-    std::string name;
-    bool success;
+        : CollectorData(collector_name, success, Type::SAMPLING) {}
 };
 
 #endif /* __SAMPLING_COMMON_HPP */ 
