@@ -30,10 +30,12 @@ extern "C" {
 #endif
 
 #include "profile.h"
-#include "profile.skel.h"
+#include "../build/profile.skel.h"
 #include "arg_parse.h"
 #include "profile.hpp"
+#include "common.h"
 #include <sstream>
+#include <algorithm>
 
 #define SYM_INFO_LEN			2048
 
@@ -60,51 +62,31 @@ struct key_ext_t {
 
 static int nr_cpus;
 
+// Custom deleter implementations
+void ProfileBPFDeleter::operator()(struct profile_bpf* obj) const {
+    if (obj) {
+        profile_bpf__destroy(obj);
+    }
+}
+
+void BlazesymDeleter::operator()(struct blazesym* sym) const {
+    if (sym) {
+        blazesym_free(sym);
+    }
+}
+
+void BPFLinkDeleter::operator()(struct bpf_link* link) const {
+    if (link) {
+        bpf_link__destroy(link);
+    }
+}
+
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
 	if (level == LIBBPF_DEBUG && !env.verbose)
 		return 0;
 
 	return vfprintf(stderr, format, args);
-}
-
-static int open_and_attach_perf_event(struct bpf_program *prog,
-				      struct bpf_link *links[])
-{
-	struct perf_event_attr attr = {
-		.type = PERF_TYPE_SOFTWARE,
-		.config = PERF_COUNT_SW_CPU_CLOCK,
-		.sample_freq = static_cast<__u64>(env.sample_freq),
-		.freq = env.freq,
-	};
-	int i, fd;
-
-	for (i = 0; i < nr_cpus; i++) {
-		if (env.cpu != -1 && env.cpu != i)
-			continue;
-
-		fd = syscall(__NR_perf_event_open, &attr, -1, i, -1, 0);
-		if (fd < 0) {
-			/* Ignore CPU that is offline */
-			if (errno == ENODEV)
-				continue;
-
-			fprintf(stderr, "failed to init perf sampling: %s\n",
-				strerror(errno));
-			return -1;
-		}
-
-		links[i] = bpf_program__attach_perf_event(prog, fd);
-		if (!links[i]) {
-			fprintf(stderr, "failed to attach perf event on cpu: "
-				"%d\n", i);
-			links[i] = NULL;
-			close(fd);
-			return -1;
-		}
-	}
-
-	return 0;
 }
 
 static int cmp_counts(const void *a, const void *b)
@@ -306,23 +288,7 @@ static void print_headers()
 
 // ProfileCollector implementation
 ProfileCollector::ProfileCollector() : obj(nullptr), running(false) {
-    memset(links, 0, sizeof(links));
-}
-
-ProfileCollector::~ProfileCollector() {
-    if (obj) {
-        if (env.cpu != -1)
-            bpf_link__destroy(links[env.cpu]);
-        else {
-            for (int i = 0; i < nr_cpus; i++)
-                bpf_link__destroy(links[i]);
-        }
-        
-        if (symbolizer) {
-            blazesym_free(symbolizer);
-        }
-        profile_bpf__destroy(obj);
-    }
+    nr_cpus = 0;
 }
 
 std::string ProfileCollector::get_name() const {
@@ -351,16 +317,15 @@ bool ProfileCollector::start() {
         return false;
     }
 
-    symbolizer = blazesym_new();
+    symbolizer.reset(blazesym_new());
     if (!symbolizer) {
         fprintf(stderr, "Failed to create a symbolizer\n");
         return false;
     }
 
-    obj = profile_bpf__open();
+    obj.reset(profile_bpf__open());
     if (!obj) {
         fprintf(stderr, "failed to open BPF object\n");
-        blazesym_free(symbolizer);
         return false;
     }
 
@@ -377,7 +342,7 @@ bool ProfileCollector::start() {
                 env.perf_max_stack_depth * sizeof(unsigned long));
     bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
 
-    err = profile_bpf__load(obj);
+    err = profile_bpf__load(obj.get());
     if (err) {
         fprintf(stderr, "failed to load BPF programs\n");
         goto cleanup;
@@ -402,7 +367,7 @@ bool ProfileCollector::start() {
         }
     }
 
-    err = open_and_attach_perf_event(obj->progs.do_perf_event, links);
+    err = open_and_attach_perf_event(obj->progs.do_perf_event);
     if (err)
         goto cleanup;
 
@@ -410,14 +375,169 @@ bool ProfileCollector::start() {
     return true;
 
 cleanup:
-    if (obj) {
-        if (symbolizer) {
-            blazesym_free(symbolizer);
-        }
-        profile_bpf__destroy(obj);
-        obj = nullptr;
-    }
+    obj.reset();
     return false;
+}
+
+ProfileData ProfileCollector::collect_data() {
+    ProfileData data;
+    
+    if (!running || !obj) {
+        return data;
+    }
+    
+    struct profile_key_t empty = {};
+    struct profile_key_t *lookup_key = &empty;
+    __u64 count;
+    int err;
+    int counts_fd = bpf_map__fd(obj->maps.counts);
+    int stack_fd = bpf_map__fd(obj->maps.stackmap);
+    
+    // Collect all entries from the counts map
+    std::vector<key_ext_t> items;
+    
+    struct profile_key_t key;
+    while (bpf_map_get_next_key(counts_fd, lookup_key, &key) == 0) {
+        err = bpf_map_lookup_elem(counts_fd, &key, &count);
+        if (err < 0) {
+            fprintf(stderr, "failed to lookup counts: %d\n", err);
+            break;
+        }
+
+        if (count == 0) {
+            lookup_key = &key;
+            continue;
+        }
+
+        key_ext_t item;
+        item.k = key;
+        item.v = count;
+        items.push_back(item);
+        
+        lookup_key = &key;
+    }
+    
+    // Sort by count (descending)
+    std::sort(items.begin(), items.end(), [](const key_ext_t& a, const key_ext_t& b) {
+        return a.v > b.v;
+    });
+    
+    // Convert to ProfileEntry format with stack traces
+    for (const auto& item : items) {
+        ProfileEntry entry;
+        entry.key = item.k;
+        entry.count = item.v;
+        entry.has_kernel_stack = !STACK_ID_EFAULT(item.k.kern_stack_id);
+        entry.has_user_stack = !STACK_ID_EFAULT(item.k.user_stack_id);
+        
+        // Collect stack traces
+        entry.user_stack.resize(env.perf_max_stack_depth);
+        entry.kernel_stack.resize(env.perf_max_stack_depth);
+        
+        if (entry.has_user_stack) {
+            if (bpf_map_lookup_elem(stack_fd, &item.k.user_stack_id, entry.user_stack.data()) != 0) {
+                entry.has_user_stack = false;
+                entry.user_stack.clear();
+            }
+        }
+        
+        if (entry.has_kernel_stack) {
+            if (bpf_map_lookup_elem(stack_fd, &item.k.kern_stack_id, entry.kernel_stack.data()) != 0) {
+                entry.has_kernel_stack = false;
+                entry.kernel_stack.clear();
+            }
+        }
+        
+        data.entries.push_back(std::move(entry));
+    }
+    
+    return data;
+}
+
+std::string ProfileCollector::format_data(const ProfileData& data) {
+    // For the return value, we just return a summary since the actual output
+    // is printed directly to stdout by the show_stack_trace functions
+    std::ostringstream oss;
+    oss << "Collected " << data.entries.size() << " profile entries";
+    return oss.str();
+}
+
+void ProfileCollector::print_data(const ProfileData& data) {
+    if (!symbolizer) {
+        return;
+    }
+    
+    for (const auto& entry : data.entries) {
+        if (!env.folded) {
+            /* multi-line stack output */
+            /* Show kernel stack first */
+            if (!env.user_stacks_only && entry.has_kernel_stack) {
+                if (entry.kernel_stack.empty()) {
+                    fprintf(stderr, "    [Missed Kernel Stack]\n");
+                } else {
+                    show_stack_trace(symbolizer.get(), 
+                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
+                        env.perf_max_stack_depth, 0);
+                }
+            }
+
+            if (env.delimiter && !env.user_stacks_only && !env.kernel_stacks_only &&
+                entry.has_user_stack && entry.has_kernel_stack) {
+                printf("    --\n");
+            }
+
+            /* Then show user stack */
+            if (!env.kernel_stacks_only && entry.has_user_stack) {
+                if (entry.user_stack.empty()) {
+                    fprintf(stderr, "    [Missed User Stack]\n");
+                } else {
+                    show_stack_trace(symbolizer.get(), 
+                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
+                        env.perf_max_stack_depth, entry.key.pid);
+                }
+            }
+
+            printf("    %-16s %s (%d)\n", "-", entry.key.name, entry.key.pid);
+            printf("        %lld\n", entry.count);
+        } else {
+            /* folded stack output */
+            printf("%s", entry.key.name);
+            
+            /* Print user stack first for folded format */
+            if (entry.has_user_stack && !env.kernel_stacks_only) {
+                if (entry.user_stack.empty()) {
+                    printf(";[Missed User Stack]");
+                } else {
+                    printf(";");
+                    show_stack_trace_folded(symbolizer.get(), 
+                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
+                        env.perf_max_stack_depth, entry.key.pid, ';', true);
+                }
+            }
+            
+            /* Then print kernel stack if it exists */
+            if (entry.has_kernel_stack && !env.user_stacks_only) {
+                /* Add delimiter between user and kernel stacks if needed */
+                if (entry.has_user_stack && env.delimiter && !env.kernel_stacks_only)
+                    printf("-");
+                    
+                if (entry.kernel_stack.empty()) {
+                    printf(";[Missed Kernel Stack]");
+                } else {
+                    printf(";");
+                    show_stack_trace_folded(symbolizer.get(), 
+                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
+                        env.perf_max_stack_depth, 0, ';', true);
+                }
+            }
+            
+            printf(" %lld\n", entry.count);
+        }
+        
+        /* Add a newline between stack traces for better readability in non-folded mode */
+        if (!env.folded)
+            printf("\n");
+    }
 }
 
 CollectorData ProfileCollector::get_data() {
@@ -425,15 +545,23 @@ CollectorData ProfileCollector::get_data() {
         return CollectorData("profile", "", false);
     }
     
-    // Simply call the print function directly to stdout
-    // The data will be printed immediately rather than captured
-    print_counts(bpf_map__fd(obj->maps.counts),
-                 bpf_map__fd(obj->maps.stackmap), symbolizer);
+    // Print headers first (if not in folded mode)
+    if (!env.folded)
+        print_headers();
     
-    return CollectorData("profile", "Profile data printed to stdout", true);
+    // Collect the data from BPF maps
+    ProfileData data = collect_data();
+    
+    // Print the data directly to stdout
+    print_data(data);
+    
+    // Also format as string for return value
+    std::string formatted = format_data(data);
+    
+    return CollectorData("profile", formatted, true);
 }
 
-int ProfileCollector::open_and_attach_perf_event(struct bpf_program *prog, struct bpf_link *links[]) {
+int ProfileCollector::open_and_attach_perf_event(struct bpf_program *prog) {
 	struct perf_event_attr attr = {
 		.type = PERF_TYPE_SOFTWARE,
 		.config = PERF_COUNT_SW_CPU_CLOCK,
@@ -441,6 +569,9 @@ int ProfileCollector::open_and_attach_perf_event(struct bpf_program *prog, struc
 		.freq = env.freq,
 	};
 	int i, fd;
+
+    // Resize links vector to accommodate all CPUs
+    links.resize(nr_cpus);
 
 	for (i = 0; i < nr_cpus; i++) {
 		if (env.cpu != -1 && env.cpu != i)
@@ -457,11 +588,10 @@ int ProfileCollector::open_and_attach_perf_event(struct bpf_program *prog, struc
 			return -1;
 		}
 
-		links[i] = bpf_program__attach_perf_event(prog, fd);
+		links[i].reset(bpf_program__attach_perf_event(prog, fd));
 		if (!links[i]) {
 			fprintf(stderr, "failed to attach perf event on cpu: "
 				"%d\n", i);
-			links[i] = NULL;
 			close(fd);
 			return -1;
 		}

@@ -17,7 +17,7 @@ extern "C" {
 /* Include BPF headers to get __u64 definition */
 #include <linux/types.h>
 
-#include "blazesym.h"
+#include "../blazesym/target/release/blazesym.h"
 
 #ifdef __cplusplus
 }

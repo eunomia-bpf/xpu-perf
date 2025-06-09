@@ -4,6 +4,8 @@
 #include "collector_interface.hpp"
 #include "offcputime.h"
 #include "arg_parse.h"
+#include <memory>
+#include <vector>
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,15 +22,38 @@ extern "C" {
 struct offcputime_bpf;
 struct blazesym;
 
+// Data structure for collected off-CPU data
+struct OffCPUEntry {
+    struct offcpu_key_t key;
+    struct offcpu_val_t val;
+    std::vector<unsigned long> user_stack;
+    std::vector<unsigned long> kernel_stack;
+    bool has_user_stack;
+    bool has_kernel_stack;
+};
+
+struct OffCPUData {
+    std::vector<OffCPUEntry> entries;
+};
+
+// Custom deleters for RAII
+struct OffCPUBPFDeleter {
+    void operator()(struct offcputime_bpf* obj) const;
+};
+
+struct BlazesymDeleter {
+    void operator()(struct blazesym* sym) const;
+};
+
 class OffCPUTimeCollector : public ICollector {
 private:
-    struct offcputime_bpf *obj;
+    std::unique_ptr<struct offcputime_bpf, OffCPUBPFDeleter> obj;
     bool running;
-    struct blazesym *symbolizer;
+    std::unique_ptr<struct blazesym, BlazesymDeleter> symbolizer;
     
 public:
     OffCPUTimeCollector();
-    ~OffCPUTimeCollector();
+    ~OffCPUTimeCollector() = default;
     
     std::string get_name() const override;
     bool start() override;
@@ -36,6 +61,9 @@ public:
     
 private:
     bool probe_tp_btf(const char *name);
+    OffCPUData collect_data();
+    std::string format_data(const OffCPUData& data);
+    void print_data(const OffCPUData& data);
 };
 
 #endif /* __OFFCPUTIME_HPP */ 

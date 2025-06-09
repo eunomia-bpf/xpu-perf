@@ -23,9 +23,10 @@ extern "C" {
 #endif
 
 #include "offcputime.h"
-#include "offcputime.skel.h"
+#include "../build/offcputime.skel.h"
 #include "arg_parse.h"
 #include "offcputime.hpp"
+#include "common.h"
 #include <sstream>
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
@@ -33,6 +34,13 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 	if (level == LIBBPF_DEBUG && !env.verbose)
 		return 0;
 	return vfprintf(stderr, format, args);
+}
+
+// Custom deleter implementations
+void OffCPUBPFDeleter::operator()(struct offcputime_bpf* obj) const {
+    if (obj) {
+        offcputime_bpf__destroy(obj);
+    }
 }
 
 static void print_map(struct offcputime_bpf *obj, struct blazesym *symbolizer)
@@ -186,15 +194,6 @@ static void print_headers()
 // OffCPUTimeCollector implementation
 OffCPUTimeCollector::OffCPUTimeCollector() : obj(nullptr), running(false) {}
 
-OffCPUTimeCollector::~OffCPUTimeCollector() {
-    if (obj) {
-        if (symbolizer) {
-            blazesym_free(symbolizer);
-        }
-        offcputime_bpf__destroy(obj);
-    }
-}
-
 std::string OffCPUTimeCollector::get_name() const {
     return "offcputime";
 }
@@ -209,7 +208,7 @@ bool OffCPUTimeCollector::start() {
 
     libbpf_set_print(libbpf_print_fn);
 
-    obj = offcputime_bpf__open();
+    obj.reset(offcputime_bpf__open());
     if (!obj) {
         fprintf(stderr, "failed to open BPF object\n");
         return false;
@@ -237,7 +236,7 @@ bool OffCPUTimeCollector::start() {
     else
         bpf_program__set_autoload(obj->progs.sched_switch_raw, false);
 
-    err = offcputime_bpf__load(obj);
+    err = offcputime_bpf__load(obj.get());
     if (err) {
         fprintf(stderr, "failed to load BPF programs\n");
         goto cleanup;
@@ -264,13 +263,13 @@ bool OffCPUTimeCollector::start() {
         }
     }
 
-    err = offcputime_bpf__attach(obj);
+    err = offcputime_bpf__attach(obj.get());
     if (err) {
         fprintf(stderr, "failed to attach BPF programs\n");
         goto cleanup;
     }
 
-    symbolizer = blazesym_new();
+    symbolizer.reset(blazesym_new());
     if (!symbolizer) {
         fprintf(stderr, "Failed to create a symbolizer\n");
         goto cleanup;
@@ -280,11 +279,143 @@ bool OffCPUTimeCollector::start() {
     return true;
 
 cleanup:
-    if (obj) {
-        offcputime_bpf__destroy(obj);
-        obj = nullptr;
-    }
+    obj.reset();
     return false;
+}
+
+OffCPUData OffCPUTimeCollector::collect_data() {
+    OffCPUData data;
+    
+    if (!running || !obj) {
+        return data;
+    }
+    
+    struct offcpu_key_t lookup_key = {}, next_key;
+    int err, fd_stackid, fd_info;
+    struct offcpu_val_t val;
+
+    fd_info = bpf_map__fd(obj->maps.info);
+    fd_stackid = bpf_map__fd(obj->maps.stackmap);
+    
+    while (!bpf_map_get_next_key(fd_info, &lookup_key, &next_key)) {
+        err = bpf_map_lookup_elem(fd_info, &next_key, &val);
+        if (err < 0) {
+            fprintf(stderr, "failed to lookup info: %d\n", err);
+            break;
+        }
+        lookup_key = next_key;
+        if (val.delta == 0)
+            continue;
+
+        OffCPUEntry entry;
+        entry.key = next_key;
+        entry.val = val;
+        entry.has_kernel_stack = next_key.kern_stack_id != -1;
+        entry.has_user_stack = next_key.user_stack_id != -1;
+        
+        // Collect stack traces
+        entry.user_stack.resize(env.perf_max_stack_depth);
+        entry.kernel_stack.resize(env.perf_max_stack_depth);
+        
+        if (entry.has_user_stack) {
+            if (bpf_map_lookup_elem(fd_stackid, &next_key.user_stack_id, entry.user_stack.data()) != 0) {
+                entry.has_user_stack = false;
+                entry.user_stack.clear();
+            }
+        }
+        
+        if (entry.has_kernel_stack) {
+            if (bpf_map_lookup_elem(fd_stackid, &next_key.kern_stack_id, entry.kernel_stack.data()) != 0) {
+                entry.has_kernel_stack = false;
+                entry.kernel_stack.clear();
+            }
+        }
+        
+        data.entries.push_back(std::move(entry));
+    }
+    
+    return data;
+}
+
+std::string OffCPUTimeCollector::format_data(const OffCPUData& data) {
+    // For the return value, we just return a summary since the actual output
+    // is printed directly to stdout by the show_stack_trace functions
+    std::ostringstream oss;
+    oss << "Collected " << data.entries.size() << " off-CPU entries";
+    return oss.str();
+}
+
+void OffCPUTimeCollector::print_data(const OffCPUData& data) {
+    if (!symbolizer) {
+        return;
+    }
+    
+    for (const auto& entry : data.entries) {
+        if (env.folded) {
+            /* folded stack output format */
+            printf("%s", entry.val.comm);
+            
+            /* Print user stack first for folded format */
+            if (entry.has_user_stack && !env.kernel_threads_only) {
+                if (entry.user_stack.empty()) {
+                    printf(";[Missed User Stack]");
+                } else {
+                    printf(";");
+                    show_stack_trace_folded(symbolizer.get(), 
+                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
+                        env.perf_max_stack_depth, entry.key.tgid, ';', true);
+                }
+            }
+            
+            /* Then print kernel stack if it exists */
+            if (entry.has_kernel_stack && !env.user_threads_only) {
+                /* Add delimiter between user and kernel stacks if needed */
+                if (entry.has_user_stack && env.delimiter && !env.kernel_threads_only)
+                    printf("-");
+                    
+                if (entry.kernel_stack.empty()) {
+                    printf(";[Missed Kernel Stack]");
+                } else {
+                    printf(";");
+                    show_stack_trace_folded(symbolizer.get(), 
+                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
+                        env.perf_max_stack_depth, 0, ';', true);
+                }
+            }
+            
+            printf(" %lld\n", entry.val.delta);
+        } else {
+            /* standard multi-line output format */
+            if (entry.has_kernel_stack && !env.user_threads_only) {
+                if (entry.kernel_stack.empty()) {
+                    fprintf(stderr, "    [Missed Kernel Stack]\n");
+                } else {
+                    show_stack_trace(symbolizer.get(), 
+                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
+                        env.perf_max_stack_depth, 0);
+                }
+            }
+
+            /* Add delimiter between kernel and user stacks if both exist and delimiter is requested */
+            if (env.delimiter && entry.has_kernel_stack && entry.has_user_stack && 
+                !env.user_threads_only && !env.kernel_threads_only) {
+                printf("    --\n");
+            }
+
+            if (entry.has_user_stack && !env.kernel_threads_only) {
+                if (entry.user_stack.empty()) {
+                    fprintf(stderr, "    [Missed User Stack]\n");
+                } else {
+                    show_stack_trace(symbolizer.get(), 
+                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
+                        env.perf_max_stack_depth, entry.key.tgid);
+                }
+            }
+
+            printf("    %-16s %s (%d)\n", "-", entry.val.comm, entry.key.pid);
+            printf("        %lld\n\n", entry.val.delta);
+        }
+    }
 }
 
 CollectorData OffCPUTimeCollector::get_data() {
@@ -292,11 +423,19 @@ CollectorData OffCPUTimeCollector::get_data() {
         return CollectorData("offcputime", "", false);
     }
     
-    // Simply call the print function directly to stdout
-    // The data will be printed immediately rather than captured
-    print_map(obj, symbolizer);
+    // Print headers first (if not in folded mode)
+    print_headers();
     
-    return CollectorData("offcputime", "OffCPU data printed to stdout", true);
+    // Collect the data from BPF maps
+    OffCPUData data = collect_data();
+    
+    // Print the data directly to stdout
+    print_data(data);
+    
+    // Also format as string for return value
+    std::string formatted = format_data(data);
+    
+    return CollectorData("offcputime", formatted, true);
 }
 
 bool OffCPUTimeCollector::probe_tp_btf(const char *name) {
