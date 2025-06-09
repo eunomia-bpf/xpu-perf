@@ -22,7 +22,7 @@ extern "C" {
 }
 #endif
 
-#include "offcputime.h"
+#include "bpf_event.h"
 #include "../build/offcputime.skel.h"
 #include "arg_parse.h"
 #include "offcputime.hpp"
@@ -196,9 +196,9 @@ OffCPUData OffCPUTimeCollector::collect_data() {
         return data;
     }
     
-    struct offcpu_key_t lookup_key = {}, next_key;
+    struct sample_key_t lookup_key = {}, next_key;
     int err, fd_stackid, fd_info;
-    struct offcpu_val_t val;
+    unsigned long long val;
 
     fd_info = bpf_map__fd(obj->maps.info);
     fd_stackid = bpf_map__fd(obj->maps.stackmap);
@@ -210,7 +210,7 @@ OffCPUData OffCPUTimeCollector::collect_data() {
             break;
         }
         lookup_key = next_key;
-        if (val.delta == 0)
+        if (val == 0)
             continue;
 
         OffCPUEntry entry;
@@ -259,7 +259,7 @@ void OffCPUTimeCollector::print_data(const OffCPUData& data) {
     for (const auto& entry : data.entries) {
         if (env.folded) {
             /* folded stack output format */
-            printf("%s", entry.val.comm);
+            printf("%s", entry.key.comm);
             
             /* Print user stack first for folded format */
             if (entry.has_user_stack && !env.kernel_threads_only) {
@@ -289,7 +289,7 @@ void OffCPUTimeCollector::print_data(const OffCPUData& data) {
                 }
             }
             
-            printf(" %lld\n", entry.val.delta);
+            printf(" %lld\n", entry.val);
         } else {
             /* standard multi-line output format */
             if (entry.has_kernel_stack && !env.user_threads_only) {
@@ -318,8 +318,8 @@ void OffCPUTimeCollector::print_data(const OffCPUData& data) {
                 }
             }
 
-            printf("    %-16s %s (%d)\n", "-", entry.val.comm, entry.key.pid);
-            printf("        %lld\n\n", entry.val.delta);
+            printf("    %-16s %s (%d)\n", "-", entry.key.comm, entry.key.pid);
+            printf("        %lld\n\n", entry.val);
         }
     }
 }

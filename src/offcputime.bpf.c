@@ -4,7 +4,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
-#include "offcputime.h"
+#include "bpf_event.h"
 
 #define PF_KTHREAD		0x00200000	/* I am a kernel thread */
 #define MAX_ENTRIES		10240
@@ -19,7 +19,7 @@ const volatile long state = -1;
 
 struct internal_key {
 	u64 start_ts;
-	struct offcpu_key_t key;
+	struct sample_key_t key;
 };
 
 struct {
@@ -36,8 +36,8 @@ struct {
 
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
-	__type(key, struct offcpu_key_t);
-	__type(value, struct offcpu_val_t);
+	__type(key, struct sample_key_t);
+	__type(value, unsigned long long);
 	__uint(max_entries, MAX_ENTRIES);
 } info SEC(".maps");
 
@@ -100,7 +100,7 @@ static bool allow_record(struct task_struct *t)
 static int handle_sched_switch(void *ctx, bool preempt, struct task_struct *prev, struct task_struct *next)
 {
 	struct internal_key *i_keyp, i_key;
-	struct offcpu_val_t *valp, val;
+	unsigned long long *valp;
 	s64 delta;
 	u32 pid;
 
@@ -118,10 +118,10 @@ static int handle_sched_switch(void *ctx, bool preempt, struct task_struct *prev
 		else
 			i_key.key.user_stack_id = bpf_get_stackid(ctx, &stackmap, BPF_F_USER_STACK);
 		i_key.key.kern_stack_id = bpf_get_stackid(ctx, &stackmap, 0);
+		bpf_probe_read_kernel_str(&i_key.key.comm, sizeof(prev->comm), BPF_CORE_READ(prev, comm));
 		bpf_map_update_elem(&start, &pid, &i_key, 0);
-		bpf_probe_read_kernel_str(&val.comm, sizeof(prev->comm), BPF_CORE_READ(prev, comm));
-		val.delta = 0;
-		bpf_map_update_elem(&info, &i_key.key, &val, BPF_NOEXIST);
+		delta = 0;
+		bpf_map_update_elem(&info, &i_key.key, &delta, BPF_NOEXIST);
 	}
 
 	pid = BPF_CORE_READ(next, pid);
@@ -137,7 +137,7 @@ static int handle_sched_switch(void *ctx, bool preempt, struct task_struct *prev
 	valp = bpf_map_lookup_elem(&info, &i_keyp->key);
 	if (!valp)
 		goto cleanup;
-	__sync_fetch_and_add(&valp->delta, delta);
+	__sync_fetch_and_add(valp, delta);
 
 cleanup:
 	bpf_map_delete_elem(&start, &pid);

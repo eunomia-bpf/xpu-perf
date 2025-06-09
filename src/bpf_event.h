@@ -5,16 +5,15 @@
 #define TASK_COMM_LEN		16
 #define MAX_PID_NR		30
 #define MAX_TID_NR		30
+#define MAX_ENTRIES		10240
+#define MAX_CPU_NR		128
 
-struct offcpu_key_t {
+
+struct sample_key_t {
 	unsigned int pid;
 	unsigned int tgid;
 	int user_stack_id;
 	int kern_stack_id;
-};
-
-struct offcpu_val_t {
-	unsigned long long delta;
 	char comm[TASK_COMM_LEN];
 };
 

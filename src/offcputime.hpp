@@ -2,7 +2,7 @@
 #define __OFFCPUTIME_HPP
 
 #include "collector_interface.hpp"
-#include "offcputime.h"
+#include "bpf_event.h"
 #include "arg_parse.h"
 #include "utils.hpp"
 #include <memory>
@@ -25,8 +25,8 @@ struct blazesym;
 
 // Data structure for collected off-CPU data
 struct OffCPUEntry {
-    struct offcpu_key_t key;
-    struct offcpu_val_t val;
+    struct sample_key_t key;
+    unsigned long long val;
     std::vector<unsigned long> user_stack;
     std::vector<unsigned long> kernel_stack;
     bool has_user_stack;

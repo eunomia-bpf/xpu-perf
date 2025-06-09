@@ -7,6 +7,7 @@
 #include "utils.hpp"
 #include <memory>
 #include <vector>
+#include "bpf_event.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,7 +29,7 @@ struct blazesym;
 
 // Data structure for collected profile data
 struct ProfileEntry {
-    struct profile_key_t key;
+    struct sample_key_t key;
     __u64 count;
     std::vector<unsigned long> user_stack;
     std::vector<unsigned long> kernel_stack;

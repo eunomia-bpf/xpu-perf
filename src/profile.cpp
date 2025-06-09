@@ -24,6 +24,7 @@ extern "C" {
 #include <bpf/bpf.h>
 #include <sys/stat.h>
 #include <string.h>
+#include "bpf_event.h"
 
 #ifdef __cplusplus
 }
@@ -54,9 +55,9 @@ extern "C" {
 #define MISSING_STACKS(ustack_id, kstack_id)	\
 	(!env.user_stacks_only && STACK_ID_ERR(kstack_id)) + (!env.kernel_stacks_only && STACK_ID_ERR(ustack_id))
 
-/* This structure combines profile_key_t and count which should be sorted together */
+/* This structure combines sample_key_t and count which should be sorted together */
 struct key_ext_t {
-	struct profile_key_t k;
+	struct sample_key_t k;
 	__u64 v;
 };
 
@@ -94,8 +95,8 @@ static int cmp_counts(const void *a, const void *b)
 
 static int read_counts_map(int fd, struct key_ext_t *items, __u32 *count)
 {
-	struct profile_key_t empty = {};
-	struct profile_key_t *lookup_key = &empty;
+	struct sample_key_t empty = {};
+	struct sample_key_t *lookup_key = &empty;
 	int i = 0;
 	int err;
 
@@ -117,7 +118,7 @@ static int read_counts_map(int fd, struct key_ext_t *items, __u32 *count)
 	return 0;
 }
 
-static int print_count(struct profile_key_t *event, __u64 count, int stack_map, struct blazesym *symbolizer)
+static int print_count(struct sample_key_t *event, __u64 count, int stack_map, struct blazesym *symbolizer)
 {
 	unsigned long *ip;
 	bool has_kernel_stack, has_user_stack;
@@ -156,11 +157,11 @@ static int print_count(struct profile_key_t *event, __u64 count, int stack_map, 
 			}
 		}
 
-		printf("    %-16s %s (%d)\n", "-", event->name, event->pid);
+		printf("    %-16s %s (%d)\n", "-", event->comm, event->pid);
 		printf("        %lld\n", count);
 	} else {
 		/* folded stack output */
-		printf("%s", event->name);
+		printf("%s", event->comm);
 		
 		/* Print user stack first for folded format */
 		if (has_user_stack && !env.kernel_stacks_only) {
@@ -197,7 +198,7 @@ static int print_count(struct profile_key_t *event, __u64 count, int stack_map, 
 static int print_counts(int counts_map, int stack_map, struct blazesym *symbolizer)
 {
 	struct key_ext_t *counts;
-	struct profile_key_t *event;
+	struct sample_key_t *event;
 	__u64 count;
 	__u32 nr_count = MAX_ENTRIES;
 	size_t nr_missing_stacks = 0;
@@ -380,8 +381,8 @@ ProfileData ProfileCollector::collect_data() {
         return data;
     }
     
-    struct profile_key_t empty = {};
-    struct profile_key_t *lookup_key = &empty;
+    struct sample_key_t empty = {};
+    struct sample_key_t *lookup_key = &empty;
     __u64 count;
     int err;
     int counts_fd = bpf_map__fd(obj->maps.counts);
@@ -390,7 +391,7 @@ ProfileData ProfileCollector::collect_data() {
     // Collect all entries from the counts map
     std::vector<key_ext_t> items;
     
-    struct profile_key_t key;
+    struct sample_key_t key;
     while (bpf_map_get_next_key(counts_fd, lookup_key, &key) == 0) {
         err = bpf_map_lookup_elem(counts_fd, &key, &count);
         if (err < 0) {
@@ -491,11 +492,11 @@ void ProfileCollector::print_data(const ProfileData& data) {
                 }
             }
 
-            printf("    %-16s %s (%d)\n", "-", entry.key.name, entry.key.pid);
+            printf("    %-16s %s (%d)\n", "-", entry.key.comm, entry.key.pid);
             printf("        %lld\n", entry.count);
         } else {
             /* folded stack output */
-            printf("%s", entry.key.name);
+            printf("%s", entry.key.comm);
             
             /* Print user stack first for folded format */
             if (entry.has_user_stack && !env.kernel_stacks_only) {
