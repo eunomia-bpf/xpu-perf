@@ -12,29 +12,24 @@ extern "C" {
 #endif
 
 #include <argp.h>
-#include <signal.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <unistd.h>
-#include <time.h>
 #include <linux/perf_event.h>
 #include <asm/unistd.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <sys/stat.h>
-#include <string.h>
-#include "bpf_event.h"
 
 #ifdef __cplusplus
 }
 #endif
 
-#include "profile.h"
-#include "../build/profile.skel.h"
+#include "collectors/sampling_printer.hpp"
+
+#include "profile.skel.h"
 #include "profile.hpp"
-#include "utils.hpp"
-#include <sstream>
+#include "collectors/utils.hpp"
 #include <algorithm>
 
 #define SYM_INFO_LEN			2048

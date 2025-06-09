@@ -22,10 +22,11 @@ extern "C" {
 }
 #endif
 
-#include "bpf_event.h"
-#include "../build/offcputime.skel.h"
+#include "collectors/bpf_event.h"
+#include "offcputime.skel.h"
 #include "offcputime.hpp"
-#include "utils.hpp"
+#include "collectors/utils.hpp"
+#include "collectors/sampling_printer.hpp"
 #include <sstream>
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)

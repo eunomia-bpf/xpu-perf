@@ -137,15 +137,14 @@ function(compile_bpf_program bpf_source)
 endfunction()
 
 # Compile BPF programs
-compile_bpf_program(offcputime.bpf.c)
-compile_bpf_program(profile.bpf.c)
+compile_bpf_program(collectors/offcpu/offcputime.bpf.c)
+compile_bpf_program(collectors/oncpu/profile.bpf.c)
 
 # Create the main executable using proper CMake way
 add_executable(profiler
     src/main.cpp
-    src/profile.cpp
-    src/offcputime.cpp
-    src/utils.cpp
+    src/collectors/oncpu/profile.cpp
+    src/collectors/offcpu/offcputime.cpp
 )
 
 # Set C++ standard for the target
@@ -159,6 +158,7 @@ target_include_directories(profiler PRIVATE
     ${OUTPUT_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/libbpf/include/uapi
     ${CMAKE_CURRENT_SOURCE_DIR}/vmlinux/${ARCH}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 # Add dependencies to ensure BPF skeletons and libraries are built first

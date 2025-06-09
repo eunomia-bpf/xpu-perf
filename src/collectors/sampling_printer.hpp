@@ -1,12 +1,13 @@
-#ifndef __SAMPLING_COMMON_HPP
-#define __SAMPLING_COMMON_HPP
+#ifndef __SAMPLING_PRINTER_HPP
+#define __SAMPLING_PRINTER_HPP
 
-#include "utils.hpp"
-#include "config.hpp"
-#include "bpf_event.h"
+#include "collectors/utils.hpp"
+#include "collectors/config.hpp"
+#include "collectors/bpf_event.h"
 #include <memory>
 #include <vector>
 #include <sstream>
+#include "collectors/sampling_data.hpp"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,30 +22,15 @@ extern "C" {
 
 // Forward declarations
 struct blazesym;
-
-// Unified data structure for collected sampling data (works for both profile and offcpu)
-struct SamplingEntry {
-    struct sample_key_t key;
-    __u64 value;  // Can be count (for profile) or delta time (for offcpu)
-    std::vector<unsigned long> user_stack;
-    std::vector<unsigned long> kernel_stack;
-    bool has_user_stack;
-    bool has_kernel_stack;
-};
-
-struct SamplingData {
-    std::vector<SamplingEntry> entries;
-};
-
 // Common print functions for sampling data
 class SamplingPrinter {
 public:
-    static void print_data(const SamplingData& data, struct blazesym* symbolizer, const Config& config, const std::string& value_label = "");
-    static std::string format_data(const SamplingData& data, const std::string& tool_name);
+    static inline void print_data(const SamplingData& data, struct blazesym* symbolizer, const Config& config, const std::string& value_label = "");
+    static inline std::string format_data(const SamplingData& data, const std::string& tool_name);
     
 private:
-    static void print_entry_multiline(const SamplingEntry& entry, struct blazesym* symbolizer, const Config& config, const std::string& value_label);
-    static void print_entry_folded(const SamplingEntry& entry, struct blazesym* symbolizer, const Config& config);
+    static inline void print_entry_multiline(const SamplingEntry& entry, struct blazesym* symbolizer, const Config& config, const std::string& value_label);
+    static inline void print_entry_folded(const SamplingEntry& entry, struct blazesym* symbolizer, const Config& config);
 };
 
 // Implementation
@@ -147,4 +133,4 @@ inline void SamplingPrinter::print_entry_folded(const SamplingEntry& entry, stru
     printf(" %lld\n", entry.value);
 }
 
-#endif /* __SAMPLING_COMMON_HPP */ 
+#endif /* __SAMPLING_PRINTER_HPP */ 

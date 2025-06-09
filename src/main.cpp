@@ -5,9 +5,9 @@
 #include <string.h>
 #include <cstdlib>
 
-#include "collector_interface.hpp"
-#include "profile.hpp"
-#include "offcputime.hpp"
+#include "collectors/collector_interface.hpp"
+#include "collectors/oncpu/profile.hpp"
+#include "collectors/offcpu/offcputime.hpp"
 
 static volatile bool running = true;
 

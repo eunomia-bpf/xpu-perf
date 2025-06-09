@@ -1,8 +1,13 @@
+.PHONY: build clean install
+
+all: build
+
 build:
-	make -C src
+	cmake -B build
+	cmake --build build
 
 clean:
-	make -C src clean
+	rm -rf build
 
 install:
 	sudo apt update

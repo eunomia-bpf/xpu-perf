@@ -1,14 +1,15 @@
 #ifndef __PROFILE_HPP
 #define __PROFILE_HPP
 
-#include "collector_interface.hpp"
+#include "collectors/collector_interface.hpp"
 #include "profile.h"
-#include "config.hpp"
-#include "utils.hpp"
-#include "sampling_common.hpp"
+#include "collectors/config.hpp"
+#include "collectors/utils.hpp"
+#include "collectors/sampling_data.hpp"
 #include <memory>
 #include <vector>
-#include "bpf_event.h"
+#include <stdexcept>
+#include "collectors/bpf_event.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,6 +19,7 @@ extern "C" {
 #include <bpf/bpf.h>
 #include <linux/perf_event.h>
 #include <asm/unistd.h>
+#include <limits.h>
 
 #ifdef __cplusplus
 }
@@ -27,6 +29,63 @@ extern "C" {
 struct profile_bpf;
 struct bpf_link;
 struct blazesym;
+
+// Profile specific configuration
+class ProfileConfig : public Config {
+public:
+    bool freq;
+    int sample_freq;
+    bool include_idle;
+
+    ProfileConfig() : Config() {
+        // Profile specific defaults
+        duration = INT_MAX;
+        freq = true;
+        sample_freq = 49;
+        include_idle = false;
+        
+        // Validate configuration
+        validate();
+    }
+
+    // Set configuration values with validation
+    void set_sample_freq(int freq_val) {
+        sample_freq = freq_val;
+        validate();
+    }
+
+    void set_include_idle(bool value) {
+        include_idle = value;
+        validate();
+    }
+
+    void set_user_stacks_only(bool value) {
+        user_stacks_only = value;
+        validate();
+    }
+
+    void set_kernel_stacks_only(bool value) {
+        kernel_stacks_only = value;
+        validate();
+    }
+
+    void set_cpu(int c) {
+        cpu = c;
+        validate();
+    }
+
+protected:
+    void validate() override {
+        Config::validate(); // Call base validation
+        
+        if (user_stacks_only && kernel_stacks_only) {
+            throw std::invalid_argument("user_stacks_only and kernel_stacks_only cannot be used together");
+        }
+        if (sample_freq <= 0) {
+            throw std::invalid_argument("sample_freq must be positive");
+        }
+    }
+};
 
 // Use unified data structures from sampling_common.hpp
 using ProfileData = SamplingData;
