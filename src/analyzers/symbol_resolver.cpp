@@ -1,4 +1,6 @@
 #include "symbol_resolver.hpp"
+#include "collectors/sampling_data.hpp"
+#include <sstream>
 #include <cstring>
 #include <algorithm>
 
@@ -11,14 +13,6 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-
-struct BlazesymDeleter {
-    void operator()(struct blazesym* sym) {
-        if (sym) {
-            blazesym_free(sym);
-        }
-    }
-};
 
 SymbolResolver::SymbolResolver() 
     : symbolizer_(blazesym_new()) {

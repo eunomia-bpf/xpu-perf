@@ -61,17 +61,23 @@ int main(int argc, char **argv)
     std::unique_ptr<IAnalyzer> analyzer;
     
     if (analyzer_type == "profile") {
-        auto profile_analyzer = std::make_unique<ProfileAnalyzer>();
-        profile_analyzer->get_config().duration = duration;
-        analyzer = std::move(profile_analyzer);
+        analyzer = std::make_unique<ProfileAnalyzer>();
+        auto* profile_analyzer = dynamic_cast<ProfileAnalyzer*>(analyzer.get());
+        if (profile_analyzer) {
+            profile_analyzer->get_config().duration = duration;
+        }
     } else if (analyzer_type == "offcputime") {
-        auto offcpu_analyzer = std::make_unique<OffCPUTimeAnalyzer>();
-        offcpu_analyzer->get_config().duration = duration;
-        analyzer = std::move(offcpu_analyzer);
+        analyzer = std::make_unique<OffCPUTimeAnalyzer>();
+        auto* offcpu_analyzer = dynamic_cast<OffCPUTimeAnalyzer*>(analyzer.get());
+        if (offcpu_analyzer) {
+            offcpu_analyzer->get_config().duration = duration;
+        }
     } else if (analyzer_type == "wallclock") {
-        auto wallclock_analyzer = std::make_unique<WallClockAnalyzer>();
-        wallclock_analyzer->configure(duration);  // Use default values for other parameters
-        analyzer = std::move(wallclock_analyzer);
+        analyzer = std::make_unique<WallClockAnalyzer>();
+        auto* wallclock_analyzer = dynamic_cast<WallClockAnalyzer*>(analyzer.get());
+        if (wallclock_analyzer) {
+            wallclock_analyzer->configure(duration);  // Use default values for other parameters
+        }
     } else {
         fprintf(stderr, "Unknown analyzer type: %s\n", analyzer_type.c_str());
         print_usage(argv[0]);

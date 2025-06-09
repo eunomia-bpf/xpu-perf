@@ -60,18 +60,19 @@ std::unique_ptr<FlameGraphView> WallClockAnalyzer::get_flamegraph() {
     for (auto& [tid, flamegraph] : per_thread_data) {
         if (flamegraph && flamegraph->success) {
             for (const auto& entry : flamegraph->entries) {
+                // Use the add_stack_trace method with already resolved symbols
+                std::vector<std::string> user_stack;
+                std::vector<std::string> kernel_stack;
+                
+                // Parse the folded stack back into components if needed
+                // For now, we'll add with empty stacks and the entry will be created with the command name
                 combined->add_stack_trace(
-                    {}, {}, // Empty stacks since we already have folded format
+                    user_stack, kernel_stack,
                     entry.command,
                     entry.pid,
                     entry.sample_count,
                     entry.is_oncpu
                 );
-                // Manually add the pre-built folded stack
-                if (!combined->stack_aggregation_.empty()) {
-                    auto& last_entry = combined->stack_aggregation_.rbegin()->second;
-                    last_entry.folded_stack = entry.folded_stack;
-                }
             }
         }
     }

@@ -2,7 +2,7 @@
 #define __PROFILE_HPP
 
 #include "collectors/collector_interface.hpp"
-#include "profile.h"
+#include "profile.skel.h"
 #include "collectors/config.hpp"
 #include "collectors/utils.hpp"
 #include "collectors/sampling_data.hpp"
