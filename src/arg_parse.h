@@ -2,6 +2,10 @@
 #ifndef __ARG_PARSE_H
 #define __ARG_PARSE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <argp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -11,6 +15,11 @@
 #include <time.h>
 #include <errno.h>
 #include <limits.h>
+
+#ifdef __cplusplus
+}
+#endif
+
 #include "common.h"
 
 #define OPT_PERF_MAX_STACK_DEPTH	1 /* --perf-max-stack-depth */
@@ -49,7 +58,7 @@ static struct common_env env = {
 	.stack_storage_size = 1024,
 	.perf_max_stack_depth = 127,
 	.min_block_time = 1,
-	.max_block_time = -1,
+	.max_block_time = static_cast<__u64>(-1),
 	.state = -1,
 	.duration = 99999999,
 	.freq = 1,

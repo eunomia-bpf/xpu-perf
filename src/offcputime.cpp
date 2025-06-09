@@ -3,6 +3,11 @@
 //
 // Based on offcputime(8) from BCC by Brendan Gregg.
 // 19-Mar-2021   Wenbo Zhang   Created this.
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <argp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -12,9 +17,13 @@
 #include <time.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+
+#ifdef __cplusplus
+}
+#endif
+
 #include "offcputime.h"
 #include "offcputime.skel.h"
-#include "blazesym.h"
 #include "arg_parse.h"
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
@@ -32,14 +41,14 @@ static struct blazesym *symbolizer;
 
 static void print_map(struct offcputime_bpf *obj)
 {
-	struct key_t lookup_key = {}, next_key;
+	struct offcpu_key_t lookup_key = {}, next_key;
 	int err, fd_stackid, fd_info;
 	unsigned long *ip;
-	struct val_t val;
+	struct offcpu_val_t val;
 	int idx;
 	bool has_kernel_stack, has_user_stack;
 
-	ip = calloc(env.perf_max_stack_depth, sizeof(*ip));
+	ip = static_cast<unsigned long*>(calloc(env.perf_max_stack_depth, sizeof(*ip)));
 	if (!ip) {
 		fprintf(stderr, "failed to alloc ip\n");
 		return;
@@ -72,7 +81,7 @@ static void print_map(struct offcputime_bpf *obj)
 					printf(";[Missed User Stack]");
 				} else {
 					printf(";");
-					show_stack_trace_folded(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, next_key.tgid, ';', true);
+					show_stack_trace_folded(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, next_key.tgid, ';', true);
 				}
 			}
 			
@@ -86,7 +95,7 @@ static void print_map(struct offcputime_bpf *obj)
 					printf(";[Missed Kernel Stack]");
 				} else {
 					printf(";");
-					show_stack_trace_folded(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, 0, ';', true);
+					show_stack_trace_folded(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, 0, ';', true);
 				}
 			}
 			
@@ -97,7 +106,7 @@ static void print_map(struct offcputime_bpf *obj)
 				if (bpf_map_lookup_elem(fd_stackid, &next_key.kern_stack_id, ip) != 0) {
 					fprintf(stderr, "    [Missed Kernel Stack]\n");
 				} else {
-					show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, 0);
+					show_stack_trace(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, 0);
 				}
 			}
 
@@ -111,7 +120,7 @@ static void print_map(struct offcputime_bpf *obj)
 				if (bpf_map_lookup_elem(fd_stackid, &next_key.user_stack_id, ip) != 0) {
 					fprintf(stderr, "    [Missed User Stack]\n");
 				} else {
-					show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, next_key.tgid);
+					show_stack_trace(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, next_key.tgid);
 				}
 			}
 
@@ -277,4 +286,4 @@ cleanup:
 	offcputime_bpf__destroy(obj);
 
 	return err != 0;
-}
+} 

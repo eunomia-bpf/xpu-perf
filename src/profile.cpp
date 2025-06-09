@@ -6,6 +6,11 @@
  * Based on profile from BCC by Brendan Gregg and others.
  * 28-Dec-2021   Eunseon Lee   Created this.
  */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <argp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -19,9 +24,13 @@
 #include <bpf/bpf.h>
 #include <sys/stat.h>
 #include <string.h>
+
+#ifdef __cplusplus
+}
+#endif
+
 #include "profile.h"
 #include "profile.skel.h"
-#include "blazesym.h"
 #include "arg_parse.h"
 
 #define SYM_INFO_LEN			2048
@@ -41,9 +50,9 @@
 #define MISSING_STACKS(ustack_id, kstack_id)	\
 	(!env.user_stacks_only && STACK_ID_ERR(kstack_id)) + (!env.kernel_stacks_only && STACK_ID_ERR(ustack_id))
 
-/* This structure combines key_t and count which should be sorted together */
+/* This structure combines profile_key_t and count which should be sorted together */
 struct key_ext_t {
-	struct key_t k;
+	struct profile_key_t k;
 	__u64 v;
 };
 
@@ -56,9 +65,9 @@ static int open_and_attach_perf_event(struct bpf_program *prog,
 {
 	struct perf_event_attr attr = {
 		.type = PERF_TYPE_SOFTWARE,
-		.freq = env.freq,
-		.sample_freq = env.sample_freq,
 		.config = PERF_COUNT_SW_CPU_CLOCK,
+		.sample_freq = static_cast<__u64>(env.sample_freq),
+		.freq = env.freq,
 	};
 	int i, fd;
 
@@ -104,8 +113,8 @@ static void sig_handler(int sig)
 
 static int cmp_counts(const void *a, const void *b)
 {
-	const __u64 x = ((struct key_ext_t *) a)->v;
-	const __u64 y = ((struct key_ext_t *) b)->v;
+	const __u64 x = (static_cast<const struct key_ext_t *>(a))->v;
+	const __u64 y = (static_cast<const struct key_ext_t *>(b))->v;
 
 	/* descending order */
 	return y - x;
@@ -113,8 +122,8 @@ static int cmp_counts(const void *a, const void *b)
 
 static int read_counts_map(int fd, struct key_ext_t *items, __u32 *count)
 {
-	struct key_t empty = {};
-	struct key_t *lookup_key = &empty;
+	struct profile_key_t empty = {};
+	struct profile_key_t *lookup_key = &empty;
 	int i = 0;
 	int err;
 
@@ -136,13 +145,13 @@ static int read_counts_map(int fd, struct key_ext_t *items, __u32 *count)
 	return 0;
 }
 
-static int print_count(struct key_t *event, __u64 count, int stack_map)
+static int print_count(struct profile_key_t *event, __u64 count, int stack_map)
 {
 	unsigned long *ip;
 	int ret;
 	bool has_kernel_stack, has_user_stack;
 
-	ip = calloc(env.perf_max_stack_depth, sizeof(unsigned long));
+	ip = static_cast<unsigned long*>(calloc(env.perf_max_stack_depth, sizeof(unsigned long)));
 	if (!ip) {
 		fprintf(stderr, "failed to alloc ip\n");
 		return -ENOMEM;
@@ -158,7 +167,7 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 			if (bpf_map_lookup_elem(stack_map, &event->kern_stack_id, ip) != 0) {
 				fprintf(stderr, "    [Missed Kernel Stack]\n");
 			} else {
-				show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, 0);
+				show_stack_trace(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, 0);
 			}
 		}
 
@@ -172,7 +181,7 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 			if (bpf_map_lookup_elem(stack_map, &event->user_stack_id, ip) != 0) {
 				fprintf(stderr, "    [Missed User Stack]\n");
 			} else {
-				show_stack_trace(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, event->pid);
+				show_stack_trace(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, event->pid);
 			}
 		}
 
@@ -188,7 +197,7 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 				printf(";[Missed User Stack]");
 			} else {
 				printf(";");
-				show_stack_trace_folded(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, event->pid, ';', true);
+				show_stack_trace_folded(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, event->pid, ';', true);
 			}
 		}
 		
@@ -202,7 +211,7 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 				printf(";[Missed Kernel Stack]");
 			} else {
 				printf(";");
-				show_stack_trace_folded(symbolizer, (__u64 *)ip, env.perf_max_stack_depth, 0, ';', true);
+				show_stack_trace_folded(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, 0, ';', true);
 			}
 		}
 		
@@ -217,14 +226,14 @@ static int print_count(struct key_t *event, __u64 count, int stack_map)
 static int print_counts(int counts_map, int stack_map)
 {
 	struct key_ext_t *counts;
-	struct key_t *event;
+	struct profile_key_t *event;
 	__u64 count;
 	__u32 nr_count = MAX_ENTRIES;
 	size_t nr_missing_stacks = 0;
 	bool has_collision = false;
 	int i, ret = 0;
 
-	counts = calloc(MAX_ENTRIES, sizeof(struct key_ext_t));
+	counts = static_cast<struct key_ext_t*>(calloc(MAX_ENTRIES, sizeof(struct key_ext_t)));
 	if (!counts) {
 		fprintf(stderr, "Out of memory\n");
 		return -ENOMEM;
@@ -236,14 +245,14 @@ static int print_counts(int counts_map, int stack_map)
 
 	qsort(counts, nr_count, sizeof(struct key_ext_t), cmp_counts);
 
-	for (i = 0; i < nr_count; i++) {
+	for (i = 0; i < static_cast<int>(nr_count); i++) {
 		event = &counts[i].k;
 		count = counts[i].v;
 
 		print_count(event, count, stack_map);
 		
 		/* Add a newline between stack traces for better readability */
-		if (!env.folded && i < nr_count - 1)
+		if (!env.folded && i < static_cast<int>(nr_count) - 1)
 			printf("\n");
 
 		/* handle stack id errors */
@@ -411,4 +420,4 @@ cleanup:
 	profile_bpf__destroy(obj);
 
 	return err != 0;
-}
+} 

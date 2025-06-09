@@ -6,14 +6,14 @@
 #define MAX_PID_NR		30
 #define MAX_TID_NR		30
 
-struct key_t {
+struct offcpu_key_t {
 	__u32 pid;
 	__u32 tgid;
 	int user_stack_id;
 	int kern_stack_id;
 };
 
-struct val_t {
+struct offcpu_val_t {
 	__u64 delta;
 	char comm[TASK_COMM_LEN];
 };

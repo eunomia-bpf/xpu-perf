@@ -27,7 +27,7 @@ struct {
 
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
-	__type(key, struct key_t);
+	__type(key, struct profile_key_t);
 	__type(value, u64);
 	__uint(max_entries, MAX_ENTRIES);
 } counts SEC(".maps");
@@ -85,7 +85,7 @@ int do_perf_event(struct bpf_perf_event_data *ctx)
 {
 	u64 *valp;
 	static const u64 zero;
-	struct key_t key = {};
+	struct profile_key_t key = {};
 	u64 id;
 	u32 pid;
 	u32 tid;

@@ -19,7 +19,7 @@ const volatile long state = -1;
 
 struct internal_key {
 	u64 start_ts;
-	struct key_t key;
+	struct offcpu_key_t key;
 };
 
 struct {
@@ -36,8 +36,8 @@ struct {
 
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
-	__type(key, struct key_t);
-	__type(value, struct val_t);
+	__type(key, struct offcpu_key_t);
+	__type(value, struct offcpu_val_t);
 	__uint(max_entries, MAX_ENTRIES);
 } info SEC(".maps");
 
@@ -100,7 +100,7 @@ static bool allow_record(struct task_struct *t)
 static int handle_sched_switch(void *ctx, bool preempt, struct task_struct *prev, struct task_struct *next)
 {
 	struct internal_key *i_keyp, i_key;
-	struct val_t *valp, val;
+	struct offcpu_val_t *valp, val;
 	s64 delta;
 	u32 pid;
 
