@@ -25,6 +25,8 @@ extern "C" {
 #include "offcputime.h"
 #include "offcputime.skel.h"
 #include "arg_parse.h"
+#include "collector_interface.hpp"
+#include <sstream>
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
@@ -187,12 +189,156 @@ static void print_headers()
 		printf("... Hit Ctrl-C to end.\n");
 }
 
+class OffCPUTimeCollector : public ICollector {
+private:
+    struct offcputime_bpf *obj;
+    bool running;
+    
+public:
+    OffCPUTimeCollector() : obj(nullptr), running(false) {}
+    
+    ~OffCPUTimeCollector() {
+        if (obj) {
+            blazesym_free(symbolizer);
+            offcputime_bpf__destroy(obj);
+        }
+    }
+    
+    std::string get_name() const override {
+        return "offcputime";
+    }
+    
+    bool start() override {
+        if (running) {
+            return true;
+        }
+        
+        int err, i;
+        __u8 val = 0;
+
+        libbpf_set_print(libbpf_print_fn);
+
+        obj = offcputime_bpf__open();
+        if (!obj) {
+            fprintf(stderr, "failed to open BPF object\n");
+            return false;
+        }
+
+        /* initialize global data (filtering options) */
+        obj->rodata->user_threads_only = env.user_threads_only;
+        obj->rodata->kernel_threads_only = env.kernel_threads_only;
+        obj->rodata->state = env.state;
+        obj->rodata->min_block_ns = env.min_block_time;
+        obj->rodata->max_block_ns = env.max_block_time;
+
+        /* User space PID and TID correspond to TGID and PID in the kernel, respectively */
+        if (env.pids[0])
+            obj->rodata->filter_by_tgid = true;
+        if (env.tids[0])
+            obj->rodata->filter_by_pid = true;
+
+        bpf_map__set_value_size(obj->maps.stackmap,
+                    env.perf_max_stack_depth * sizeof(unsigned long));
+        bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
+
+        if (!probe_tp_btf("sched_switch"))
+            bpf_program__set_autoload(obj->progs.sched_switch, false);
+        else
+            bpf_program__set_autoload(obj->progs.sched_switch_raw, false);
+
+        err = offcputime_bpf__load(obj);
+        if (err) {
+            fprintf(stderr, "failed to load BPF programs\n");
+            goto cleanup;
+        }
+
+        if (env.pids[0]) {
+            /* User pids_fd points to the tgids map in the BPF program */
+            int pids_fd = bpf_map__fd(obj->maps.tgids);
+            for (i = 0; i < MAX_PID_NR && env.pids[i]; i++) {
+                if (bpf_map_update_elem(pids_fd, &(env.pids[i]), &val, BPF_ANY) != 0) {
+                    fprintf(stderr, "failed to init pids map: %s\n", strerror(errno));
+                    goto cleanup;
+                }
+            }
+        }
+        if (env.tids[0]) {
+            /* User tids_fd points to the pids map in the BPF program */
+            int tids_fd = bpf_map__fd(obj->maps.pids);
+            for (i = 0; i < MAX_TID_NR && env.tids[i]; i++) {
+                if (bpf_map_update_elem(tids_fd, &(env.tids[i]), &val, BPF_ANY) != 0) {
+                    fprintf(stderr, "failed to init tids map: %s\n", strerror(errno));
+                    goto cleanup;
+                }
+            }
+        }
+
+        err = offcputime_bpf__attach(obj);
+        if (err) {
+            fprintf(stderr, "failed to attach BPF programs\n");
+            goto cleanup;
+        }
+
+        symbolizer = blazesym_new();
+        if (!symbolizer) {
+            fprintf(stderr, "Failed to create a symbolizer\n");
+            goto cleanup;
+        }
+
+        running = true;
+        return true;
+
+cleanup:
+        if (obj) {
+            offcputime_bpf__destroy(obj);
+            obj = nullptr;
+        }
+        return false;
+    }
+    
+    CollectorData get_data() override {
+        if (!running || !obj) {
+            return CollectorData("offcputime", "", false);
+        }
+        
+        // Capture output to string
+        std::ostringstream output;
+        FILE* old_stdout = stdout;
+        
+        // Create a pipe to capture stdout
+        int pipefd[2];
+        if (pipe(pipefd) == -1) {
+            return CollectorData("offcputime", "Failed to create pipe", false);
+        }
+        
+        // Redirect stdout to pipe
+        fflush(stdout);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+        
+        // Print data
+        print_map(obj);
+        
+        // Restore stdout
+        fflush(stdout);
+        dup2(fileno(old_stdout), STDOUT_FILENO);
+        
+        // Read from pipe
+        char buffer[4096];
+        std::string result;
+        ssize_t count;
+        while ((count = read(pipefd[0], buffer, sizeof(buffer))) > 0) {
+            result.append(buffer, count);
+        }
+        close(pipefd[0]);
+        
+        return CollectorData("offcputime", result, true);
+    }
+};
+
 int main(int argc, char **argv)
 {
-	struct offcputime_bpf *obj;
-	int pids_fd, tids_fd;
-	int err, i;
-	__u8 val = 0;
+	int err;
 
 	err = parse_common_args(argc, argv, TOOL_OFFCPUTIME);
 	if (err)
@@ -202,74 +348,11 @@ int main(int argc, char **argv)
 	if (err)
 		return err;
 
-	libbpf_set_print(libbpf_print_fn);
-
-	obj = offcputime_bpf__open();
-	if (!obj) {
-		fprintf(stderr, "failed to open BPF object\n");
+	OffCPUTimeCollector collector;
+	
+	if (!collector.start()) {
+		fprintf(stderr, "Failed to start offcputime collector\n");
 		return 1;
-	}
-
-	/* initialize global data (filtering options) */
-	obj->rodata->user_threads_only = env.user_threads_only;
-	obj->rodata->kernel_threads_only = env.kernel_threads_only;
-	obj->rodata->state = env.state;
-	obj->rodata->min_block_ns = env.min_block_time;
-	obj->rodata->max_block_ns = env.max_block_time;
-
-	/* User space PID and TID correspond to TGID and PID in the kernel, respectively */
-	if (env.pids[0])
-		obj->rodata->filter_by_tgid = true;
-	if (env.tids[0])
-		obj->rodata->filter_by_pid = true;
-
-	bpf_map__set_value_size(obj->maps.stackmap,
-				env.perf_max_stack_depth * sizeof(unsigned long));
-	bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
-
-	if (!probe_tp_btf("sched_switch"))
-		bpf_program__set_autoload(obj->progs.sched_switch, false);
-	else
-		bpf_program__set_autoload(obj->progs.sched_switch_raw, false);
-
-	err = offcputime_bpf__load(obj);
-	if (err) {
-		fprintf(stderr, "failed to load BPF programs\n");
-		goto cleanup;
-	}
-
-	if (env.pids[0]) {
-		/* User pids_fd points to the tgids map in the BPF program */
-		int pids_fd = bpf_map__fd(obj->maps.tgids);
-		for (i = 0; i < MAX_PID_NR && env.pids[i]; i++) {
-			if (bpf_map_update_elem(pids_fd, &(env.pids[i]), &val, BPF_ANY) != 0) {
-				fprintf(stderr, "failed to init pids map: %s\n", strerror(errno));
-				goto cleanup;
-			}
-		}
-	}
-	if (env.tids[0]) {
-		/* User tids_fd points to the pids map in the BPF program */
-		int tids_fd = bpf_map__fd(obj->maps.pids);
-		for (i = 0; i < MAX_TID_NR && env.tids[i]; i++) {
-			if (bpf_map_update_elem(tids_fd, &(env.tids[i]), &val, BPF_ANY) != 0) {
-				fprintf(stderr, "failed to init tids map: %s\n", strerror(errno));
-				goto cleanup;
-			}
-		}
-	}
-
-	err = offcputime_bpf__attach(obj);
-	if (err) {
-		fprintf(stderr, "failed to attach BPF programs\n");
-		goto cleanup;
-	}
-
-	symbolizer = blazesym_new();
-	if (!symbolizer) {
-		fprintf(stderr, "Failed to create a symbolizer\n");
-		err = 1;
-		goto cleanup;
 	}
 
 	signal(SIGINT, sig_handler);
@@ -279,11 +362,10 @@ int main(int argc, char **argv)
 	sleep(env.duration);
 
 	/* Get traces from info map and print them to stdout */
-	print_map(obj);
+	CollectorData data = collector.get_data();
+	if (data.success) {
+		printf("%s", data.output.c_str());
+	}
 
-cleanup:
-	blazesym_free(symbolizer);
-	offcputime_bpf__destroy(obj);
-
-	return err != 0;
+	return 0;
 } 

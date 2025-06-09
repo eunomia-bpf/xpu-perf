@@ -32,6 +32,8 @@ extern "C" {
 #include "profile.h"
 #include "profile.skel.h"
 #include "arg_parse.h"
+#include "collector_interface.hpp"
+#include <sstream>
 
 #define SYM_INFO_LEN			2048
 
@@ -309,13 +311,168 @@ static void print_headers()
 		printf("... Hit Ctrl-C to end.\n");
 }
 
+class ProfileCollector : public ICollector {
+private:
+    struct bpf_link *links[MAX_CPU_NR];
+    struct profile_bpf *obj;
+    bool running;
+    
+public:
+    ProfileCollector() : obj(nullptr), running(false) {
+        memset(links, 0, sizeof(links));
+    }
+    
+    ~ProfileCollector() {
+        if (obj) {
+            if (env.cpu != -1)
+                bpf_link__destroy(links[env.cpu]);
+            else {
+                for (int i = 0; i < nr_cpus; i++)
+                    bpf_link__destroy(links[i]);
+            }
+            
+            blazesym_free(symbolizer);
+            profile_bpf__destroy(obj);
+        }
+    }
+    
+    std::string get_name() const override {
+        return "profile";
+    }
+    
+    bool start() override {
+        if (running) {
+            return true;
+        }
+        
+        int err, i;
+        __u8 val = 0;
+
+        libbpf_set_print(libbpf_print_fn);
+
+        nr_cpus = libbpf_num_possible_cpus();
+        if (nr_cpus < 0) {
+            printf("failed to get # of possible cpus: '%s'!\n",
+                   strerror(-nr_cpus));
+            return false;
+        }
+        if (nr_cpus > MAX_CPU_NR) {
+            fprintf(stderr, "the number of cpu cores is too big, please "
+                "increase MAX_CPU_NR's value and recompile");
+            return false;
+        }
+
+        symbolizer = blazesym_new();
+        if (!symbolizer) {
+            fprintf(stderr, "Failed to create a symbolizer\n");
+            return false;
+        }
+
+        obj = profile_bpf__open();
+        if (!obj) {
+            fprintf(stderr, "failed to open BPF object\n");
+            blazesym_free(symbolizer);
+            return false;
+        }
+
+        /* initialize global data (filtering options) */
+        obj->rodata->user_stacks_only = env.user_stacks_only;
+        obj->rodata->kernel_stacks_only = env.kernel_stacks_only;
+        obj->rodata->include_idle = env.include_idle;
+        if (env.pids[0])
+            obj->rodata->filter_by_pid = true;
+        else if (env.tids[0])
+            obj->rodata->filter_by_tid = true;
+
+        bpf_map__set_value_size(obj->maps.stackmap,
+                    env.perf_max_stack_depth * sizeof(unsigned long));
+        bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
+
+        err = profile_bpf__load(obj);
+        if (err) {
+            fprintf(stderr, "failed to load BPF programs\n");
+            goto cleanup;
+        }
+
+        if (env.pids[0]) {
+            int pids_fd = bpf_map__fd(obj->maps.pids);
+            for (i = 0; i < MAX_PID_NR && env.pids[i]; i++) {
+                if (bpf_map_update_elem(pids_fd, &(env.pids[i]), &val, BPF_ANY) != 0) {
+                    fprintf(stderr, "failed to init pids map: %s\n", strerror(errno));
+                    goto cleanup;
+                }
+            }
+        }
+        else if (env.tids[0]) {
+            int tids_fd = bpf_map__fd(obj->maps.tids);
+            for (i = 0; i < MAX_TID_NR && env.tids[i]; i++) {
+                if (bpf_map_update_elem(tids_fd, &(env.tids[i]), &val, BPF_ANY) != 0) {
+                    fprintf(stderr, "failed to init tids map: %s\n", strerror(errno));
+                    goto cleanup;
+                }
+            }
+        }
+
+        err = open_and_attach_perf_event(obj->progs.do_perf_event, links);
+        if (err)
+            goto cleanup;
+
+        running = true;
+        return true;
+
+cleanup:
+        if (obj) {
+            blazesym_free(symbolizer);
+            profile_bpf__destroy(obj);
+            obj = nullptr;
+        }
+        return false;
+    }
+    
+    CollectorData get_data() override {
+        if (!running || !obj) {
+            return CollectorData("profile", "", false);
+        }
+        
+        // Capture output to string
+        std::ostringstream output;
+        FILE* old_stdout = stdout;
+        
+        // Create a pipe to capture stdout
+        int pipefd[2];
+        if (pipe(pipefd) == -1) {
+            return CollectorData("profile", "Failed to create pipe", false);
+        }
+        
+        // Redirect stdout to pipe
+        fflush(stdout);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+        
+        // Print data
+        print_counts(bpf_map__fd(obj->maps.counts),
+                     bpf_map__fd(obj->maps.stackmap));
+        
+        // Restore stdout
+        fflush(stdout);
+        dup2(fileno(old_stdout), STDOUT_FILENO);
+        
+        // Read from pipe
+        char buffer[4096];
+        std::string result;
+        ssize_t count;
+        while ((count = read(pipefd[0], buffer, sizeof(buffer))) > 0) {
+            result.append(buffer, count);
+        }
+        close(pipefd[0]);
+        
+        return CollectorData("profile", result, true);
+    }
+};
+
 int main(int argc, char **argv)
 {
-	struct bpf_link *links[MAX_CPU_NR] = {};
-	struct profile_bpf *obj;
-	int pids_fd, tids_fd;
-	int err, i;
-	__u8 val = 0;
+	int err;
 
 	err = parse_common_args(argc, argv, TOOL_PROFILE);
 	if (err)
@@ -325,74 +482,12 @@ int main(int argc, char **argv)
 	if (err)
 		return err;
 
-	libbpf_set_print(libbpf_print_fn);
-
-	nr_cpus = libbpf_num_possible_cpus();
-	if (nr_cpus < 0) {
-		printf("failed to get # of possible cpus: '%s'!\n",
-		       strerror(-nr_cpus));
+	ProfileCollector collector;
+	
+	if (!collector.start()) {
+		fprintf(stderr, "Failed to start profile collector\n");
 		return 1;
 	}
-	if (nr_cpus > MAX_CPU_NR) {
-		fprintf(stderr, "the number of cpu cores is too big, please "
-			"increase MAX_CPU_NR's value and recompile");
-		return 1;
-	}
-
-	symbolizer = blazesym_new();
-	if (!symbolizer) {
-		fprintf(stderr, "Failed to create a symbolizer\n");
-		return 1;
-	}
-
-	obj = profile_bpf__open();
-	if (!obj) {
-		fprintf(stderr, "failed to open BPF object\n");
-		blazesym_free(symbolizer);
-		return 1;
-	}
-
-	/* initialize global data (filtering options) */
-	obj->rodata->user_stacks_only = env.user_stacks_only;
-	obj->rodata->kernel_stacks_only = env.kernel_stacks_only;
-	obj->rodata->include_idle = env.include_idle;
-	if (env.pids[0])
-		obj->rodata->filter_by_pid = true;
-	else if (env.tids[0])
-		obj->rodata->filter_by_tid = true;
-
-	bpf_map__set_value_size(obj->maps.stackmap,
-				env.perf_max_stack_depth * sizeof(unsigned long));
-	bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
-
-	err = profile_bpf__load(obj);
-	if (err) {
-		fprintf(stderr, "failed to load BPF programs\n");
-		goto cleanup;
-	}
-
-	if (env.pids[0]) {
-		pids_fd = bpf_map__fd(obj->maps.pids);
-		for (i = 0; i < MAX_PID_NR && env.pids[i]; i++) {
-			if (bpf_map_update_elem(pids_fd, &(env.pids[i]), &val, BPF_ANY) != 0) {
-				fprintf(stderr, "failed to init pids map: %s\n", strerror(errno));
-				goto cleanup;
-			}
-		}
-	}
-	else if (env.tids[0]) {
-		tids_fd = bpf_map__fd(obj->maps.tids);
-		for (i = 0; i < MAX_TID_NR && env.tids[i]; i++) {
-			if (bpf_map_update_elem(tids_fd, &(env.tids[i]), &val, BPF_ANY) != 0) {
-				fprintf(stderr, "failed to init tids map: %s\n", strerror(errno));
-				goto cleanup;
-			}
-		}
-	}
-
-	err = open_and_attach_perf_event(obj->progs.do_perf_event, links);
-	if (err)
-		goto cleanup;
 
 	signal(SIGINT, sig_handler);
 
@@ -405,19 +500,10 @@ int main(int argc, char **argv)
 	 */
 	sleep(env.duration);
 
-	print_counts(bpf_map__fd(obj->maps.counts),
-		     bpf_map__fd(obj->maps.stackmap));
-
-cleanup:
-	if (env.cpu != -1)
-		bpf_link__destroy(links[env.cpu]);
-	else {
-		for (i = 0; i < nr_cpus; i++)
-			bpf_link__destroy(links[i]);
+	CollectorData data = collector.get_data();
+	if (data.success) {
+		printf("%s", data.output.c_str());
 	}
-	
-	blazesym_free(symbolizer);
-	profile_bpf__destroy(obj);
 
-	return err != 0;
+	return 0;
 } 
