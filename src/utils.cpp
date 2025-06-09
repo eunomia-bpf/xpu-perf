@@ -1,21 +1,13 @@
-// SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
-#ifndef __COMMON_H
-#define __COMMON_H
-
+#include "utils.hpp"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <errno.h>
-#include <stdint.h>
 #include <sys/types.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* Include BPF headers to get __u64 definition */
-#include <linux/types.h>
 
 #include "../blazesym/target/release/blazesym.h"
 
@@ -23,13 +15,33 @@ extern "C" {
 }
 #endif
 
-/* Types needed for both profile and offcputime */
-#define TASK_COMM_LEN		16
-#define MAX_PID_NR		30
-#define MAX_TID_NR		30
+// BlazesymDeleter implementation
+void BlazesymDeleter::operator()(struct blazesym* sym) const {
+    if (sym) {
+        blazesym_free(sym);
+    }
+}
 
-
-/* Common helper functions for BPF tools */
+/**
+ * safe_strdup - Safe string duplication
+ * @s: Source string
+ *
+ * Return: Newly allocated string copy or NULL on failure
+ */
+char *safe_strdup(const char *s)
+{
+    if (!s) {
+        return NULL;
+    }
+    
+    size_t len = strlen(s) + 1;
+    char *copy = (char *)malloc(len);
+    if (!copy) {
+        return NULL;
+    }
+    
+    return strcpy(copy, s);
+}
 
 /**
  * split_convert - Split a string by a delimiter and convert each token
@@ -42,8 +54,8 @@ extern "C" {
  *
  * Return: 0 on success, negative error code on failure
  */
-static inline int split_convert(char *s, const char* delim, void *elems, size_t elems_size,
-                   size_t elem_size, int (*convert)(const char *, void *))
+int split_convert(char *s, const char* delim, void *elems, size_t elems_size,
+                  size_t elem_size, int (*convert)(const char *, void *))
 {
     char *token;
     int ret;
@@ -75,7 +87,7 @@ static inline int split_convert(char *s, const char* delim, void *elems, size_t 
  *
  * Return: 0 on success, negative error code on failure
  */
-static inline int str_to_int(const char *src, void *dest)
+int str_to_int(const char *src, void *dest)
 {
     *(int*)dest = strtol(src, NULL, 10);
     return 0;
@@ -88,7 +100,7 @@ static inline int str_to_int(const char *src, void *dest)
  * @stack_sz: Size of the stack array
  * @pid: Process ID (0 for kernel)
  */
-static void show_stack_trace(struct blazesym *symbolizer, __u64 *stack, int stack_sz, pid_t pid)
+void show_stack_trace(struct blazesym *symbolizer, __u64 *stack, int stack_sz, pid_t pid)
 {
     const struct blazesym_result *result;
     const struct blazesym_csym *sym;
@@ -140,8 +152,8 @@ static void show_stack_trace(struct blazesym *symbolizer, __u64 *stack, int stac
  * @separator: Character to use as separator between frames (typically ';')
  * @reverse: Whether to print the stack in reverse order (true for flamegraphs)
  */
-static void show_stack_trace_folded(struct blazesym *symbolizer, __u64 *stack, int stack_sz, 
-                                    pid_t pid, char separator, bool reverse)
+void show_stack_trace_folded(struct blazesym *symbolizer, __u64 *stack, int stack_sz, 
+                            pid_t pid, char separator, bool reverse)
 {
     const struct blazesym_result *result;
     const struct blazesym_csym *sym;
@@ -212,17 +224,4 @@ static void show_stack_trace_folded(struct blazesym *symbolizer, __u64 *stack, i
     }
 
     blazesym_result_free(result);
-}
-
-/* Safe string duplication */
-static inline char *safe_strdup(const char *s)
-{
-    char *ret = strdup(s);
-    if (!ret) {
-        fprintf(stderr, "failed to allocate memory\n");
-        exit(1);
-    }
-    return ret;
-}
-
-#endif /* __COMMON_H */ 
+} 

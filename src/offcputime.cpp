@@ -26,7 +26,7 @@ extern "C" {
 #include "../build/offcputime.skel.h"
 #include "arg_parse.h"
 #include "offcputime.hpp"
-#include "common.h"
+#include "utils.hpp"
 #include <sstream>
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
@@ -41,100 +41,6 @@ void OffCPUBPFDeleter::operator()(struct offcputime_bpf* obj) const {
     if (obj) {
         offcputime_bpf__destroy(obj);
     }
-}
-
-static void print_map(struct offcputime_bpf *obj, struct blazesym *symbolizer)
-{
-	struct offcpu_key_t lookup_key = {}, next_key;
-	int err, fd_stackid, fd_info;
-	unsigned long *ip;
-	struct offcpu_val_t val;
-	int idx;
-	bool has_kernel_stack, has_user_stack;
-
-	ip = static_cast<unsigned long*>(calloc(env.perf_max_stack_depth, sizeof(*ip)));
-	if (!ip) {
-		fprintf(stderr, "failed to alloc ip\n");
-		return;
-	}
-
-	fd_info = bpf_map__fd(obj->maps.info);
-	fd_stackid = bpf_map__fd(obj->maps.stackmap);
-	while (!bpf_map_get_next_key(fd_info, &lookup_key, &next_key)) {
-		idx = 0;
-
-		err = bpf_map_lookup_elem(fd_info, &next_key, &val);
-		if (err < 0) {
-			fprintf(stderr, "failed to lookup info: %d\n", err);
-			goto cleanup;
-		}
-		lookup_key = next_key;
-		if (val.delta == 0)
-			continue;
-
-		has_kernel_stack = next_key.kern_stack_id != -1;
-		has_user_stack = next_key.user_stack_id != -1;
-
-		if (env.folded) {
-			/* folded stack output format */
-			printf("%s", val.comm);
-			
-			/* Print user stack first for folded format */
-			if (has_user_stack && !env.kernel_threads_only) {
-				if (bpf_map_lookup_elem(fd_stackid, &next_key.user_stack_id, ip) != 0) {
-					printf(";[Missed User Stack]");
-				} else {
-					printf(";");
-					show_stack_trace_folded(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, next_key.tgid, ';', true);
-				}
-			}
-			
-			/* Then print kernel stack if it exists */
-			if (has_kernel_stack && !env.user_threads_only) {
-				/* Add delimiter between user and kernel stacks if needed */
-				if (has_user_stack && env.delimiter && !env.kernel_threads_only)
-					printf("-");
-					
-				if (bpf_map_lookup_elem(fd_stackid, &next_key.kern_stack_id, ip) != 0) {
-					printf(";[Missed Kernel Stack]");
-				} else {
-					printf(";");
-					show_stack_trace_folded(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, 0, ';', true);
-				}
-			}
-			
-			printf(" %lld\n", val.delta);
-		} else {
-			/* standard multi-line output format */
-			if (has_kernel_stack && !env.user_threads_only) {
-				if (bpf_map_lookup_elem(fd_stackid, &next_key.kern_stack_id, ip) != 0) {
-					fprintf(stderr, "    [Missed Kernel Stack]\n");
-				} else {
-					show_stack_trace(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, 0);
-				}
-			}
-
-			/* Add delimiter between kernel and user stacks if both exist and delimiter is requested */
-			if (env.delimiter && has_kernel_stack && has_user_stack && 
-				!env.user_threads_only && !env.kernel_threads_only) {
-				printf("    --\n");
-			}
-
-			if (has_user_stack && !env.kernel_threads_only) {
-				if (bpf_map_lookup_elem(fd_stackid, &next_key.user_stack_id, ip) != 0) {
-					fprintf(stderr, "    [Missed User Stack]\n");
-				} else {
-					show_stack_trace(symbolizer, reinterpret_cast<__u64 *>(ip), env.perf_max_stack_depth, next_key.tgid);
-				}
-			}
-
-			printf("    %-16s %s (%d)\n", "-", val.comm, next_key.pid);
-			printf("        %lld\n\n", val.delta);
-		}
-	}
-
-cleanup:
-	free(ip);
 }
 
 static bool probe_tp_btf(const char *name)

@@ -4,6 +4,7 @@
 #include "collector_interface.hpp"
 #include "offcputime.h"
 #include "arg_parse.h"
+#include "utils.hpp"
 #include <memory>
 #include <vector>
 
@@ -39,10 +40,6 @@ struct OffCPUData {
 // Custom deleters for RAII
 struct OffCPUBPFDeleter {
     void operator()(struct offcputime_bpf* obj) const;
-};
-
-struct BlazesymDeleter {
-    void operator()(struct blazesym* sym) const;
 };
 
 class OffCPUTimeCollector : public ICollector {

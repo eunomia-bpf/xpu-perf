@@ -144,6 +144,7 @@ compile_bpf_program(profile.bpf.c)
 set(MAIN_OBJ ${OUTPUT_DIR}/main.o)
 set(PROFILE_OBJ ${OUTPUT_DIR}/profile.o)
 set(OFFCPUTIME_OBJ ${OUTPUT_DIR}/offcputime.o)
+set(UTILS_OBJ ${OUTPUT_DIR}/utils.o)
 
 add_custom_command(
     OUTPUT ${MAIN_OBJ}
@@ -166,13 +167,20 @@ add_custom_command(
     COMMENT "Compiling offcputime.cpp"
 )
 
+add_custom_command(
+    OUTPUT ${UTILS_OBJ}
+    COMMAND g++ -g -Wall -std=c++11 ${INCLUDES} -c ${CMAKE_CURRENT_SOURCE_DIR}/src/utils.cpp -o ${UTILS_OBJ}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/utils.cpp ${LIBBLAZESYM_HEADER}
+    COMMENT "Compiling utils.cpp"
+)
+
 # Link the final executable
 set(PROFILER_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/profiler)
 add_custom_command(
     OUTPUT ${PROFILER_EXECUTABLE}
-    COMMAND g++ -g -Wall -std=c++11 ${MAIN_OBJ} ${PROFILE_OBJ} ${OFFCPUTIME_OBJ} ${LIBBPF_OBJ} ${LIBBLAZESYM_OBJ} 
+    COMMAND g++ -g -Wall -std=c++11 ${MAIN_OBJ} ${PROFILE_OBJ} ${OFFCPUTIME_OBJ} ${UTILS_OBJ} ${LIBBPF_OBJ} ${LIBBLAZESYM_OBJ} 
             -lelf -lz -lrt -ldl -lpthread -lm -o ${PROFILER_EXECUTABLE}
-    DEPENDS ${MAIN_OBJ} ${PROFILE_OBJ} ${OFFCPUTIME_OBJ} ${LIBBPF_OBJ} ${LIBBLAZESYM_OBJ}
+    DEPENDS ${MAIN_OBJ} ${PROFILE_OBJ} ${OFFCPUTIME_OBJ} ${UTILS_OBJ} ${LIBBPF_OBJ} ${LIBBLAZESYM_OBJ}
     COMMENT "Linking profiler executable"
 )
 

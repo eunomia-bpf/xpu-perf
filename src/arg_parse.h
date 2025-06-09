@@ -2,6 +2,8 @@
 #ifndef __ARG_PARSE_H
 #define __ARG_PARSE_H
 
+#include "utils.hpp"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -20,8 +22,6 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-
-#include "common.h"
 
 #define OPT_PERF_MAX_STACK_DEPTH	1 /* --perf-max-stack-depth */
 #define OPT_STACK_STORAGE_SIZE		2 /* --stack-storage-size */

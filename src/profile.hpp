@@ -4,6 +4,7 @@
 #include "collector_interface.hpp"
 #include "profile.h"
 #include "arg_parse.h"
+#include "utils.hpp"
 #include <memory>
 #include <vector>
 
@@ -42,10 +43,6 @@ struct ProfileData {
 // Custom deleters for RAII
 struct ProfileBPFDeleter {
     void operator()(struct profile_bpf* obj) const;
-};
-
-struct BlazesymDeleter {
-    void operator()(struct blazesym* sym) const;
 };
 
 struct BPFLinkDeleter {

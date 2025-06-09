@@ -33,7 +33,7 @@ extern "C" {
 #include "../build/profile.skel.h"
 #include "arg_parse.h"
 #include "profile.hpp"
-#include "common.h"
+#include "utils.hpp"
 #include <sstream>
 #include <algorithm>
 
@@ -66,12 +66,6 @@ static int nr_cpus;
 void ProfileBPFDeleter::operator()(struct profile_bpf* obj) const {
     if (obj) {
         profile_bpf__destroy(obj);
-    }
-}
-
-void BlazesymDeleter::operator()(struct blazesym* sym) const {
-    if (sym) {
-        blazesym_free(sym);
     }
 }
 
