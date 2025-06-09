@@ -15,6 +15,7 @@ extern "C" {
 #include <time.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 }
@@ -58,7 +59,7 @@ static struct common_env env = {
 	.stack_storage_size = 1024,
 	.perf_max_stack_depth = 127,
 	.min_block_time = 1,
-	.max_block_time = static_cast<__u64>(-1),
+	.max_block_time = (__u64)(-1),
 	.state = -1,
 	.duration = 99999999,
 	.freq = 1,

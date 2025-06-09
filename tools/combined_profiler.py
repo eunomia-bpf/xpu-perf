@@ -72,7 +72,8 @@ class CombinedProfiler:
         """Run the profile tool in a separate thread"""
         try:
             cmd = [
-                str(self.profile_tool),
+                # str(self.profile_tool),
+                "./profiler profile",
                 "-p", str(self.pid),
                 "-F", str(self.freq),
                 "-f",  # Folded output format
@@ -97,7 +98,8 @@ class CombinedProfiler:
         """Run the offcputime tool in a separate thread"""
         try:
             cmd = [
-                str(self.offcpu_tool),
+                # str(self.offcpu_tool),
+                "./profiler offcputime",
                 "-p", str(self.pid),
                 "-m", str(self.min_block_us),
                 "-f",  # Folded output format

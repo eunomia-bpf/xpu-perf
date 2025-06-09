@@ -32,7 +32,7 @@ extern "C" {
 #include "profile.h"
 #include "profile.skel.h"
 #include "arg_parse.h"
-#include "collector_interface.hpp"
+#include "profile.hpp"
 #include <sstream>
 
 #define SYM_INFO_LEN			2048
@@ -58,9 +58,15 @@ struct key_ext_t {
 	__u64 v;
 };
 
-static struct blazesym *symbolizer;
-
 static int nr_cpus;
+
+static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
+{
+	if (level == LIBBPF_DEBUG && !env.verbose)
+		return 0;
+
+	return vfprintf(stderr, format, args);
+}
 
 static int open_and_attach_perf_event(struct bpf_program *prog,
 				      struct bpf_link *links[])
@@ -101,18 +107,6 @@ static int open_and_attach_perf_event(struct bpf_program *prog,
 	return 0;
 }
 
-static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
-{
-	if (level == LIBBPF_DEBUG && !env.verbose)
-		return 0;
-
-	return vfprintf(stderr, format, args);
-}
-
-static void sig_handler(int sig)
-{
-}
-
 static int cmp_counts(const void *a, const void *b)
 {
 	const __u64 x = (static_cast<const struct key_ext_t *>(a))->v;
@@ -147,10 +141,9 @@ static int read_counts_map(int fd, struct key_ext_t *items, __u32 *count)
 	return 0;
 }
 
-static int print_count(struct profile_key_t *event, __u64 count, int stack_map)
+static int print_count(struct profile_key_t *event, __u64 count, int stack_map, struct blazesym *symbolizer)
 {
 	unsigned long *ip;
-	int ret;
 	bool has_kernel_stack, has_user_stack;
 
 	ip = static_cast<unsigned long*>(calloc(env.perf_max_stack_depth, sizeof(unsigned long)));
@@ -225,7 +218,7 @@ static int print_count(struct profile_key_t *event, __u64 count, int stack_map)
 	return 0;
 }
 
-static int print_counts(int counts_map, int stack_map)
+static int print_counts(int counts_map, int stack_map, struct blazesym *symbolizer)
 {
 	struct key_ext_t *counts;
 	struct profile_key_t *event;
@@ -251,7 +244,7 @@ static int print_counts(int counts_map, int stack_map)
 		event = &counts[i].k;
 		count = counts[i].v;
 
-		print_count(event, count, stack_map);
+		print_count(event, count, stack_map, symbolizer);
 		
 		/* Add a newline between stack traces for better readability */
 		if (!env.folded && i < static_cast<int>(nr_count) - 1)
@@ -311,198 +304,167 @@ static void print_headers()
 		printf("... Hit Ctrl-C to end.\n");
 }
 
-class ProfileCollector : public ICollector {
-private:
-    struct bpf_link *links[MAX_CPU_NR];
-    struct profile_bpf *obj;
-    bool running;
-    
-public:
-    ProfileCollector() : obj(nullptr), running(false) {
-        memset(links, 0, sizeof(links));
-    }
-    
-    ~ProfileCollector() {
-        if (obj) {
-            if (env.cpu != -1)
-                bpf_link__destroy(links[env.cpu]);
-            else {
-                for (int i = 0; i < nr_cpus; i++)
-                    bpf_link__destroy(links[i]);
-            }
-            
-            blazesym_free(symbolizer);
-            profile_bpf__destroy(obj);
-        }
-    }
-    
-    std::string get_name() const override {
-        return "profile";
-    }
-    
-    bool start() override {
-        if (running) {
-            return true;
+// ProfileCollector implementation
+ProfileCollector::ProfileCollector() : obj(nullptr), running(false) {
+    memset(links, 0, sizeof(links));
+}
+
+ProfileCollector::~ProfileCollector() {
+    if (obj) {
+        if (env.cpu != -1)
+            bpf_link__destroy(links[env.cpu]);
+        else {
+            for (int i = 0; i < nr_cpus; i++)
+                bpf_link__destroy(links[i]);
         }
         
-        int err, i;
-        __u8 val = 0;
-
-        libbpf_set_print(libbpf_print_fn);
-
-        nr_cpus = libbpf_num_possible_cpus();
-        if (nr_cpus < 0) {
-            printf("failed to get # of possible cpus: '%s'!\n",
-                   strerror(-nr_cpus));
-            return false;
-        }
-        if (nr_cpus > MAX_CPU_NR) {
-            fprintf(stderr, "the number of cpu cores is too big, please "
-                "increase MAX_CPU_NR's value and recompile");
-            return false;
-        }
-
-        symbolizer = blazesym_new();
-        if (!symbolizer) {
-            fprintf(stderr, "Failed to create a symbolizer\n");
-            return false;
-        }
-
-        obj = profile_bpf__open();
-        if (!obj) {
-            fprintf(stderr, "failed to open BPF object\n");
+        if (symbolizer) {
             blazesym_free(symbolizer);
-            return false;
         }
+        profile_bpf__destroy(obj);
+    }
+}
 
-        /* initialize global data (filtering options) */
-        obj->rodata->user_stacks_only = env.user_stacks_only;
-        obj->rodata->kernel_stacks_only = env.kernel_stacks_only;
-        obj->rodata->include_idle = env.include_idle;
-        if (env.pids[0])
-            obj->rodata->filter_by_pid = true;
-        else if (env.tids[0])
-            obj->rodata->filter_by_tid = true;
+std::string ProfileCollector::get_name() const {
+    return "profile";
+}
 
-        bpf_map__set_value_size(obj->maps.stackmap,
-                    env.perf_max_stack_depth * sizeof(unsigned long));
-        bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
-
-        err = profile_bpf__load(obj);
-        if (err) {
-            fprintf(stderr, "failed to load BPF programs\n");
-            goto cleanup;
-        }
-
-        if (env.pids[0]) {
-            int pids_fd = bpf_map__fd(obj->maps.pids);
-            for (i = 0; i < MAX_PID_NR && env.pids[i]; i++) {
-                if (bpf_map_update_elem(pids_fd, &(env.pids[i]), &val, BPF_ANY) != 0) {
-                    fprintf(stderr, "failed to init pids map: %s\n", strerror(errno));
-                    goto cleanup;
-                }
-            }
-        }
-        else if (env.tids[0]) {
-            int tids_fd = bpf_map__fd(obj->maps.tids);
-            for (i = 0; i < MAX_TID_NR && env.tids[i]; i++) {
-                if (bpf_map_update_elem(tids_fd, &(env.tids[i]), &val, BPF_ANY) != 0) {
-                    fprintf(stderr, "failed to init tids map: %s\n", strerror(errno));
-                    goto cleanup;
-                }
-            }
-        }
-
-        err = open_and_attach_perf_event(obj->progs.do_perf_event, links);
-        if (err)
-            goto cleanup;
-
-        running = true;
+bool ProfileCollector::start() {
+    if (running) {
         return true;
+    }
+    
+    int err, i;
+    __u8 val = 0;
 
-cleanup:
-        if (obj) {
-            blazesym_free(symbolizer);
-            profile_bpf__destroy(obj);
-            obj = nullptr;
-        }
+    libbpf_set_print(libbpf_print_fn);
+
+    nr_cpus = libbpf_num_possible_cpus();
+    if (nr_cpus < 0) {
+        printf("failed to get # of possible cpus: '%s'!\n",
+               strerror(-nr_cpus));
         return false;
     }
-    
-    CollectorData get_data() override {
-        if (!running || !obj) {
-            return CollectorData("profile", "", false);
-        }
-        
-        // Capture output to string
-        std::ostringstream output;
-        FILE* old_stdout = stdout;
-        
-        // Create a pipe to capture stdout
-        int pipefd[2];
-        if (pipe(pipefd) == -1) {
-            return CollectorData("profile", "Failed to create pipe", false);
-        }
-        
-        // Redirect stdout to pipe
-        fflush(stdout);
-        dup2(pipefd[1], STDOUT_FILENO);
-        close(pipefd[1]);
-        
-        // Print data
-        print_counts(bpf_map__fd(obj->maps.counts),
-                     bpf_map__fd(obj->maps.stackmap));
-        
-        // Restore stdout
-        fflush(stdout);
-        dup2(fileno(old_stdout), STDOUT_FILENO);
-        
-        // Read from pipe
-        char buffer[4096];
-        std::string result;
-        ssize_t count;
-        while ((count = read(pipefd[0], buffer, sizeof(buffer))) > 0) {
-            result.append(buffer, count);
-        }
-        close(pipefd[0]);
-        
-        return CollectorData("profile", result, true);
+    if (nr_cpus > MAX_CPU_NR) {
+        fprintf(stderr, "the number of cpu cores is too big, please "
+            "increase MAX_CPU_NR's value and recompile");
+        return false;
     }
-};
 
-int main(int argc, char **argv)
-{
-	int err;
+    symbolizer = blazesym_new();
+    if (!symbolizer) {
+        fprintf(stderr, "Failed to create a symbolizer\n");
+        return false;
+    }
 
-	err = parse_common_args(argc, argv, TOOL_PROFILE);
-	if (err)
-		return err;
+    obj = profile_bpf__open();
+    if (!obj) {
+        fprintf(stderr, "failed to open BPF object\n");
+        blazesym_free(symbolizer);
+        return false;
+    }
 
-	err = validate_common_args();
-	if (err)
-		return err;
+    /* initialize global data (filtering options) */
+    obj->rodata->user_stacks_only = env.user_stacks_only;
+    obj->rodata->kernel_stacks_only = env.kernel_stacks_only;
+    obj->rodata->include_idle = env.include_idle;
+    if (env.pids[0])
+        obj->rodata->filter_by_pid = true;
+    else if (env.tids[0])
+        obj->rodata->filter_by_tid = true;
 
-	ProfileCollector collector;
-	
-	if (!collector.start()) {
-		fprintf(stderr, "Failed to start profile collector\n");
-		return 1;
-	}
+    bpf_map__set_value_size(obj->maps.stackmap,
+                env.perf_max_stack_depth * sizeof(unsigned long));
+    bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
 
-	signal(SIGINT, sig_handler);
+    err = profile_bpf__load(obj);
+    if (err) {
+        fprintf(stderr, "failed to load BPF programs\n");
+        goto cleanup;
+    }
 
-	if (!env.folded)
-		print_headers();
+    if (env.pids[0]) {
+        int pids_fd = bpf_map__fd(obj->maps.pids);
+        for (i = 0; i < MAX_PID_NR && env.pids[i]; i++) {
+            if (bpf_map_update_elem(pids_fd, &(env.pids[i]), &val, BPF_ANY) != 0) {
+                fprintf(stderr, "failed to init pids map: %s\n", strerror(errno));
+                goto cleanup;
+            }
+        }
+    }
+    else if (env.tids[0]) {
+        int tids_fd = bpf_map__fd(obj->maps.tids);
+        for (i = 0; i < MAX_TID_NR && env.tids[i]; i++) {
+            if (bpf_map_update_elem(tids_fd, &(env.tids[i]), &val, BPF_ANY) != 0) {
+                fprintf(stderr, "failed to init tids map: %s\n", strerror(errno));
+                goto cleanup;
+            }
+        }
+    }
 
-	/*
-	 * We'll get sleep interrupted when someone presses Ctrl-C.
-	 * (which will be "handled" with noop by sig_handler)
-	 */
-	sleep(env.duration);
+    err = open_and_attach_perf_event(obj->progs.do_perf_event, links);
+    if (err)
+        goto cleanup;
 
-	CollectorData data = collector.get_data();
-	if (data.success) {
-		printf("%s", data.output.c_str());
+    running = true;
+    return true;
+
+cleanup:
+    if (obj) {
+        if (symbolizer) {
+            blazesym_free(symbolizer);
+        }
+        profile_bpf__destroy(obj);
+        obj = nullptr;
+    }
+    return false;
+}
+
+CollectorData ProfileCollector::get_data() {
+    if (!running || !obj) {
+        return CollectorData("profile", "", false);
+    }
+    
+    // Simply call the print function directly to stdout
+    // The data will be printed immediately rather than captured
+    print_counts(bpf_map__fd(obj->maps.counts),
+                 bpf_map__fd(obj->maps.stackmap), symbolizer);
+    
+    return CollectorData("profile", "Profile data printed to stdout", true);
+}
+
+int ProfileCollector::open_and_attach_perf_event(struct bpf_program *prog, struct bpf_link *links[]) {
+	struct perf_event_attr attr = {
+		.type = PERF_TYPE_SOFTWARE,
+		.config = PERF_COUNT_SW_CPU_CLOCK,
+		.sample_freq = static_cast<__u64>(env.sample_freq),
+		.freq = env.freq,
+	};
+	int i, fd;
+
+	for (i = 0; i < nr_cpus; i++) {
+		if (env.cpu != -1 && env.cpu != i)
+			continue;
+
+		fd = syscall(__NR_perf_event_open, &attr, -1, i, -1, 0);
+		if (fd < 0) {
+			/* Ignore CPU that is offline */
+			if (errno == ENODEV)
+				continue;
+
+			fprintf(stderr, "failed to init perf sampling: %s\n",
+				strerror(errno));
+			return -1;
+		}
+
+		links[i] = bpf_program__attach_perf_event(prog, fd);
+		if (!links[i]) {
+			fprintf(stderr, "failed to attach perf event on cpu: "
+				"%d\n", i);
+			links[i] = NULL;
+			close(fd);
+			return -1;
+		}
 	}
 
 	return 0;

@@ -140,47 +140,54 @@ endfunction()
 compile_bpf_program(offcputime.bpf.c)
 compile_bpf_program(profile.bpf.c)
 
-# Function to create userspace program
-function(create_userspace_program prog_name cpp_source)
-    set(prog_obj ${OUTPUT_DIR}/${prog_name}.o)
-    set(prog_executable ${CMAKE_CURRENT_BINARY_DIR}/${prog_name})
-    
-    # Compile C++ source
-    add_custom_command(
-        OUTPUT ${prog_obj}
-        COMMAND g++ -g -Wall -std=c++11 ${INCLUDES} -c ${CMAKE_CURRENT_SOURCE_DIR}/src/${cpp_source} -o ${prog_obj}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/${cpp_source} ${${prog_name}_SKEL_H} ${LIBBLAZESYM_HEADER}
-        COMMENT "Compiling ${cpp_source}"
-    )
-    
-    # Link executable
-    add_custom_command(
-        OUTPUT ${prog_executable}
-        COMMAND g++ -g -Wall -std=c++11 ${prog_obj} ${LIBBPF_OBJ} ${LIBBLAZESYM_OBJ} 
-                -lelf -lz -lrt -ldl -lpthread -lm -o ${prog_executable}
-        DEPENDS ${prog_obj} ${LIBBPF_OBJ} ${LIBBLAZESYM_OBJ}
-        COMMENT "Linking ${prog_name}"
-    )
-    
-    # Create target
-    add_custom_target(${prog_name} ALL DEPENDS ${prog_executable})
-endfunction()
+# Compile source files to object files
+set(MAIN_OBJ ${OUTPUT_DIR}/main.o)
+set(PROFILE_OBJ ${OUTPUT_DIR}/profile.o)
+set(OFFCPUTIME_OBJ ${OUTPUT_DIR}/offcputime.o)
 
-# Create userspace programs
-create_userspace_program(offcputime offcputime.cpp)
-create_userspace_program(profile profile.cpp)
+add_custom_command(
+    OUTPUT ${MAIN_OBJ}
+    COMMAND g++ -g -Wall -std=c++11 ${INCLUDES} -c ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp -o ${MAIN_OBJ}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp ${profile_SKEL_H} ${offcputime_SKEL_H} ${LIBBLAZESYM_HEADER}
+    COMMENT "Compiling main.cpp"
+)
+
+add_custom_command(
+    OUTPUT ${PROFILE_OBJ}
+    COMMAND g++ -g -Wall -std=c++11 ${INCLUDES} -c ${CMAKE_CURRENT_SOURCE_DIR}/src/profile.cpp -o ${PROFILE_OBJ}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/profile.cpp ${profile_SKEL_H} ${LIBBLAZESYM_HEADER}
+    COMMENT "Compiling profile.cpp"
+)
+
+add_custom_command(
+    OUTPUT ${OFFCPUTIME_OBJ}
+    COMMAND g++ -g -Wall -std=c++11 ${INCLUDES} -c ${CMAKE_CURRENT_SOURCE_DIR}/src/offcputime.cpp -o ${OFFCPUTIME_OBJ}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/offcputime.cpp ${offcputime_SKEL_H} ${LIBBLAZESYM_HEADER}
+    COMMENT "Compiling offcputime.cpp"
+)
+
+# Link the final executable
+set(PROFILER_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/profiler)
+add_custom_command(
+    OUTPUT ${PROFILER_EXECUTABLE}
+    COMMAND g++ -g -Wall -std=c++11 ${MAIN_OBJ} ${PROFILE_OBJ} ${OFFCPUTIME_OBJ} ${LIBBPF_OBJ} ${LIBBLAZESYM_OBJ} 
+            -lelf -lz -lrt -ldl -lpthread -lm -o ${PROFILER_EXECUTABLE}
+    DEPENDS ${MAIN_OBJ} ${PROFILE_OBJ} ${OFFCPUTIME_OBJ} ${LIBBPF_OBJ} ${LIBBLAZESYM_OBJ}
+    COMMENT "Linking profiler executable"
+)
+
+# Create target
+add_custom_target(profiler ALL DEPENDS ${PROFILER_EXECUTABLE})
 
 # Create clean target
 add_custom_target(clean-all
     COMMAND rm -rf ${OUTPUT_DIR}
-    COMMAND rm -f ${CMAKE_CURRENT_BINARY_DIR}/offcputime
-    COMMAND rm -f ${CMAKE_CURRENT_BINARY_DIR}/profile
+    COMMAND rm -f ${CMAKE_CURRENT_BINARY_DIR}/profiler
     COMMENT "Cleaning all build artifacts"
 )
 
 # Create install target
 install(PROGRAMS 
-    ${CMAKE_CURRENT_BINARY_DIR}/offcputime
-    ${CMAKE_CURRENT_BINARY_DIR}/profile
+    ${CMAKE_CURRENT_BINARY_DIR}/profiler
     DESTINATION bin
 ) 

@@ -14,6 +14,9 @@
 extern "C" {
 #endif
 
+/* Include BPF headers to get __u64 definition */
+#include <linux/types.h>
+
 #include "blazesym.h"
 
 #ifdef __cplusplus
@@ -44,14 +47,14 @@ static inline int split_convert(char *s, const char* delim, void *elems, size_t 
 {
     char *token;
     int ret;
-    char *pos = static_cast<char *>(elems);
+    char *pos = (char *)elems;
 
     if (!s || !delim || !elems)
         return -1;
 
     token = strtok(s, delim);
     while (token) {
-        if (pos + elem_size > static_cast<char*>(elems) + elems_size)
+        if (pos + elem_size > (char*)elems + elems_size)
             return -ENOBUFS;
 
         ret = convert(token, pos);
@@ -74,7 +77,7 @@ static inline int split_convert(char *s, const char* delim, void *elems, size_t 
  */
 static inline int str_to_int(const char *src, void *dest)
 {
-    *static_cast<int*>(dest) = strtol(src, NULL, 10);
+    *(int*)dest = strtol(src, NULL, 10);
     return 0;
 }
 
@@ -102,7 +105,7 @@ static void show_stack_trace(struct blazesym *symbolizer, __u64 *stack, int stac
         src.params.kernel.kernel_image = NULL;
     }
 
-    result = blazesym_symbolize(symbolizer, &src, 1, reinterpret_cast<const uint64_t *>(stack), stack_sz);
+    result = blazesym_symbolize(symbolizer, &src, 1, (const uint64_t *)stack, stack_sz);
 
     for (i = 0; i < stack_sz; i++) {
         if (!stack[i])
@@ -156,7 +159,7 @@ static void show_stack_trace_folded(struct blazesym *symbolizer, __u64 *stack, i
         src.params.kernel.kernel_image = NULL;
     }
 
-    result = blazesym_symbolize(symbolizer, &src, 1, reinterpret_cast<const uint64_t *>(stack), stack_sz);
+    result = blazesym_symbolize(symbolizer, &src, 1, (const uint64_t *)stack, stack_sz);
 
     /* For flamegraphs, we need to print the stack in reverse order */
     if (reverse) {
