@@ -5,6 +5,7 @@
 #include "profile.h"
 #include "arg_parse.h"
 #include "utils.hpp"
+#include "sampling_common.hpp"
 #include <memory>
 #include <vector>
 #include "bpf_event.h"
@@ -27,19 +28,9 @@ struct profile_bpf;
 struct bpf_link;
 struct blazesym;
 
-// Data structure for collected profile data
-struct ProfileEntry {
-    struct sample_key_t key;
-    __u64 count;
-    std::vector<unsigned long> user_stack;
-    std::vector<unsigned long> kernel_stack;
-    bool has_user_stack;
-    bool has_kernel_stack;
-};
-
-struct ProfileData {
-    std::vector<ProfileEntry> entries;
-};
+// Use unified data structures from sampling_common.hpp
+using ProfileData = SamplingData;
+using ProfileEntry = SamplingEntry;
 
 // Custom deleters for RAII
 struct ProfileBPFDeleter {

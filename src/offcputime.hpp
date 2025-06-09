@@ -3,8 +3,8 @@
 
 #include "collector_interface.hpp"
 #include "bpf_event.h"
-#include "arg_parse.h"
 #include "utils.hpp"
+#include "sampling_common.hpp"
 #include <memory>
 #include <vector>
 
@@ -23,19 +23,9 @@ extern "C" {
 struct offcputime_bpf;
 struct blazesym;
 
-// Data structure for collected off-CPU data
-struct OffCPUEntry {
-    struct sample_key_t key;
-    unsigned long long val;
-    std::vector<unsigned long> user_stack;
-    std::vector<unsigned long> kernel_stack;
-    bool has_user_stack;
-    bool has_kernel_stack;
-};
-
-struct OffCPUData {
-    std::vector<OffCPUEntry> entries;
-};
+// Use unified data structures from sampling_common.hpp
+using OffCPUData = SamplingData;
+using OffCPUEntry = SamplingEntry;
 
 // Custom deleters for RAII
 struct OffCPUBPFDeleter {

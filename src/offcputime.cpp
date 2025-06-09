@@ -213,9 +213,9 @@ OffCPUData OffCPUTimeCollector::collect_data() {
         if (val == 0)
             continue;
 
-        OffCPUEntry entry;
+        SamplingEntry entry;
         entry.key = next_key;
-        entry.val = val;
+        entry.value = val;
         entry.has_kernel_stack = next_key.kern_stack_id != -1;
         entry.has_user_stack = next_key.user_stack_id != -1;
         
@@ -244,84 +244,11 @@ OffCPUData OffCPUTimeCollector::collect_data() {
 }
 
 std::string OffCPUTimeCollector::format_data(const OffCPUData& data) {
-    // For the return value, we just return a summary since the actual output
-    // is printed directly to stdout by the show_stack_trace functions
-    std::ostringstream oss;
-    oss << "Collected " << data.entries.size() << " off-CPU entries";
-    return oss.str();
+    return SamplingPrinter::format_data(data, "off-CPU");
 }
 
 void OffCPUTimeCollector::print_data(const OffCPUData& data) {
-    if (!symbolizer) {
-        return;
-    }
-    
-    for (const auto& entry : data.entries) {
-        if (env.folded) {
-            /* folded stack output format */
-            printf("%s", entry.key.comm);
-            
-            /* Print user stack first for folded format */
-            if (entry.has_user_stack && !env.kernel_threads_only) {
-                if (entry.user_stack.empty()) {
-                    printf(";[Missed User Stack]");
-                } else {
-                    printf(";");
-                    show_stack_trace_folded(symbolizer.get(), 
-                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
-                        env.perf_max_stack_depth, entry.key.tgid, ';', true);
-                }
-            }
-            
-            /* Then print kernel stack if it exists */
-            if (entry.has_kernel_stack && !env.user_threads_only) {
-                /* Add delimiter between user and kernel stacks if needed */
-                if (entry.has_user_stack && env.delimiter && !env.kernel_threads_only)
-                    printf("-");
-                    
-                if (entry.kernel_stack.empty()) {
-                    printf(";[Missed Kernel Stack]");
-                } else {
-                    printf(";");
-                    show_stack_trace_folded(symbolizer.get(), 
-                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
-                        env.perf_max_stack_depth, 0, ';', true);
-                }
-            }
-            
-            printf(" %lld\n", entry.val);
-        } else {
-            /* standard multi-line output format */
-            if (entry.has_kernel_stack && !env.user_threads_only) {
-                if (entry.kernel_stack.empty()) {
-                    fprintf(stderr, "    [Missed Kernel Stack]\n");
-                } else {
-                    show_stack_trace(symbolizer.get(), 
-                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
-                        env.perf_max_stack_depth, 0);
-                }
-            }
-
-            /* Add delimiter between kernel and user stacks if both exist and delimiter is requested */
-            if (env.delimiter && entry.has_kernel_stack && entry.has_user_stack && 
-                !env.user_threads_only && !env.kernel_threads_only) {
-                printf("    --\n");
-            }
-
-            if (entry.has_user_stack && !env.kernel_threads_only) {
-                if (entry.user_stack.empty()) {
-                    fprintf(stderr, "    [Missed User Stack]\n");
-                } else {
-                    show_stack_trace(symbolizer.get(), 
-                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
-                        env.perf_max_stack_depth, entry.key.tgid);
-                }
-            }
-
-            printf("    %-16s %s (%d)\n", "-", entry.key.comm, entry.key.pid);
-            printf("        %lld\n\n", entry.val);
-        }
-    }
+    SamplingPrinter::print_data(data, symbolizer.get(), "us");
 }
 
 CollectorData OffCPUTimeCollector::get_data() {

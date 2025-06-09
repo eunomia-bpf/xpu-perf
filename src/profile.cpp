@@ -417,11 +417,11 @@ ProfileData ProfileCollector::collect_data() {
         return a.v > b.v;
     });
     
-    // Convert to ProfileEntry format with stack traces
+    // Convert to SamplingEntry format with stack traces
     for (const auto& item : items) {
-        ProfileEntry entry;
+        SamplingEntry entry;
         entry.key = item.k;
-        entry.count = item.v;
+        entry.value = item.v;  // Changed from count to value
         entry.has_kernel_stack = !STACK_ID_EFAULT(item.k.kern_stack_id);
         entry.has_user_stack = !STACK_ID_EFAULT(item.k.user_stack_id);
         
@@ -450,89 +450,11 @@ ProfileData ProfileCollector::collect_data() {
 }
 
 std::string ProfileCollector::format_data(const ProfileData& data) {
-    // For the return value, we just return a summary since the actual output
-    // is printed directly to stdout by the show_stack_trace functions
-    std::ostringstream oss;
-    oss << "Collected " << data.entries.size() << " profile entries";
-    return oss.str();
+    return SamplingPrinter::format_data(data, "profile");
 }
 
 void ProfileCollector::print_data(const ProfileData& data) {
-    if (!symbolizer) {
-        return;
-    }
-    
-    for (const auto& entry : data.entries) {
-        if (!env.folded) {
-            /* multi-line stack output */
-            /* Show kernel stack first */
-            if (!env.user_stacks_only && entry.has_kernel_stack) {
-                if (entry.kernel_stack.empty()) {
-                    fprintf(stderr, "    [Missed Kernel Stack]\n");
-                } else {
-                    show_stack_trace(symbolizer.get(), 
-                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
-                        env.perf_max_stack_depth, 0);
-                }
-            }
-
-            if (env.delimiter && !env.user_stacks_only && !env.kernel_stacks_only &&
-                entry.has_user_stack && entry.has_kernel_stack) {
-                printf("    --\n");
-            }
-
-            /* Then show user stack */
-            if (!env.kernel_stacks_only && entry.has_user_stack) {
-                if (entry.user_stack.empty()) {
-                    fprintf(stderr, "    [Missed User Stack]\n");
-                } else {
-                    show_stack_trace(symbolizer.get(), 
-                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
-                        env.perf_max_stack_depth, entry.key.pid);
-                }
-            }
-
-            printf("    %-16s %s (%d)\n", "-", entry.key.comm, entry.key.pid);
-            printf("        %lld\n", entry.count);
-        } else {
-            /* folded stack output */
-            printf("%s", entry.key.comm);
-            
-            /* Print user stack first for folded format */
-            if (entry.has_user_stack && !env.kernel_stacks_only) {
-                if (entry.user_stack.empty()) {
-                    printf(";[Missed User Stack]");
-                } else {
-                    printf(";");
-                    show_stack_trace_folded(symbolizer.get(), 
-                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
-                        env.perf_max_stack_depth, entry.key.pid, ';', true);
-                }
-            }
-            
-            /* Then print kernel stack if it exists */
-            if (entry.has_kernel_stack && !env.user_stacks_only) {
-                /* Add delimiter between user and kernel stacks if needed */
-                if (entry.has_user_stack && env.delimiter && !env.kernel_stacks_only)
-                    printf("-");
-                    
-                if (entry.kernel_stack.empty()) {
-                    printf(";[Missed Kernel Stack]");
-                } else {
-                    printf(";");
-                    show_stack_trace_folded(symbolizer.get(), 
-                        const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
-                        env.perf_max_stack_depth, 0, ';', true);
-                }
-            }
-            
-            printf(" %lld\n", entry.count);
-        }
-        
-        /* Add a newline between stack traces for better readability in non-folded mode */
-        if (!env.folded)
-            printf("\n");
-    }
+    SamplingPrinter::print_data(data, symbolizer.get(), "");
 }
 
 CollectorData ProfileCollector::get_data() {
