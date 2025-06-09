@@ -218,7 +218,7 @@ inline std::string SamplingPrinter::print_entry_multiline(const SamplingEntry& e
                 const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
                 std::min(static_cast<int>(entry.kernel_stack.size()), config.perf_max_stack_depth), 
                 0);
-            oss << stack_trace_to_string(symbols);
+            oss << this->stack_trace_to_string(symbols);
         }
     }
     
@@ -237,7 +237,7 @@ inline std::string SamplingPrinter::print_entry_multiline(const SamplingEntry& e
                 const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
                 std::min(static_cast<int>(entry.user_stack.size()), config.perf_max_stack_depth), 
                 entry.key.pid);
-            oss << stack_trace_to_string(symbols);
+            oss << this->stack_trace_to_string(symbols);
         }
     }
     

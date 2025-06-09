@@ -4,7 +4,6 @@
 #include "bpf_event.h"
 #include "collector_interface.hpp"
 #include <vector>
-#include <cstdint>
 #include <linux/types.h>
 
 // Forward declaration

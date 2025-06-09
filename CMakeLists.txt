@@ -145,6 +145,8 @@ add_executable(profiler
     src/main.cpp
     src/collectors/oncpu/profile.cpp
     src/collectors/offcpu/offcputime.cpp
+    src/analyzers/base_analyzer.cpp
+    src/analyzers/wallclock_analyzer.cpp
 )
 
 # Set C++ standard for the target

@@ -5,10 +5,7 @@
 #include <string.h>
 #include <cstdlib>
 
-#include "collectors/collector_interface.hpp"
-#include "collectors/oncpu/profile.hpp"
-#include "collectors/offcpu/offcputime.hpp"
-#include "sampling_printer.hpp"
+#include "analyzers/analyzer.hpp"
 
 static volatile bool running = true;
 
@@ -18,14 +15,16 @@ static void sig_handler(int sig)
 }
 
 void print_usage(const char* program_name) {
-    printf("Usage: %s <collector_type> [duration_seconds]\n", program_name);
-    printf("\nCollector types:\n");
+    printf("Usage: %s <analyzer_type> [duration_seconds]\n", program_name);
+    printf("\nAnalyzer types:\n");
     printf("  profile     - CPU profiling by sampling stack traces\n");
     printf("  offcputime  - Off-CPU time analysis\n");
+    printf("  wallclock   - Combined on-CPU and off-CPU analysis\n");
     printf("\nOptional arguments:\n");
-    printf("  duration_seconds - How long to run the collector (default: run until interrupted)\n");
+    printf("  duration_seconds - How long to run the analyzer (default: run until interrupted)\n");
     printf("\nExample:\n");
     printf("  %s profile 10        # Profile for 10 seconds\n", program_name);
+    printf("  %s wallclock 30      # Combined analysis for 30 seconds\n", program_name);
     printf("  %s offcputime        # Run until Ctrl+C\n", program_name);
 }
 
@@ -36,10 +35,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    std::string collector_type = argv[1];
+    std::string analyzer_type = argv[1];
     
     // Check for help
-    if (collector_type == "-h" || collector_type == "--help") {
+    if (analyzer_type == "-h" || analyzer_type == "--help") {
         print_usage(argv[0]);
         return 0;
     }
@@ -54,39 +53,43 @@ int main(int argc, char **argv)
         }
     }
 
-    // Set up signal handler BEFORE creating collectors
+    // Set up signal handler BEFORE creating analyzers
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
 
-    // Create the appropriate collector
-    std::unique_ptr<ICollector> collector;
+    // Create the appropriate analyzer
+    std::unique_ptr<IAnalyzer> analyzer;
     
-    if (collector_type == "profile") {
-        auto profile_collector = std::make_unique<ProfileCollector>();
-        profile_collector->get_config().duration = duration;
-        collector = std::move(profile_collector);
-    } else if (collector_type == "offcputime") {
-        auto offcpu_collector = std::make_unique<OffCPUTimeCollector>();
-        offcpu_collector->get_config().duration = duration;
-        collector = std::move(offcpu_collector);
+    if (analyzer_type == "profile") {
+        auto profile_analyzer = std::make_unique<ProfileAnalyzer>();
+        profile_analyzer->get_config().duration = duration;
+        analyzer = std::move(profile_analyzer);
+    } else if (analyzer_type == "offcputime") {
+        auto offcpu_analyzer = std::make_unique<OffCPUTimeAnalyzer>();
+        offcpu_analyzer->get_config().duration = duration;
+        analyzer = std::move(offcpu_analyzer);
+    } else if (analyzer_type == "wallclock") {
+        auto wallclock_analyzer = std::make_unique<WallClockAnalyzer>();
+        wallclock_analyzer->configure(duration);  // Use default values for other parameters
+        analyzer = std::move(wallclock_analyzer);
     } else {
-        fprintf(stderr, "Unknown collector type: %s\n", collector_type.c_str());
+        fprintf(stderr, "Unknown analyzer type: %s\n", analyzer_type.c_str());
         print_usage(argv[0]);
         return 1;
     }
 
-    if (!collector) {
-        fprintf(stderr, "Failed to create collector\n");
+    if (!analyzer) {
+        fprintf(stderr, "Failed to create analyzer\n");
         return 1;
     }
 
-    // Start the collector
-    if (!collector->start()) {
-        fprintf(stderr, "Failed to start %s collector\n", collector->get_name().c_str());
+    // Start the analyzer
+    if (!analyzer->start()) {
+        fprintf(stderr, "Failed to start %s analyzer\n", analyzer->get_name().c_str());
         return 1;
     }
 
-    printf("Started %s collector", collector->get_name().c_str());
+    printf("Started %s analyzer", analyzer->get_name().c_str());
     if (duration < 99999999) {
         printf(" for %d seconds", duration);
     }
@@ -99,46 +102,48 @@ int main(int argc, char **argv)
         remaining--;
     }
 
-    printf("\nStopping collector...\n");
+    printf("\nStopping analyzer...\n");
 
-    // Get the collected data using unique_ptr properly
-    auto data = collector->get_data();
-    if (!data || !data->success) {
-        fprintf(stderr, "Failed to collect data from %s\n", collector->get_name().c_str());
+    // Get the flamegraph from the analyzer
+    auto flamegraph = analyzer->get_flamegraph();
+    if (!flamegraph || !flamegraph->success) {
+        fprintf(stderr, "Failed to get flamegraph from %s\n", analyzer->get_name().c_str());
         return 1;
     }
 
-    // Check if it's sampling data and use SamplingPrinter if so
-    if (data->type == CollectorData::Type::SAMPLING) {
-        auto* sampling_data = dynamic_cast<SamplingData*>(data.get());
-        if (sampling_data) {
-            // Create a SamplingPrinter instance
-            SamplingPrinter printer;
-            if (!printer.is_valid()) {
-                fprintf(stderr, "Failed to initialize symbolizer for printing\n");
-                return 1;
-            }
+    // Print summary
+    printf("\nFlameGraph data:\n");
+    printf("%s\n", flamegraph->to_summary().c_str());
+    
+    if (analyzer->get_name() == "profile_analyzer" || analyzer->get_name() == "offcputime_analyzer") {
+        // For single-threaded analyzers, show folded format and top stacks
+        printf("\nFolded format (for flamegraph.pl):\n");
+        printf("%s\n", flamegraph->to_folded_format().c_str());
+        
+        printf("\nTop 10 stacks:\n");
+        auto top_stacks = flamegraph->get_top_stacks(10);
+        for (size_t i = 0; i < top_stacks.size(); i++) {
+            const auto& entry = top_stacks[i];
+            printf("%zu. [%.2f%%] %s (%llu %s)\n", i + 1, entry.percentage, 
+                   entry.folded_stack.c_str(), entry.sample_count, flamegraph->time_unit.c_str());
+        }
+    } else if (analyzer->get_name() == "wallclock_analyzer") {
+        auto* wallclock_analyzer = dynamic_cast<WallClockAnalyzer*>(analyzer.get());
+        if (wallclock_analyzer) {
+            // Get per-thread flamegraphs and print each thread separately
+            auto per_thread_flamegraphs = wallclock_analyzer->get_per_thread_flamegraphs();
             
-            printf("\nCollected data:\n");
-            printf("%s\n", SamplingPrinter::format_data(*sampling_data, collector->get_name()).c_str());
-            
-            // Get appropriate config from collector and print data
-            if (collector->get_name() == "profile") {
-                auto* profile_collector = dynamic_cast<ProfileCollector*>(collector.get());
-                if (profile_collector) {
-                    std::string output = printer.print_data(*sampling_data, profile_collector->get_config());
-                    printf("%s\n", output.c_str());
-                }
-            } else if (collector->get_name() == "offcputime") {
-                auto* offcpu_collector = dynamic_cast<OffCPUTimeCollector*>(collector.get());
-                if (offcpu_collector) {
-                    std::string output = printer.print_data(*sampling_data, offcpu_collector->get_config());
-                    printf("%s\n", output.c_str());
+            printf("Per-thread flamegraphs:\n");
+            for (const auto& [tid, thread_flamegraph] : per_thread_flamegraphs) {
+                if (thread_flamegraph && thread_flamegraph->success) {
+                    printf("\n--- Thread %d ---\n", tid);
+                    printf("%s\n", thread_flamegraph->to_summary().c_str());
+                    printf("Folded format:\n%s\n", thread_flamegraph->to_folded_format().c_str());
                 }
             }
         }
     }
 
-    printf("\nCollector %s finished successfully\n", collector->get_name().c_str());
+    printf("\nAnalyzer %s finished successfully\n", analyzer->get_name().c_str());
     return 0;
 } 
