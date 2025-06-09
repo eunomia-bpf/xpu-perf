@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 project(bpf_profiler)
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find required packages
@@ -140,62 +140,60 @@ endfunction()
 compile_bpf_program(offcputime.bpf.c)
 compile_bpf_program(profile.bpf.c)
 
-# Compile source files to object files
-set(MAIN_OBJ ${OUTPUT_DIR}/main.o)
-set(PROFILE_OBJ ${OUTPUT_DIR}/profile.o)
-set(OFFCPUTIME_OBJ ${OUTPUT_DIR}/offcputime.o)
-set(UTILS_OBJ ${OUTPUT_DIR}/utils.o)
-
-add_custom_command(
-    OUTPUT ${MAIN_OBJ}
-    COMMAND g++ -g -Wall -std=c++11 ${INCLUDES} -c ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp -o ${MAIN_OBJ}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp ${profile_SKEL_H} ${offcputime_SKEL_H} ${LIBBLAZESYM_HEADER}
-    COMMENT "Compiling main.cpp"
+# Create the main executable using proper CMake way
+add_executable(profiler
+    src/main.cpp
+    src/profile.cpp
+    src/offcputime.cpp
+    src/utils.cpp
 )
 
-add_custom_command(
-    OUTPUT ${PROFILE_OBJ}
-    COMMAND g++ -g -Wall -std=c++11 ${INCLUDES} -c ${CMAKE_CURRENT_SOURCE_DIR}/src/profile.cpp -o ${PROFILE_OBJ}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/profile.cpp ${profile_SKEL_H} ${LIBBLAZESYM_HEADER}
-    COMMENT "Compiling profile.cpp"
+# Set C++ standard for the target
+set_target_properties(profiler PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
 )
 
-add_custom_command(
-    OUTPUT ${OFFCPUTIME_OBJ}
-    COMMAND g++ -g -Wall -std=c++11 ${INCLUDES} -c ${CMAKE_CURRENT_SOURCE_DIR}/src/offcputime.cpp -o ${OFFCPUTIME_OBJ}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/offcputime.cpp ${offcputime_SKEL_H} ${LIBBLAZESYM_HEADER}
-    COMMENT "Compiling offcputime.cpp"
+# Add include directories
+target_include_directories(profiler PRIVATE
+    ${OUTPUT_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/libbpf/include/uapi
+    ${CMAKE_CURRENT_SOURCE_DIR}/vmlinux/${ARCH}
 )
 
-add_custom_command(
-    OUTPUT ${UTILS_OBJ}
-    COMMAND g++ -g -Wall -std=c++11 ${INCLUDES} -c ${CMAKE_CURRENT_SOURCE_DIR}/src/utils.cpp -o ${UTILS_OBJ}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/utils.cpp ${LIBBLAZESYM_HEADER}
-    COMMENT "Compiling utils.cpp"
+# Add dependencies to ensure BPF skeletons and libraries are built first
+add_dependencies(profiler 
+    libbpf_target
+    blazesym_target
+    profile_bpf_target
+    offcputime_bpf_target
 )
 
-# Link the final executable
-set(PROFILER_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/profiler)
-add_custom_command(
-    OUTPUT ${PROFILER_EXECUTABLE}
-    COMMAND g++ -g -Wall -std=c++11 ${MAIN_OBJ} ${PROFILE_OBJ} ${OFFCPUTIME_OBJ} ${UTILS_OBJ} ${LIBBPF_OBJ} ${LIBBLAZESYM_OBJ} 
-            -lelf -lz -lrt -ldl -lpthread -lm -o ${PROFILER_EXECUTABLE}
-    DEPENDS ${MAIN_OBJ} ${PROFILE_OBJ} ${OFFCPUTIME_OBJ} ${UTILS_OBJ} ${LIBBPF_OBJ} ${LIBBLAZESYM_OBJ}
-    COMMENT "Linking profiler executable"
+# Link libraries
+target_link_libraries(profiler PRIVATE
+    ${LIBBPF_OBJ}
+    ${LIBBLAZESYM_OBJ}
+    elf
+    z
+    rt
+    dl
+    pthread
+    m
 )
 
-# Create target
-add_custom_target(profiler ALL DEPENDS ${PROFILER_EXECUTABLE})
+# Create custom targets for dependencies
+add_custom_target(libbpf_target DEPENDS ${LIBBPF_OBJ})
+add_custom_target(blazesym_target DEPENDS ${LIBBLAZESYM_OBJ} ${LIBBLAZESYM_HEADER})
+add_custom_target(profile_bpf_target DEPENDS ${profile_SKEL_H})
+add_custom_target(offcputime_bpf_target DEPENDS ${offcputime_SKEL_H})
 
 # Create clean target
 add_custom_target(clean-all
     COMMAND rm -rf ${OUTPUT_DIR}
-    COMMAND rm -f ${CMAKE_CURRENT_BINARY_DIR}/profiler
     COMMENT "Cleaning all build artifacts"
 )
 
 # Create install target
-install(PROGRAMS 
-    ${CMAKE_CURRENT_BINARY_DIR}/profiler
-    DESTINATION bin
+install(TARGETS profiler
+    RUNTIME DESTINATION bin
 ) 

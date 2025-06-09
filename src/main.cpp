@@ -3,11 +3,11 @@
 #include <signal.h>
 #include <unistd.h>
 #include <string.h>
+#include <cstdlib>
 
 #include "collector_interface.hpp"
 #include "profile.hpp"
 #include "offcputime.hpp"
-#include "arg_parse.h"
 
 static volatile bool running = true;
 
@@ -17,14 +17,15 @@ static void sig_handler(int sig)
 }
 
 void print_usage(const char* program_name) {
-    printf("Usage: %s [OPTIONS] <collector_type>\n", program_name);
+    printf("Usage: %s <collector_type> [duration_seconds]\n", program_name);
     printf("\nCollector types:\n");
     printf("  profile     - CPU profiling by sampling stack traces\n");
     printf("  offcputime  - Off-CPU time analysis\n");
-    printf("\nOptions:\n");
-    printf("  -h, --help  Show this help message\n");
-    printf("\nFor collector-specific options, use:\n");
-    printf("  %s <collector_type> --help\n", program_name);
+    printf("\nOptional arguments:\n");
+    printf("  duration_seconds - How long to run the collector (default: run until interrupted)\n");
+    printf("\nExample:\n");
+    printf("  %s profile 10        # Profile for 10 seconds\n", program_name);
+    printf("  %s offcputime        # Run until Ctrl+C\n", program_name);
 }
 
 int main(int argc, char **argv)
@@ -42,36 +43,14 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    // Create new argv without the collector type for arg parsing
-    char **new_argv = (char**)malloc(argc * sizeof(char*));
-    new_argv[0] = argv[0];
-    for (int i = 2; i < argc; i++) {
-        new_argv[i-1] = argv[i];
-    }
-    int new_argc = argc - 1;
-
-    // Parse arguments based on collector type
-    int err;
-    if (collector_type == "profile") {
-        err = parse_common_args(new_argc, new_argv, TOOL_PROFILE);
-    } else if (collector_type == "offcputime") {
-        err = parse_common_args(new_argc, new_argv, TOOL_OFFCPUTIME);
-    } else {
-        fprintf(stderr, "Unknown collector type: %s\n", collector_type.c_str());
-        print_usage(argv[0]);
-        free(new_argv);
-        return 1;
-    }
-
-    free(new_argv);
-
-    if (err) {
-        return err;
-    }
-
-    err = validate_common_args();
-    if (err) {
-        return err;
+    // Parse optional duration
+    int duration = 99999999; // Default: very long time
+    if (argc >= 3) {
+        duration = atoi(argv[2]);
+        if (duration <= 0) {
+            fprintf(stderr, "Invalid duration: %s\n", argv[2]);
+            return 1;
+        }
     }
 
     // Set up signal handler BEFORE creating collectors
@@ -82,9 +61,17 @@ int main(int argc, char **argv)
     std::unique_ptr<ICollector> collector;
     
     if (collector_type == "profile") {
-        collector.reset(new ProfileCollector());
+        auto profile_collector = std::make_unique<ProfileCollector>();
+        profile_collector->get_config().duration = duration;
+        collector = std::move(profile_collector);
     } else if (collector_type == "offcputime") {
-        collector.reset(new OffCPUTimeCollector());
+        auto offcpu_collector = std::make_unique<OffCPUTimeCollector>();
+        offcpu_collector->get_config().duration = duration;
+        collector = std::move(offcpu_collector);
+    } else {
+        fprintf(stderr, "Unknown collector type: %s\n", collector_type.c_str());
+        print_usage(argv[0]);
+        return 1;
     }
 
     if (!collector) {
@@ -98,10 +85,14 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    printf("Started %s collector\n", collector->get_name().c_str());
+    printf("Started %s collector", collector->get_name().c_str());
+    if (duration < 99999999) {
+        printf(" for %d seconds", duration);
+    }
+    printf("\n");
 
     // Sleep for the specified duration or until interrupted
-    int remaining = env.duration;
+    int remaining = duration;
     while (running && remaining > 0) {
         sleep(1);
         remaining--;

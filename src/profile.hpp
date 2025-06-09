@@ -3,7 +3,7 @@
 
 #include "collector_interface.hpp"
 #include "profile.h"
-#include "arg_parse.h"
+#include "config.hpp"
 #include "utils.hpp"
 #include "sampling_common.hpp"
 #include <memory>
@@ -48,6 +48,7 @@ private:
     bool running;
     int nr_cpus;
     std::unique_ptr<struct blazesym, BlazesymDeleter> symbolizer;
+    ProfileConfig config;
     
 public:
     ProfileCollector();
@@ -56,6 +57,10 @@ public:
     std::string get_name() const override;
     bool start() override;
     CollectorData get_data() override;
+    
+    // Config management
+    ProfileConfig& get_config() { return config; }
+    const ProfileConfig& get_config() const { return config; }
     
 private:
     int open_and_attach_perf_event(struct bpf_program *prog);

@@ -24,15 +24,12 @@ extern "C" {
 
 #include "bpf_event.h"
 #include "../build/offcputime.skel.h"
-#include "arg_parse.h"
 #include "offcputime.hpp"
 #include "utils.hpp"
 #include <sstream>
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
-	if (level == LIBBPF_DEBUG && !env.verbose)
-		return 0;
 	return vfprintf(stderr, format, args);
 }
 
@@ -59,40 +56,40 @@ static bool probe_tp_btf(const char *name)
 	return fd >= 0;
 }
 
-static bool print_header_threads()
+static bool print_header_threads(const Config& config)
 {
 	int i;
 	bool printed = false;
 
-	if (env.pids[0]) {
+	if (config.pids[0]) {
 		printf(" PID [");
-		for (i = 0; i < MAX_PID_NR && env.pids[i]; i++)
-			printf("%d%s", env.pids[i], (i < MAX_PID_NR - 1 && env.pids[i + 1]) ? ", " : "]");
+		for (i = 0; i < MAX_PID_NR && config.pids[i]; i++)
+			printf("%d%s", config.pids[i], (i < MAX_PID_NR - 1 && config.pids[i + 1]) ? ", " : "]");
 		printed = true;
 	}
 
-	if (env.tids[0]) {
+	if (config.tids[0]) {
 		printf(" TID [");
-		for (i = 0; i < MAX_TID_NR && env.tids[i]; i++)
-			printf("%d%s", env.tids[i], (i < MAX_TID_NR - 1 && env.tids[i + 1]) ? ", " : "]");
+		for (i = 0; i < MAX_TID_NR && config.tids[i]; i++)
+			printf("%d%s", config.tids[i], (i < MAX_TID_NR - 1 && config.tids[i + 1]) ? ", " : "]");
 		printed = true;
 	}
 
 	return printed;
 }
 
-static void print_headers()
+static void print_headers(const Config& config)
 {
-	if (env.folded)
+	if (config.folded)
 		return;  // Don't print headers in folded format
 
 	printf("Tracing off-CPU time (us) of");
 
-	if (!print_header_threads())
+	if (!print_header_threads(config))
 		printf(" all threads");
 
-	if (env.duration < 99999999)
-		printf(" for %d secs.\n", env.duration);
+	if (config.duration < 99999999)
+		printf(" for %d secs.\n", config.duration);
 	else
 		printf("... Hit Ctrl-C to end.\n");
 }
@@ -121,21 +118,21 @@ bool OffCPUTimeCollector::start() {
     }
 
     /* initialize global data (filtering options) */
-    obj->rodata->user_threads_only = env.user_threads_only;
-    obj->rodata->kernel_threads_only = env.kernel_threads_only;
-    obj->rodata->state = env.state;
-    obj->rodata->min_block_ns = env.min_block_time;
-    obj->rodata->max_block_ns = env.max_block_time;
+    obj->rodata->user_threads_only = config.user_threads_only;
+    obj->rodata->kernel_threads_only = config.kernel_threads_only;
+    obj->rodata->state = config.state;
+    obj->rodata->min_block_ns = config.min_block_time;
+    obj->rodata->max_block_ns = config.max_block_time;
 
     /* User space PID and TID correspond to TGID and PID in the kernel, respectively */
-    if (env.pids[0])
+    if (config.pids[0])
         obj->rodata->filter_by_tgid = true;
-    if (env.tids[0])
+    if (config.tids[0])
         obj->rodata->filter_by_pid = true;
 
     bpf_map__set_value_size(obj->maps.stackmap,
-                env.perf_max_stack_depth * sizeof(unsigned long));
-    bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
+                config.perf_max_stack_depth * sizeof(unsigned long));
+    bpf_map__set_max_entries(obj->maps.stackmap, config.stack_storage_size);
 
     if (!probe_tp_btf("sched_switch"))
         bpf_program__set_autoload(obj->progs.sched_switch, false);
@@ -148,21 +145,21 @@ bool OffCPUTimeCollector::start() {
         goto cleanup;
     }
 
-    if (env.pids[0]) {
+    if (config.pids[0]) {
         /* User pids_fd points to the tgids map in the BPF program */
         int pids_fd = bpf_map__fd(obj->maps.tgids);
-        for (i = 0; i < MAX_PID_NR && env.pids[i]; i++) {
-            if (bpf_map_update_elem(pids_fd, &(env.pids[i]), &val, BPF_ANY) != 0) {
+        for (i = 0; i < MAX_PID_NR && config.pids[i]; i++) {
+            if (bpf_map_update_elem(pids_fd, &(config.pids[i]), &val, BPF_ANY) != 0) {
                 fprintf(stderr, "failed to init pids map: %s\n", strerror(errno));
                 goto cleanup;
             }
         }
     }
-    if (env.tids[0]) {
+    if (config.tids[0]) {
         /* User tids_fd points to the pids map in the BPF program */
         int tids_fd = bpf_map__fd(obj->maps.pids);
-        for (i = 0; i < MAX_TID_NR && env.tids[i]; i++) {
-            if (bpf_map_update_elem(tids_fd, &(env.tids[i]), &val, BPF_ANY) != 0) {
+        for (i = 0; i < MAX_TID_NR && config.tids[i]; i++) {
+            if (bpf_map_update_elem(tids_fd, &(config.tids[i]), &val, BPF_ANY) != 0) {
                 fprintf(stderr, "failed to init tids map: %s\n", strerror(errno));
                 goto cleanup;
             }
@@ -220,8 +217,8 @@ OffCPUData OffCPUTimeCollector::collect_data() {
         entry.has_user_stack = next_key.user_stack_id != -1;
         
         // Collect stack traces
-        entry.user_stack.resize(env.perf_max_stack_depth);
-        entry.kernel_stack.resize(env.perf_max_stack_depth);
+        entry.user_stack.resize(config.perf_max_stack_depth);
+        entry.kernel_stack.resize(config.perf_max_stack_depth);
         
         if (entry.has_user_stack) {
             if (bpf_map_lookup_elem(fd_stackid, &next_key.user_stack_id, entry.user_stack.data()) != 0) {
@@ -248,7 +245,7 @@ std::string OffCPUTimeCollector::format_data(const OffCPUData& data) {
 }
 
 void OffCPUTimeCollector::print_data(const OffCPUData& data) {
-    SamplingPrinter::print_data(data, symbolizer.get(), "us");
+    SamplingPrinter::print_data(data, symbolizer.get(), config, "us");
 }
 
 CollectorData OffCPUTimeCollector::get_data() {
@@ -257,7 +254,7 @@ CollectorData OffCPUTimeCollector::get_data() {
     }
     
     // Print headers first (if not in folded mode)
-    print_headers();
+    print_headers(config);
     
     // Collect the data from BPF maps
     OffCPUData data = collect_data();

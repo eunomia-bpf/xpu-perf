@@ -2,7 +2,7 @@
 #define __SAMPLING_COMMON_HPP
 
 #include "utils.hpp"
-#include "arg_parse.h"
+#include "config.hpp"
 #include "bpf_event.h"
 #include <memory>
 #include <vector>
@@ -39,16 +39,16 @@ struct SamplingData {
 // Common print functions for sampling data
 class SamplingPrinter {
 public:
-    static void print_data(const SamplingData& data, struct blazesym* symbolizer, const std::string& value_label = "");
+    static void print_data(const SamplingData& data, struct blazesym* symbolizer, const Config& config, const std::string& value_label = "");
     static std::string format_data(const SamplingData& data, const std::string& tool_name);
     
 private:
-    static void print_entry_multiline(const SamplingEntry& entry, struct blazesym* symbolizer, const std::string& value_label);
-    static void print_entry_folded(const SamplingEntry& entry, struct blazesym* symbolizer);
+    static void print_entry_multiline(const SamplingEntry& entry, struct blazesym* symbolizer, const Config& config, const std::string& value_label);
+    static void print_entry_folded(const SamplingEntry& entry, struct blazesym* symbolizer, const Config& config);
 };
 
 // Implementation
-inline void SamplingPrinter::print_data(const SamplingData& data, struct blazesym* symbolizer, const std::string& value_label) {
+inline void SamplingPrinter::print_data(const SamplingData& data, struct blazesym* symbolizer, const Config& config, const std::string& value_label) {
     if (!symbolizer) {
         return;
     }
@@ -56,10 +56,10 @@ inline void SamplingPrinter::print_data(const SamplingData& data, struct blazesy
     for (size_t i = 0; i < data.entries.size(); i++) {
         const auto& entry = data.entries[i];
         
-        if (env.folded) {
-            print_entry_folded(entry, symbolizer);
+        if (config.folded) {
+            print_entry_folded(entry, symbolizer, config);
         } else {
-            print_entry_multiline(entry, symbolizer, value_label);
+            print_entry_multiline(entry, symbolizer, config, value_label);
             
             // Add a newline between stack traces for better readability
             if (i < data.entries.size() - 1) {
@@ -75,32 +75,32 @@ inline std::string SamplingPrinter::format_data(const SamplingData& data, const 
     return oss.str();
 }
 
-inline void SamplingPrinter::print_entry_multiline(const SamplingEntry& entry, struct blazesym* symbolizer, const std::string& value_label) {
+inline void SamplingPrinter::print_entry_multiline(const SamplingEntry& entry, struct blazesym* symbolizer, const Config& config, const std::string& value_label) {
     /* multi-line stack output */
     /* Show kernel stack first */
-    if (!env.user_stacks_only && entry.has_kernel_stack) {
+    if (!config.user_stacks_only && entry.has_kernel_stack) {
         if (entry.kernel_stack.empty()) {
             fprintf(stderr, "    [Missed Kernel Stack]\n");
         } else {
             show_stack_trace(symbolizer, 
                 const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
-                env.perf_max_stack_depth, 0);
+                config.perf_max_stack_depth, 0);
         }
     }
 
-    if (env.delimiter && !env.user_stacks_only && !env.kernel_stacks_only &&
+    if (config.delimiter && !config.user_stacks_only && !config.kernel_stacks_only &&
         entry.has_user_stack && entry.has_kernel_stack) {
         printf("    --\n");
     }
 
     /* Then show user stack */
-    if (!env.kernel_stacks_only && entry.has_user_stack) {
+    if (!config.kernel_stacks_only && entry.has_user_stack) {
         if (entry.user_stack.empty()) {
             fprintf(stderr, "    [Missed User Stack]\n");
         } else {
             show_stack_trace(symbolizer, 
                 const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
-                env.perf_max_stack_depth, entry.key.pid);
+                config.perf_max_stack_depth, entry.key.pid);
         }
     }
 
@@ -112,26 +112,26 @@ inline void SamplingPrinter::print_entry_multiline(const SamplingEntry& entry, s
     }
 }
 
-inline void SamplingPrinter::print_entry_folded(const SamplingEntry& entry, struct blazesym* symbolizer) {
+inline void SamplingPrinter::print_entry_folded(const SamplingEntry& entry, struct blazesym* symbolizer, const Config& config) {
     /* folded stack output */
     printf("%s", entry.key.comm);
     
     /* Print user stack first for folded format */
-    if (entry.has_user_stack && !env.kernel_stacks_only) {
+    if (entry.has_user_stack && !config.kernel_stacks_only) {
         if (entry.user_stack.empty()) {
             printf(";[Missed User Stack]");
         } else {
             printf(";");
             show_stack_trace_folded(symbolizer, 
                 const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.user_stack.data())), 
-                env.perf_max_stack_depth, entry.key.pid, ';', true);
+                config.perf_max_stack_depth, entry.key.pid, ';', true);
         }
     }
     
     /* Then print kernel stack if it exists */
-    if (entry.has_kernel_stack && !env.user_stacks_only) {
+    if (entry.has_kernel_stack && !config.user_stacks_only) {
         /* Add delimiter between user and kernel stacks if needed */
-        if (entry.has_user_stack && env.delimiter && !env.kernel_stacks_only)
+        if (entry.has_user_stack && config.delimiter && !config.kernel_stacks_only)
             printf("-");
             
         if (entry.kernel_stack.empty()) {
@@ -140,7 +140,7 @@ inline void SamplingPrinter::print_entry_folded(const SamplingEntry& entry, stru
             printf(";");
             show_stack_trace_folded(symbolizer, 
                 const_cast<__u64 *>(reinterpret_cast<const __u64 *>(entry.kernel_stack.data())), 
-                env.perf_max_stack_depth, 0, ';', true);
+                config.perf_max_stack_depth, 0, ';', true);
         }
     }
     

@@ -5,6 +5,7 @@
 #include "bpf_event.h"
 #include "utils.hpp"
 #include "sampling_common.hpp"
+#include "config.hpp"
 #include <memory>
 #include <vector>
 
@@ -37,6 +38,7 @@ private:
     std::unique_ptr<struct offcputime_bpf, OffCPUBPFDeleter> obj;
     bool running;
     std::unique_ptr<struct blazesym, BlazesymDeleter> symbolizer;
+    OffCPUTimeConfig config;
     
 public:
     OffCPUTimeCollector();
@@ -45,6 +47,10 @@ public:
     std::string get_name() const override;
     bool start() override;
     CollectorData get_data() override;
+    
+    // Config management
+    OffCPUTimeConfig& get_config() { return config; }
+    const OffCPUTimeConfig& get_config() const { return config; }
     
 private:
     bool probe_tp_btf(const char *name);

@@ -32,7 +32,6 @@ extern "C" {
 
 #include "profile.h"
 #include "../build/profile.skel.h"
-#include "arg_parse.h"
 #include "profile.hpp"
 #include "utils.hpp"
 #include <sstream>
@@ -52,8 +51,8 @@ extern "C" {
 #define CHECK_STACK_COLLISION(ustack_id, kstack_id)	\
 	(kstack_id == -EEXIST || ustack_id == -EEXIST)
 
-#define MISSING_STACKS(ustack_id, kstack_id)	\
-	(!env.user_stacks_only && STACK_ID_ERR(kstack_id)) + (!env.kernel_stacks_only && STACK_ID_ERR(ustack_id))
+#define MISSING_STACKS(ustack_id, kstack_id, config)	\
+	(!(config).user_stacks_only && STACK_ID_ERR(kstack_id)) + (!(config).kernel_stacks_only && STACK_ID_ERR(ustack_id))
 
 /* This structure combines sample_key_t and count which should be sorted together */
 struct key_ext_t {
@@ -78,45 +77,42 @@ void BPFLinkDeleter::operator()(struct bpf_link* link) const {
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
-	if (level == LIBBPF_DEBUG && !env.verbose)
-		return 0;
-
 	return vfprintf(stderr, format, args);
 }
 
-static void print_headers()
+static void print_headers(const ProfileConfig& config)
 {
 	int i;
 
-	if (env.folded)
+	if (config.folded)
 		return;  // Don't print headers in folded format
 
-	printf("Sampling at %d Hertz of", env.sample_freq);
+	printf("Sampling at %d Hertz of", config.sample_freq);
 
-	if (env.pids[0]) {
+	if (config.pids[0]) {
 		printf(" PID [");
-		for (i = 0; i < MAX_PID_NR && env.pids[i]; i++)
-			printf("%d%s", env.pids[i], (i < MAX_PID_NR - 1 && env.pids[i + 1]) ? ", " : "]");
-	} else if (env.tids[0]) {
+		for (i = 0; i < MAX_PID_NR && config.pids[i]; i++)
+			printf("%d%s", config.pids[i], (i < MAX_PID_NR - 1 && config.pids[i + 1]) ? ", " : "]");
+	} else if (config.tids[0]) {
 		printf(" TID [");
-		for (i = 0; i < MAX_TID_NR && env.tids[i]; i++)
-			printf("%d%s", env.tids[i], (i < MAX_TID_NR - 1 && env.tids[i + 1]) ? ", " : "]");
+		for (i = 0; i < MAX_TID_NR && config.tids[i]; i++)
+			printf("%d%s", config.tids[i], (i < MAX_TID_NR - 1 && config.tids[i + 1]) ? ", " : "]");
 	} else {
 		printf(" all threads");
 	}
 
-	if (env.user_stacks_only)
+	if (config.user_stacks_only)
 		printf(" by user");
-	else if (env.kernel_stacks_only)
+	else if (config.kernel_stacks_only)
 		printf(" by kernel");
 	else
 		printf(" by user + kernel");
 
-	if (env.cpu != -1)
-		printf(" on CPU#%d", env.cpu);
+	if (config.cpu != -1)
+		printf(" on CPU#%d", config.cpu);
 
-	if (env.duration < INT_MAX)
-		printf(" for %d secs.\n", env.duration);
+	if (config.duration < INT_MAX)
+		printf(" for %d secs.\n", config.duration);
 	else
 		printf("... Hit Ctrl-C to end.\n");
 }
@@ -165,17 +161,17 @@ bool ProfileCollector::start() {
     }
 
     /* initialize global data (filtering options) */
-    obj->rodata->user_stacks_only = env.user_stacks_only;
-    obj->rodata->kernel_stacks_only = env.kernel_stacks_only;
-    obj->rodata->include_idle = env.include_idle;
-    if (env.pids[0])
+    obj->rodata->user_stacks_only = config.user_stacks_only;
+    obj->rodata->kernel_stacks_only = config.kernel_stacks_only;
+    obj->rodata->include_idle = config.include_idle;
+    if (config.pids[0])
         obj->rodata->filter_by_pid = true;
-    else if (env.tids[0])
+    else if (config.tids[0])
         obj->rodata->filter_by_tid = true;
 
     bpf_map__set_value_size(obj->maps.stackmap,
-                env.perf_max_stack_depth * sizeof(unsigned long));
-    bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
+                config.perf_max_stack_depth * sizeof(unsigned long));
+    bpf_map__set_max_entries(obj->maps.stackmap, config.stack_storage_size);
 
     err = profile_bpf__load(obj.get());
     if (err) {
@@ -183,19 +179,19 @@ bool ProfileCollector::start() {
         goto cleanup;
     }
 
-    if (env.pids[0]) {
+    if (config.pids[0]) {
         int pids_fd = bpf_map__fd(obj->maps.pids);
-        for (i = 0; i < MAX_PID_NR && env.pids[i]; i++) {
-            if (bpf_map_update_elem(pids_fd, &(env.pids[i]), &val, BPF_ANY) != 0) {
+        for (i = 0; i < MAX_PID_NR && config.pids[i]; i++) {
+            if (bpf_map_update_elem(pids_fd, &(config.pids[i]), &val, BPF_ANY) != 0) {
                 fprintf(stderr, "failed to init pids map: %s\n", strerror(errno));
                 goto cleanup;
             }
         }
     }
-    else if (env.tids[0]) {
+    else if (config.tids[0]) {
         int tids_fd = bpf_map__fd(obj->maps.tids);
-        for (i = 0; i < MAX_TID_NR && env.tids[i]; i++) {
-            if (bpf_map_update_elem(tids_fd, &(env.tids[i]), &val, BPF_ANY) != 0) {
+        for (i = 0; i < MAX_TID_NR && config.tids[i]; i++) {
+            if (bpf_map_update_elem(tids_fd, &(config.tids[i]), &val, BPF_ANY) != 0) {
                 fprintf(stderr, "failed to init tids map: %s\n", strerror(errno));
                 goto cleanup;
             }
@@ -266,8 +262,8 @@ ProfileData ProfileCollector::collect_data() {
         entry.has_user_stack = !STACK_ID_EFAULT(item.k.user_stack_id);
         
         // Collect stack traces
-        entry.user_stack.resize(env.perf_max_stack_depth);
-        entry.kernel_stack.resize(env.perf_max_stack_depth);
+        entry.user_stack.resize(config.perf_max_stack_depth);
+        entry.kernel_stack.resize(config.perf_max_stack_depth);
         
         if (entry.has_user_stack) {
             if (bpf_map_lookup_elem(stack_fd, &item.k.user_stack_id, entry.user_stack.data()) != 0) {
@@ -294,7 +290,7 @@ std::string ProfileCollector::format_data(const ProfileData& data) {
 }
 
 void ProfileCollector::print_data(const ProfileData& data) {
-    SamplingPrinter::print_data(data, symbolizer.get(), "");
+    SamplingPrinter::print_data(data, symbolizer.get(), config, "");
 }
 
 CollectorData ProfileCollector::get_data() {
@@ -303,8 +299,8 @@ CollectorData ProfileCollector::get_data() {
     }
     
     // Print headers first (if not in folded mode)
-    if (!env.folded)
-        print_headers();
+    if (!config.folded)
+        print_headers(config);
     
     // Collect the data from BPF maps
     ProfileData data = collect_data();
@@ -322,8 +318,8 @@ int ProfileCollector::open_and_attach_perf_event(struct bpf_program *prog) {
 	struct perf_event_attr attr = {
 		.type = PERF_TYPE_SOFTWARE,
 		.config = PERF_COUNT_SW_CPU_CLOCK,
-		.sample_freq = static_cast<__u64>(env.sample_freq),
-		.freq = env.freq,
+		.sample_freq = static_cast<__u64>(config.sample_freq),
+		.freq = config.freq,
 	};
 	int i, fd;
 
@@ -331,7 +327,7 @@ int ProfileCollector::open_and_attach_perf_event(struct bpf_program *prog) {
     links.resize(nr_cpus);
 
 	for (i = 0; i < nr_cpus; i++) {
-		if (env.cpu != -1 && env.cpu != i)
+		if (config.cpu != -1 && config.cpu != i)
 			continue;
 
 		fd = syscall(__NR_perf_event_open, &attr, -1, i, -1, 0);
