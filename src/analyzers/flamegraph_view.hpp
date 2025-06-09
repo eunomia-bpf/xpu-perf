@@ -11,6 +11,13 @@
 #include <algorithm>
 #include <sstream>
 #include <iostream>
+#include <sys/types.h>
+#include <memory>
+#include "../sampling_printer.hpp"
+
+// Forward declarations
+class SamplingData;
+class SamplingPrinter;
 
 // Aggregated flamegraph entry representing a unique stack trace
 struct FlameGraphEntry {
@@ -223,6 +230,85 @@ inline std::map<pid_t, std::vector<FlameGraphEntry>> FlameGraphView::group_by_th
     }
     
     return thread_groups;
+}
+
+// Utility function to convert sampling data to flamegraph
+std::unique_ptr<FlameGraphView> sampling_data_to_flamegraph(
+    const SamplingData& data, 
+    const std::string& analyzer_name,
+    SamplingPrinter* symbolizer,
+    bool is_oncpu = true);
+
+// Implementation
+inline std::unique_ptr<FlameGraphView> sampling_data_to_flamegraph(
+    const SamplingData& data, 
+    const std::string& analyzer_name,
+    SamplingPrinter* symbolizer,
+    bool is_oncpu) {
+    
+    auto flamegraph = std::make_unique<FlameGraphView>(analyzer_name, true);
+    
+    if (!symbolizer || !symbolizer->is_valid()) {
+        flamegraph->success = false;
+        return flamegraph;
+    }
+    
+    // Set appropriate time unit
+    flamegraph->time_unit = is_oncpu ? "samples" : "microseconds";
+    
+    for (const auto& entry : data.entries) {
+        std::vector<std::string> user_stack_symbols;
+        std::vector<std::string> kernel_stack_symbols;
+        
+        // Resolve user stack symbols
+        if (entry.has_user_stack && !entry.user_stack.empty()) {
+            user_stack_symbols = symbolizer->get_stack_trace_symbols(
+                const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.user_stack.data())),
+                static_cast<int>(entry.user_stack.size()),
+                entry.key.pid
+            );
+        }
+        
+        // Resolve kernel stack symbols
+        if (entry.has_kernel_stack && !entry.kernel_stack.empty()) {
+            kernel_stack_symbols = symbolizer->get_stack_trace_symbols(
+                const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.kernel_stack.data())),
+                static_cast<int>(entry.kernel_stack.size()),
+                0  // kernel symbols use pid 0
+            );
+        }
+        
+        // Add to flamegraph with appropriate annotations
+        if (is_oncpu) {
+            // Add [c] annotation for CPU-intensive stacks
+            for (auto& symbol : user_stack_symbols) {
+                symbol += "_[c]";
+            }
+            for (auto& symbol : kernel_stack_symbols) {
+                symbol += "_[c]";
+            }
+        } else {
+            // Add [o] annotation for off-CPU stacks
+            for (auto& symbol : user_stack_symbols) {
+                symbol += "_[o]";
+            }
+            for (auto& symbol : kernel_stack_symbols) {
+                symbol += "_[o]";
+            }
+        }
+        
+        flamegraph->add_stack_trace(
+            user_stack_symbols,
+            kernel_stack_symbols,
+            std::string(entry.key.comm),
+            entry.key.pid,
+            entry.value,
+            is_oncpu
+        );
+    }
+    
+    flamegraph->finalize();
+    return flamegraph;
 }
 
 #endif /* __FLAMEGRAPH_VIEW_HPP */ 

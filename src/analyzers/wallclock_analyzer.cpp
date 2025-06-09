@@ -3,6 +3,7 @@
 #include "../collectors/sampling_data.hpp"
 #include <algorithm>
 #include <set>
+#include <sys/types.h>
 
 WallClockAnalyzer::WallClockAnalyzer() 
     : BaseAnalyzer("wallclock_analyzer"),
@@ -113,7 +114,7 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
     }
     
     // Collect all unique thread IDs
-    std::set<pid_t> all_tids;
+    std::set<__u32> all_tids;
     for (const auto& entry : profile_sampling->entries) {
         all_tids.insert(entry.key.pid);
     }
@@ -122,7 +123,7 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
     }
     
     // Create flamegraph for each thread
-    for (pid_t tid : all_tids) {
+    for (__u32 tid : all_tids) {
         auto flamegraph = std::make_unique<FlameGraphView>(get_name() + "_thread_" + std::to_string(tid), true);
         flamegraph->time_unit = "normalized_samples";
         
