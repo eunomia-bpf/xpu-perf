@@ -1,6 +1,5 @@
 #include "wallclock_analyzer.hpp"
-#include "../sampling_printer.hpp"
-#include "../collectors/sampling_data.hpp"
+#include "collectors/sampling_data.hpp"
 #include <algorithm>
 #include <set>
 #include <sys/types.h>
@@ -130,37 +129,26 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
         // Process on-CPU data for this thread
         for (const auto& entry : profile_sampling->entries) {
             if (entry.key.pid == tid) {
-                std::vector<std::string> user_stack_symbols;
-                std::vector<std::string> kernel_stack_symbols;
+                __u64* user_stack = nullptr;
+                int user_stack_size = 0;
+                __u64* kernel_stack = nullptr;
+                int kernel_stack_size = 0;
                 
-                // Resolve symbols
+                // Prepare user stack
                 if (entry.has_user_stack && !entry.user_stack.empty()) {
-                    user_stack_symbols = symbolizer_->get_stack_trace_symbols(
-                        const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.user_stack.data())),
-                        static_cast<int>(entry.user_stack.size()),
-                        entry.key.pid
-                    );
-                    // Add [c] annotation for CPU-intensive stacks
-                    for (auto& symbol : user_stack_symbols) {
-                        symbol += "_[c]";
-                    }
+                    user_stack = const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.user_stack.data()));
+                    user_stack_size = static_cast<int>(entry.user_stack.size());
                 }
                 
+                // Prepare kernel stack
                 if (entry.has_kernel_stack && !entry.kernel_stack.empty()) {
-                    kernel_stack_symbols = symbolizer_->get_stack_trace_symbols(
-                        const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.kernel_stack.data())),
-                        static_cast<int>(entry.kernel_stack.size()),
-                        0
-                    );
-                    // Add [c] annotation for CPU-intensive stacks
-                    for (auto& symbol : kernel_stack_symbols) {
-                        symbol += "_[c]";
-                    }
+                    kernel_stack = const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.kernel_stack.data()));
+                    kernel_stack_size = static_cast<int>(entry.kernel_stack.size());
                 }
                 
-                flamegraph->add_stack_trace(
-                    user_stack_symbols,
-                    kernel_stack_symbols,
+                flamegraph->add_stack_trace_raw(
+                    user_stack, user_stack_size,
+                    kernel_stack, kernel_stack_size,
                     std::string(entry.key.comm),
                     entry.key.pid,
                     entry.value,
@@ -174,40 +162,29 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
         
         for (const auto& entry : offcpu_sampling->entries) {
             if (entry.key.pid == tid) {
-                std::vector<std::string> user_stack_symbols;
-                std::vector<std::string> kernel_stack_symbols;
+                __u64* user_stack = nullptr;
+                int user_stack_size = 0;
+                __u64* kernel_stack = nullptr;
+                int kernel_stack_size = 0;
                 
-                // Resolve symbols
+                // Prepare user stack
                 if (entry.has_user_stack && !entry.user_stack.empty()) {
-                    user_stack_symbols = symbolizer_->get_stack_trace_symbols(
-                        const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.user_stack.data())),
-                        static_cast<int>(entry.user_stack.size()),
-                        entry.key.pid
-                    );
-                    // Add [o] annotation for off-CPU stacks
-                    for (auto& symbol : user_stack_symbols) {
-                        symbol += "_[o]";
-                    }
+                    user_stack = const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.user_stack.data()));
+                    user_stack_size = static_cast<int>(entry.user_stack.size());
                 }
                 
+                // Prepare kernel stack
                 if (entry.has_kernel_stack && !entry.kernel_stack.empty()) {
-                    kernel_stack_symbols = symbolizer_->get_stack_trace_symbols(
-                        const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.kernel_stack.data())),
-                        static_cast<int>(entry.kernel_stack.size()),
-                        0
-                    );
-                    // Add [o] annotation for off-CPU stacks
-                    for (auto& symbol : kernel_stack_symbols) {
-                        symbol += "_[o]";
-                    }
+                    kernel_stack = const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.kernel_stack.data()));
+                    kernel_stack_size = static_cast<int>(entry.kernel_stack.size());
                 }
                 
                 // Normalize microseconds to equivalent samples for visualization
                 __u64 normalized_value = static_cast<__u64>(std::max(1.0, entry.value / normalization_factor));
                 
-                flamegraph->add_stack_trace(
-                    user_stack_symbols,
-                    kernel_stack_symbols,
+                flamegraph->add_stack_trace_raw(
+                    user_stack, user_stack_size,
+                    kernel_stack, kernel_stack_size,
                     std::string(entry.key.comm),
                     entry.key.pid,
                     normalized_value,

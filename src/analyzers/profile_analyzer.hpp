@@ -2,8 +2,11 @@
 #define __PROFILE_ANALYZER_HPP
 
 #include "base_analyzer.hpp"
-#include "../collectors/oncpu/profile.hpp"
+#include "collectors/oncpu/profile.hpp"
 #include <memory>
+
+// Forward declaration
+class ProfileCollector;
 
 class ProfileAnalyzer : public BaseAnalyzer {
 private:

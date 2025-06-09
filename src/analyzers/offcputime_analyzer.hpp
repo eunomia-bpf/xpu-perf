@@ -2,8 +2,11 @@
 #define __OFFCPUTIME_ANALYZER_HPP
 
 #include "base_analyzer.hpp"
-#include "../collectors/offcpu/offcputime.hpp"
+#include "collectors/offcpu/offcputime.hpp"
 #include <memory>
+
+// Forward declaration
+class OffCPUTimeCollector;
 
 class OffCPUTimeAnalyzer : public BaseAnalyzer {
 private:

@@ -2,10 +2,14 @@
 #define __WALLCLOCK_ANALYZER_HPP
 
 #include "base_analyzer.hpp"
-#include "../collectors/oncpu/profile.hpp"
-#include "../collectors/offcpu/offcputime.hpp"
+#include "collectors/oncpu/profile.hpp"
+#include "collectors/offcpu/offcputime.hpp"
 #include <memory>
 #include <map>
+
+// Forward declarations
+class ProfileCollector;
+class OffCPUTimeCollector;
 
 class WallClockAnalyzer : public BaseAnalyzer {
 private:
@@ -16,7 +20,6 @@ private:
     int sampling_frequency_;
     
     // Helper methods
-
     std::map<pid_t, std::unique_ptr<FlameGraphView>> combine_and_resolve_data();
 
 public:

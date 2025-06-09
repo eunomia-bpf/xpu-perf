@@ -1,95 +1,33 @@
-#ifndef __SAMPLING_PRINTER_HPP
-#define __SAMPLING_PRINTER_HPP
-
-#include "collectors/utils.hpp"
-#include "collectors/config.hpp"
-#include "collectors/bpf_event.h"
-#include <memory>
-#include <vector>
-#include <sstream>
-#include <string>
-#include "collectors/sampling_data.hpp"
+#include "symbol_resolver.hpp"
+#include <cstring>
+#include <algorithm>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <bpf/libbpf.h>
-#include <bpf/bpf.h>
 #include "blazesym.h"
+
 #ifdef __cplusplus
 }
 #endif
 
-/**
- * SamplingPrinter - A class to print sampling data with symbol resolution
- * 
- * This class encapsulates the blazesym symbolizer and provides methods
- * to format and print sampling data in both multiline and folded formats.
- */
-class SamplingPrinter {
-private:
-    std::unique_ptr<struct blazesym, BlazesymDeleter> symbolizer_;
-    
-    // Private helper methods
-    std::string print_entry_multiline(const SamplingEntry& entry, const Config& config, const std::string& value_label = "");
-    std::string print_entry_folded(const SamplingEntry& entry, const Config& config);
-    std::string stack_trace_to_string(const std::vector<std::string>& symbols);
-    std::string stack_trace_to_folded_string(const std::vector<std::string>& symbols, 
-                                           char separator = ';', bool reverse = true);
-
-public:
-    /**
-     * Constructor - Creates a new SamplingPrinter with its own symbolizer
-     */
-    SamplingPrinter();
-    
-    /**
-     * Destructor - Cleanup is handled by unique_ptr
-     */
-    ~SamplingPrinter() = default;
-    
-    // Non-copyable but movable
-    SamplingPrinter(const SamplingPrinter&) = delete;
-    SamplingPrinter& operator=(const SamplingPrinter&) = delete;
-    SamplingPrinter(SamplingPrinter&&) = default;
-    SamplingPrinter& operator=(SamplingPrinter&&) = default;
-    
-    /**
-     * get_stack_trace_symbols - Convert stack trace to function name vector
-     * @stack: Array of stack addresses
-     * @stack_sz: Size of the stack array
-     * @pid: Process ID (0 for kernel)
-     * @return: Vector of function names
-     */
-    std::vector<std::string> get_stack_trace_symbols(__u64 *stack, int stack_sz, pid_t pid);
-    
-    /**
-     * print_data - Format and print sampling data
-     * @data: The sampling data to print
-     * @config: Configuration for output formatting
-     * @value_label: Optional label for the value column
-     * @return: Formatted string representation
-     */
-    std::string print_data(const SamplingData& data, const Config& config, const std::string& value_label = "");
-    
-    /**
-     * is_valid - Check if the symbolizer is properly initialized
-     * @return: true if symbolizer is valid, false otherwise
-     */
-    bool is_valid() const { return symbolizer_ != nullptr; }
+struct BlazesymDeleter {
+    void operator()(struct blazesym* sym) {
+        if (sym) {
+            blazesym_free(sym);
+        }
+    }
 };
 
-// Implementation
-
-inline SamplingPrinter::SamplingPrinter() 
+SymbolResolver::SymbolResolver() 
     : symbolizer_(blazesym_new()) {
     if (!symbolizer_) {
         // Log error but don't throw - let is_valid() handle this
     }
 }
 
-inline std::vector<std::string> SamplingPrinter::get_stack_trace_symbols(__u64 *stack, int stack_sz, pid_t pid) {
+std::vector<std::string> SymbolResolver::get_stack_trace_symbols(__u64 *stack, int stack_sz, pid_t pid) {
     std::vector<std::string> symbols;
     
     if (!symbolizer_ || !stack || stack_sz <= 0) {
@@ -140,7 +78,7 @@ inline std::vector<std::string> SamplingPrinter::get_stack_trace_symbols(__u64 *
     return symbols;
 }
 
-inline std::string SamplingPrinter::stack_trace_to_string(const std::vector<std::string>& symbols) {
+std::string SymbolResolver::stack_trace_to_string(const std::vector<std::string>& symbols) {
     std::ostringstream oss;
     for (const auto& symbol : symbols) {
         oss << "    " << symbol << "\n";
@@ -148,8 +86,8 @@ inline std::string SamplingPrinter::stack_trace_to_string(const std::vector<std:
     return oss.str();
 }
 
-inline std::string SamplingPrinter::stack_trace_to_folded_string(const std::vector<std::string>& symbols, 
-                                                               char separator, bool reverse) {
+std::string SymbolResolver::stack_trace_to_folded_string(const std::vector<std::string>& symbols, 
+                                                       char separator, bool reverse) {
     if (symbols.empty()) {
         return "";
     }
@@ -180,7 +118,7 @@ inline std::string SamplingPrinter::stack_trace_to_folded_string(const std::vect
     return oss.str();
 }
 
-inline std::string SamplingPrinter::print_data(const SamplingData& data, const Config& config, const std::string& value_label) {
+std::string SymbolResolver::print_data(const SamplingData& data, const Config& config, const std::string& value_label) {
     std::ostringstream oss;
     
     if (!symbolizer_) {
@@ -206,7 +144,7 @@ inline std::string SamplingPrinter::print_data(const SamplingData& data, const C
     return oss.str();
 }
 
-inline std::string SamplingPrinter::print_entry_multiline(const SamplingEntry& entry, const Config& config, const std::string& value_label) {
+std::string SymbolResolver::print_entry_multiline(const SamplingEntry& entry, const Config& config, const std::string& value_label) {
     std::ostringstream oss;
     
     // Show kernel stack first
@@ -251,7 +189,7 @@ inline std::string SamplingPrinter::print_entry_multiline(const SamplingEntry& e
     return oss.str();
 }
 
-inline std::string SamplingPrinter::print_entry_folded(const SamplingEntry& entry, const Config& config) {
+std::string SymbolResolver::print_entry_folded(const SamplingEntry& entry, const Config& config) {
     std::ostringstream oss;
     
     // Start with the command name
@@ -296,6 +234,4 @@ inline std::string SamplingPrinter::print_entry_folded(const SamplingEntry& entr
     oss << " " << entry.value << "\n";
     
     return oss.str();
-}
-
-#endif /* __SAMPLING_PRINTER_HPP */ 
+} 

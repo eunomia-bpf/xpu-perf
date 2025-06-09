@@ -2,8 +2,8 @@
 #define __BASE_ANALYZER_HPP
 
 #include "flamegraph_view.hpp"
-#include "../collectors/collector_interface.hpp"
-#include "../sampling_printer.hpp"
+#include "collectors/collector_interface.hpp"
+#include "symbol_resolver.hpp"
 #include <memory>
 #include <vector>
 #include <string>
@@ -38,18 +38,11 @@ public:
 // Base analyzer implementation with common functionality
 class BaseAnalyzer : public IAnalyzer {
 protected:
-    std::unique_ptr<SamplingPrinter> symbolizer_;
     std::string name_;
-    
-    // Helper method to convert sampling data to flamegraph
-    std::unique_ptr<FlameGraphView> sampling_data_to_flamegraph(
-        const SamplingData& data, 
-        const std::string& analyzer_name,
-        bool is_oncpu = true);
 
 public:
-    BaseAnalyzer(const std::string& name);
-    virtual ~BaseAnalyzer();
+    BaseAnalyzer(const std::string& name) : name_(name) {}
+    virtual ~BaseAnalyzer() = default;
     
     std::string get_name() const override { return name_; }
 };
