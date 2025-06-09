@@ -9,7 +9,8 @@ echo
 
 # Build the multi-threaded test program
 echo "🔨 Building multi-threaded test program..."
-g++ -o test_multithread tests/double_bandwidth.cpp -g -fno-omit-frame-pointer -lpthread -lrt -lm
+g++ -o test_multithread tests/double_bandwidth.cpp -g -fno-omit-frame-pointer -lpthread -lrt -lm -O3
+# gcc -o test_multithread tests/double_bandwidth.c -g -fno-omit-frame-pointer -lpthread -lrt -lm -O3
 # gcc -o test_multithread tests/test_multithread.c -lpthread -lrt -lm
 echo "✅ Multi-threaded test program built successfully"
 echo

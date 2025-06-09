@@ -9,7 +9,7 @@ echo
 
 # Build the multi-threaded test program
 echo "🔨 Building multi-threaded test program..."
-gcc -o test_multithread tests/test_multithread.c -lpthread -lrt -lm
+gcc -o test_multithread tests/test_multithread.c -g -fno-omit-frame-pointer -lpthread -lrt -lm -O3
 echo "✅ Multi-threaded test program built successfully"
 echo
 

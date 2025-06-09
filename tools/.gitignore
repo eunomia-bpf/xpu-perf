@@ -19,3 +19,4 @@ multithread_combined_profile_pid*
 demo_results_single_thread_analysis.txt
 test_multithread
 perf.data*
+double_bandwidth
