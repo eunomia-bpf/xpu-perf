@@ -64,7 +64,6 @@ public:
     std::string to_readable_format() const;  // New method to print stack traces in readable format
     
     // Analysis methods
-    std::vector<FlameGraphEntry> get_top_stacks(int limit = 10) const;
     std::map<std::string, __u64> get_function_totals() const;
     double get_oncpu_percentage() const;
     double get_offcpu_percentage() const;
@@ -72,10 +71,12 @@ public:
     // Thread-specific analysis
     std::map<pid_t, std::vector<FlameGraphEntry>> group_by_thread() const;
     
-    // Access to symbolizer for direct use if needed
-    SymbolResolver* get_symbolizer() { return symbolizer_.get(); }
-    const SymbolResolver* get_symbolizer() const { return symbolizer_.get(); }
-    
+    // Utility function to convert sampling data to flamegraph
+    static std::unique_ptr<FlameGraphView> sampling_data_to_flamegraph(
+        const SamplingData& data, 
+        const std::string& analyzer_name,
+        bool is_oncpu = true);
+
 private:
     std::unique_ptr<SymbolResolver> symbolizer_;
     std::map<std::vector<std::string>, FlameGraphEntry> stack_aggregation_;  // For deduplication during building
@@ -87,11 +88,5 @@ private:
     
     int calculate_stack_depth(const std::vector<std::string>& folded_stack) const;
 };
-
-// Utility function to convert sampling data to flamegraph
-std::unique_ptr<FlameGraphView> sampling_data_to_flamegraph(
-    const SamplingData& data, 
-    const std::string& analyzer_name,
-    bool is_oncpu = true);
 
 #endif /* __FLAMEGRAPH_VIEW_HPP */ 

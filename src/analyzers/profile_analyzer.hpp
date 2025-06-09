@@ -1,6 +1,7 @@
 #ifndef __PROFILE_ANALYZER_HPP
 #define __PROFILE_ANALYZER_HPP
 
+#include "analyzers/flamegraph_view.hpp"
 #include "base_analyzer.hpp"
 #include "collectors/oncpu/profile.hpp"
 #include <memory>
@@ -52,7 +53,7 @@ inline std::unique_ptr<FlameGraphView> ProfileAnalyzer::get_flamegraph() {
         return std::make_unique<FlameGraphView>(get_name(), false);
     }
     
-    return sampling_data_to_flamegraph(*sampling_data, get_name(), true);
+    return FlameGraphView::sampling_data_to_flamegraph(*sampling_data, get_name(), true);
 }
 
 #endif /* __PROFILE_ANALYZER_HPP */ 

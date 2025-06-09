@@ -23,6 +23,16 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(Catch2)
 
+# Download argparse library for command-line argument parsing
+FetchContent_Declare(
+    argparse
+    GIT_REPOSITORY https://github.com/p-ranav/argparse.git
+    GIT_TAG        v3.1
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(argparse)
+
 # Find required packages
 find_program(CLANG_EXECUTABLE NAMES clang REQUIRED)
 find_program(CARGO_EXECUTABLE NAMES cargo REQUIRED)
@@ -214,7 +224,10 @@ set_target_properties(profiler PROPERTIES
 )
 
 # Link the main executable with the library
-target_link_libraries(profiler PRIVATE profiler_lib)
+target_link_libraries(profiler PRIVATE 
+    profiler_lib
+    argparse
+)
 
 # Enable testing
 enable_testing()

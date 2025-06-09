@@ -60,9 +60,8 @@ void FlameGraphView::add_stack_trace_raw(__u64* user_stack, int user_stack_size,
         
         // Add annotation based on CPU type
         const std::string annotation = is_oncpu ? "_[c]" : "_[o]";
-        for (auto& symbol : user_stack_symbols) {
-            symbol += annotation;
-        }
+        // add only the first 1 symbols
+        user_stack_symbols[0] += annotation;
     }
     
     // Resolve kernel stack symbols
@@ -72,9 +71,7 @@ void FlameGraphView::add_stack_trace_raw(__u64* user_stack, int user_stack_size,
         
         // Add annotation based on CPU type
         const std::string annotation = is_oncpu ? "_[c]" : "_[o]";
-        for (auto& symbol : kernel_stack_symbols) {
-            symbol += annotation;
-        }
+        kernel_stack_symbols[0] += annotation;
     }
     
     // Add to flamegraph
@@ -184,18 +181,6 @@ std::string FlameGraphView::to_summary() const {
     return oss.str();
 }
 
-std::vector<FlameGraphEntry> FlameGraphView::get_top_stacks(int limit) const {
-    std::vector<FlameGraphEntry> top_stacks;
-    int count = std::min(limit, static_cast<int>(entries.size()));
-    top_stacks.reserve(count);
-    
-    for (int i = 0; i < count; i++) {
-        top_stacks.push_back(entries[i]);
-    }
-    
-    return top_stacks;
-}
-
 std::map<std::string, __u64> FlameGraphView::get_function_totals() const {
     std::map<std::string, __u64> function_totals;
     
@@ -236,14 +221,14 @@ std::map<pid_t, std::vector<FlameGraphEntry>> FlameGraphView::group_by_thread() 
 }
 
 // Utility function implementation - simplified since FlameGraphView now manages symbolizer
-std::unique_ptr<FlameGraphView> sampling_data_to_flamegraph(
+std::unique_ptr<FlameGraphView> FlameGraphView::sampling_data_to_flamegraph(
     const SamplingData& data, 
     const std::string& analyzer_name,
     bool is_oncpu) {
     
     auto flamegraph = std::make_unique<FlameGraphView>(analyzer_name, true);
     
-    if (!flamegraph->get_symbolizer() || !flamegraph->get_symbolizer()->is_valid()) {
+    if (!flamegraph->symbolizer_ || !flamegraph->symbolizer_->is_valid()) {
         flamegraph->success = false;
         return flamegraph;
     }
