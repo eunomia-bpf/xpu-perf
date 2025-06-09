@@ -17,7 +17,7 @@ class SymbolResolver;
 
 // Aggregated flamegraph entry representing a unique stack trace
 struct FlameGraphEntry {
-    std::string folded_stack;        // Complete stack trace in folded format (func1;func2;func3)
+    std::vector<std::string> folded_stack;  // Complete stack trace as vector of functions (func1, func2, func3)
     std::string command;             // Process/thread command name
     pid_t pid;                       // Process/thread ID
     __u64 sample_count;              // Aggregated sample count for this stack
@@ -61,6 +61,7 @@ public:
     // Output formats
     std::string to_folded_format() const;
     std::string to_summary() const;
+    std::string to_readable_format() const;  // New method to print stack traces in readable format
     
     // Analysis methods
     std::vector<FlameGraphEntry> get_top_stacks(int limit = 10) const;
@@ -77,14 +78,14 @@ public:
     
 private:
     std::unique_ptr<SymbolResolver> symbolizer_;
-    std::map<std::string, FlameGraphEntry> stack_aggregation_;  // For deduplication during building
+    std::map<std::vector<std::string>, FlameGraphEntry> stack_aggregation_;  // For deduplication during building
     
-    std::string build_folded_stack(const std::vector<std::string>& user_stack,
-                                  const std::vector<std::string>& kernel_stack,
-                                  const std::string& command,
-                                  bool include_delimiter = true) const;
+    std::vector<std::string> build_folded_stack(const std::vector<std::string>& user_stack,
+                                               const std::vector<std::string>& kernel_stack,
+                                               const std::string& command,
+                                               bool include_delimiter = true) const;
     
-    int calculate_stack_depth(const std::string& folded_stack) const;
+    int calculate_stack_depth(const std::vector<std::string>& folded_stack) const;
 };
 
 // Utility function to convert sampling data to flamegraph

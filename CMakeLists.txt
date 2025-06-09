@@ -1,13 +1,32 @@
 cmake_minimum_required(VERSION 3.16)
 project(bpf_profiler)
 
+# Force Unix Makefiles generator to avoid Ninja issues
+if(NOT CMAKE_GENERATOR STREQUAL "Unix Makefiles")
+    message(WARNING "This project is designed for Unix Makefiles generator. Current generator: ${CMAKE_GENERATOR}")
+endif()
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Include FetchContent module for downloading dependencies
+include(FetchContent)
+
+# Download Catch2 testing framework
+FetchContent_Declare(
+    Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG        v2.13.10
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(Catch2)
+
 # Find required packages
 find_program(CLANG_EXECUTABLE NAMES clang REQUIRED)
 find_program(CARGO_EXECUTABLE NAMES cargo REQUIRED)
+find_program(MAKE_EXECUTABLE NAMES make REQUIRED)
 
 # Detect architecture
 execute_process(
@@ -68,7 +87,7 @@ file(MAKE_DIRECTORY ${OUTPUT_DIR}/bpftool)
 set(LIBBPF_OBJ ${OUTPUT_DIR}/libbpf.a)
 add_custom_command(
     OUTPUT ${LIBBPF_OBJ}
-    COMMAND $(MAKE) -C ${LIBBPF_SRC} BUILD_STATIC_ONLY=1 
+    COMMAND ${MAKE_EXECUTABLE} -C ${LIBBPF_SRC} BUILD_STATIC_ONLY=1 
             OBJDIR=${OUTPUT_DIR}/libbpf/libbpf DESTDIR=${OUTPUT_DIR}/libbpf
             INCLUDEDIR= LIBDIR= UAPIDIR= install
     COMMAND cp ${OUTPUT_DIR}/libbpf/libbpf.a ${LIBBPF_OBJ}
@@ -80,7 +99,7 @@ add_custom_command(
 set(BPFTOOL ${OUTPUT_DIR}/bpftool/bootstrap/bpftool)
 add_custom_command(
     OUTPUT ${BPFTOOL}
-    COMMAND $(MAKE) ARCH= CROSS_COMPILE= OUTPUT=${OUTPUT_DIR}/bpftool/ -C ${BPFTOOL_SRC} bootstrap
+    COMMAND ${MAKE_EXECUTABLE} ARCH= CROSS_COMPILE= OUTPUT=${OUTPUT_DIR}/bpftool/ -C ${BPFTOOL_SRC} bootstrap
     DEPENDS ${BPFTOOL_SRC}/Makefile
     COMMENT "Building bpftool"
 )
@@ -140,9 +159,8 @@ endfunction()
 compile_bpf_program(collectors/offcpu/offcputime.bpf.c)
 compile_bpf_program(collectors/oncpu/profile.bpf.c)
 
-# Create the main executable using proper CMake way
-add_executable(profiler
-    src/main.cpp
+# Create a library for shared source files (for easier testing)
+add_library(profiler_lib STATIC
     src/collectors/oncpu/profile.cpp
     src/collectors/offcpu/offcputime.cpp
     src/analyzers/wallclock_analyzer.cpp
@@ -150,30 +168,30 @@ add_executable(profiler
     src/analyzers/flamegraph_view.cpp
 )
 
-# Set C++ standard for the target
-set_target_properties(profiler PROPERTIES
+# Set C++ standard for the library
+set_target_properties(profiler_lib PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
 )
 
-# Add include directories
-target_include_directories(profiler PRIVATE
+# Add include directories for the library
+target_include_directories(profiler_lib PUBLIC
     ${OUTPUT_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/libbpf/include/uapi
     ${CMAKE_CURRENT_SOURCE_DIR}/vmlinux/${ARCH}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# Add dependencies to ensure BPF skeletons and libraries are built first
-add_dependencies(profiler 
+# Add dependencies for the library
+add_dependencies(profiler_lib 
     libbpf_target
     blazesym_target
     profile_bpf_target
     offcputime_bpf_target
 )
 
-# Link libraries
-target_link_libraries(profiler PRIVATE
+# Link libraries for the profiler_lib
+target_link_libraries(profiler_lib PUBLIC
     ${LIBBPF_OBJ}
     ${LIBBLAZESYM_OBJ}
     elf
@@ -183,6 +201,52 @@ target_link_libraries(profiler PRIVATE
     pthread
     m
 )
+
+# Create the main executable using the library
+add_executable(profiler
+    src/main.cpp
+)
+
+# Set C++ standard for the target
+set_target_properties(profiler PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+
+# Link the main executable with the library
+target_link_libraries(profiler PRIVATE profiler_lib)
+
+# Enable testing
+enable_testing()
+
+# Create test executable
+add_executable(profiler_tests
+    tests/test_main.cpp
+    tests/test_flamegraph_view.cpp
+)
+
+# Set C++ standard for tests
+set_target_properties(profiler_tests PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+
+# Add include directories for tests
+target_include_directories(profiler_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${OUTPUT_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/libbpf/include/uapi
+    ${CMAKE_CURRENT_SOURCE_DIR}/vmlinux/${ARCH}
+)
+
+# Link test executable with the library and Catch2
+target_link_libraries(profiler_tests PRIVATE 
+    profiler_lib
+    Catch2::Catch2
+)
+
+# Add test to CTest
+add_test(NAME flamegraph_tests COMMAND profiler_tests)
 
 # Create custom targets for dependencies
 add_custom_target(libbpf_target DEPENDS ${LIBBPF_OBJ})

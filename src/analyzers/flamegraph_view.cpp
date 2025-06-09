@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 
 FlameGraphView::FlameGraphView(const std::string& analyzer_name, bool success) 
     : CollectorData(analyzer_name, success, CollectorData::Type::SAMPLING), 
@@ -19,7 +20,7 @@ void FlameGraphView::add_stack_trace(const std::vector<std::string>& user_stack,
                                    bool is_oncpu,
                                    bool include_delimiter) {
     
-    std::string folded_stack = build_folded_stack(user_stack, kernel_stack, command, include_delimiter);
+    std::vector<std::string> folded_stack = build_folded_stack(user_stack, kernel_stack, command, include_delimiter);
     
     // Aggregate identical stacks
     auto& entry = stack_aggregation_[folded_stack];
@@ -98,44 +99,78 @@ void FlameGraphView::finalize() {
               });
 }
 
-std::string FlameGraphView::build_folded_stack(const std::vector<std::string>& user_stack,
-                                             const std::vector<std::string>& kernel_stack,
-                                             const std::string& command,
-                                             bool include_delimiter) const {
-    std::ostringstream oss;
-    oss << command;
+std::vector<std::string> FlameGraphView::build_folded_stack(const std::vector<std::string>& user_stack,
+                                                          const std::vector<std::string>& kernel_stack,
+                                                          const std::string& command,
+                                                          bool include_delimiter) const {
+    std::vector<std::string> folded_stack;
+    
+    // Start with the command name as the root
+    folded_stack.push_back(command);
     
     // Add user stack (bottom to top for flamegraph)
     if (!user_stack.empty()) {
         for (auto it = user_stack.rbegin(); it != user_stack.rend(); ++it) {
-            oss << ";" << *it;
+            folded_stack.push_back(*it);
         }
     }
     
     // Add delimiter between user and kernel if both exist
     if (include_delimiter && !user_stack.empty() && !kernel_stack.empty()) {
-        oss << ";--";
+        folded_stack.push_back("--");
     }
     
     // Add kernel stack (bottom to top for flamegraph)  
     if (!kernel_stack.empty()) {
         for (auto it = kernel_stack.rbegin(); it != kernel_stack.rend(); ++it) {
-            oss << ";" << *it;
+            folded_stack.push_back(*it);
         }
     }
     
-    return oss.str();
+    return folded_stack;
 }
 
-int FlameGraphView::calculate_stack_depth(const std::string& folded_stack) const {
-    return std::count(folded_stack.begin(), folded_stack.end(), ';');
+int FlameGraphView::calculate_stack_depth(const std::vector<std::string>& folded_stack) const {
+    return static_cast<int>(folded_stack.size() - 1);  // Subtract 1 to exclude the command name
 }
 
 std::string FlameGraphView::to_folded_format() const {
     std::ostringstream oss;
     for (const auto& entry : entries) {
-        oss << entry.folded_stack << " " << entry.sample_count << "\n";
+        // Convert vector back to semicolon-separated string for output
+        if (!entry.folded_stack.empty()) {
+            oss << entry.folded_stack[0];  // First element (command)
+            for (size_t i = 1; i < entry.folded_stack.size(); ++i) {
+                oss << ";" << entry.folded_stack[i];
+            }
+        }
+        oss << " " << entry.sample_count << "\n";
     }
+    return oss.str();
+}
+
+std::string FlameGraphView::to_readable_format() const {
+    std::ostringstream oss;
+    oss << "FlameGraph Readable Format: " << analyzer_name << "\n";
+    oss << "Total samples: " << total_samples << " " << time_unit << "\n";
+    oss << "Unique stacks: " << entries.size() << "\n\n";
+    
+    for (size_t i = 0; i < entries.size() && i < 20; ++i) {  // Show top 20 stacks
+        const auto& entry = entries[i];
+        oss << "Stack #" << (i + 1) << " - " << entry.sample_count << " samples (" 
+            << std::fixed << std::setprecision(2) << entry.percentage << "%)\n";
+        oss << "Process: " << entry.command << " (PID: " << entry.pid << ")\n";
+        oss << "Type: " << (entry.is_oncpu ? "On-CPU" : "Off-CPU") << "\n";
+        oss << "Call Stack (depth " << entry.stack_depth << "):\n";
+        
+        // Print stack trace with indentation
+        for (size_t j = 0; j < entry.folded_stack.size(); ++j) {
+            std::string indent(j * 2, ' ');  // 2 spaces per level
+            oss << indent << "-> " << entry.folded_stack[j] << "\n";
+        }
+        oss << "\n";
+    }
+    
     return oss.str();
 }
 
@@ -165,11 +200,8 @@ std::map<std::string, __u64> FlameGraphView::get_function_totals() const {
     std::map<std::string, __u64> function_totals;
     
     for (const auto& entry : entries) {
-        // Split the folded stack and count each function
-        std::istringstream iss(entry.folded_stack);
-        std::string function;
-        
-        while (std::getline(iss, function, ';')) {
+        // Iterate through each function in the vector
+        for (const auto& function : entry.folded_stack) {
             if (!function.empty() && function != "--") {  // Skip delimiter
                 function_totals[function] += entry.sample_count;
             }

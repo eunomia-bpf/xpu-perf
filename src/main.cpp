@@ -130,7 +130,15 @@ int main(int argc, char **argv)
         auto top_stacks = flamegraph->get_top_stacks(10);
         for (size_t i = 0; i < top_stacks.size(); i++) {
             const auto& entry = top_stacks[i];
-            printf("%s %llu\n", entry.folded_stack.c_str(), entry.sample_count);
+            // Convert vector to folded string format
+            std::string folded_str;
+            if (!entry.folded_stack.empty()) {
+                folded_str = entry.folded_stack[0];
+                for (size_t j = 1; j < entry.folded_stack.size(); ++j) {
+                    folded_str += ";" + entry.folded_stack[j];
+                }
+            }
+            printf("%s %llu\n", folded_str.c_str(), entry.sample_count);
         }
     } else if (analyzer->get_name() == "wallclock_analyzer") {
         auto* wallclock_analyzer = dynamic_cast<WallClockAnalyzer*>(analyzer.get());

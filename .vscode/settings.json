@@ -1,0 +1,12 @@
+{
+    "cmake.configurePreset": "default",
+    "cmake.buildPreset": "default",
+    "cmake.testPreset": "default",
+    "cmake.generator": "Unix Makefiles",
+    "cmake.preferredGenerators": [
+        "Unix Makefiles"
+    ],
+    "cmake.configureSettings": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+    }
+} 
