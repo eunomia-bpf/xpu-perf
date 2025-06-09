@@ -2,6 +2,7 @@
 #define __SAMPLING_COMMON_HPP
 
 #include "bpf_event.h"
+#include "collector_interface.hpp"
 #include <vector>
 #include <cstdint>
 #include <linux/types.h>
@@ -19,8 +20,21 @@ struct SamplingEntry {
     bool has_kernel_stack;
 };
 
-struct SamplingData {
+class SamplingData : public CollectorData {
+public:
     std::vector<SamplingEntry> entries;
+    
+    SamplingData(const std::string& collector_name, bool success = true) 
+        : name(collector_name), success(success) {}
+    
+    // Implement CollectorData interface
+    std::string get_name() const override { return name; }
+    bool is_success() const override { return success; }
+    std::string get_type() const override { return "sampling"; }
+    
+private:
+    std::string name;
+    bool success;
 };
 
 #endif /* __SAMPLING_COMMON_HPP */ 

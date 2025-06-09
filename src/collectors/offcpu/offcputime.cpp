@@ -211,21 +211,19 @@ void OffCPUTimeCollector::print_data(const OffCPUData& data) {
     SamplingPrinter::print_data(data, symbolizer.get(), config, "us");
 }
 
-CollectorData OffCPUTimeCollector::get_data() {
+std::unique_ptr<CollectorData> OffCPUTimeCollector::get_data() {
     if (!running || !obj) {
-        return CollectorData("offcputime", "", false);
+        return std::make_unique<SamplingData>("offcputime", false);
     }
 
     // Collect the data from BPF maps
     OffCPUData data = collect_data();
     
-    // Print the data directly to stdout
-    print_data(data);
+    // Create and return SamplingData directly without printing
+    auto result = std::make_unique<SamplingData>("offcputime", true);
+    result->entries = std::move(data.entries);
     
-    // Also format as string for return value
-    std::string formatted = format_data(data);
-    
-    return CollectorData("offcputime", formatted, true);
+    return result;
 }
 
 bool OffCPUTimeCollector::probe_tp_btf(const char *name) {

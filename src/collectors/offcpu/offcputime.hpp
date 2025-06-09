@@ -106,7 +106,7 @@ public:
     
     std::string get_name() const override;
     bool start() override;
-    CollectorData get_data() override;
+    std::unique_ptr<CollectorData> get_data() override;
     
     // Config management
     OffCPUTimeConfig& get_config() { return config; }

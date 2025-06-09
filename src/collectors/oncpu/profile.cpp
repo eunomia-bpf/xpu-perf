@@ -251,21 +251,19 @@ void ProfileCollector::print_data(const ProfileData& data) {
     SamplingPrinter::print_data(data, symbolizer.get(), config, "");
 }
 
-CollectorData ProfileCollector::get_data() {
+std::unique_ptr<CollectorData> ProfileCollector::get_data() {
     if (!running || !obj) {
-        return CollectorData("profile", "", false);
+        return std::make_unique<SamplingData>("profile", false);
     }
     
     // Collect the data from BPF maps
     ProfileData data = collect_data();
     
-    // Print the data directly to stdout
-    print_data(data);
+    // Create and return SamplingData directly without printing
+    auto result = std::make_unique<SamplingData>("profile", true);
+    result->entries = std::move(data.entries);
     
-    // Also format as string for return value
-    std::string formatted = format_data(data);
-    
-    return CollectorData("profile", formatted, true);
+    return result;
 }
 
 int ProfileCollector::open_and_attach_perf_event(struct bpf_program *prog) {
