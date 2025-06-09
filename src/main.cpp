@@ -130,8 +130,7 @@ int main(int argc, char **argv)
         auto top_stacks = flamegraph->get_top_stacks(10);
         for (size_t i = 0; i < top_stacks.size(); i++) {
             const auto& entry = top_stacks[i];
-            printf("%zu. [%.2f%%] %s (%llu %s)\n", i + 1, entry.percentage, 
-                   entry.folded_stack.c_str(), entry.sample_count, flamegraph->time_unit.c_str());
+            printf("%s %llu\n", entry.folded_stack.c_str(), entry.sample_count);
         }
     } else if (analyzer->get_name() == "wallclock_analyzer") {
         auto* wallclock_analyzer = dynamic_cast<WallClockAnalyzer*>(analyzer.get());
@@ -149,7 +148,5 @@ int main(int argc, char **argv)
             }
         }
     }
-
-    printf("\nAnalyzer %s finished successfully\n", analyzer->get_name().c_str());
     return 0;
 } 
