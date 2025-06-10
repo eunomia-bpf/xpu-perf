@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <fstream>
 #include <filesystem>
+#include <map>
 
 #include "analyzers/analyzer.hpp"
 #include "analyzers/wallclock_analyzer.hpp"
@@ -19,7 +20,7 @@
 #include "collectors/oncpu/profile.hpp"
 #include "collectors/offcpu/offcputime.hpp"
 #include "flamegraph_generator.hpp"
-#include "profile_server.hpp"
+#include "server/profile_server.hpp"
 
 static volatile bool running = true;
 
@@ -164,7 +165,13 @@ int main(int argc, char **argv)
             std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
             return 1;
         }
-        fg_gen.generate_single_flamegraph(std::move(flamegraph));
+        
+        // Create a map structure for the generate_single_flamegraph method
+        std::map<pid_t, std::unique_ptr<FlameGraphView>> per_thread_data;
+        pid_t tid = args.pids.empty() ? 0 : args.pids[0];
+        per_thread_data[tid] = std::move(flamegraph);
+        
+        fg_gen.generate_single_flamegraph(per_thread_data, args.pids);
     }
     
     // Add runtime information to summary

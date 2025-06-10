@@ -202,7 +202,7 @@ target_link_libraries(profiler_lib PUBLIC
 add_executable(profiler
     src/main.cpp
     src/args_parser.cpp
-    src/profile_server.cpp
+    src/server/profile_server.cpp
 )
 
 # Set C++ standard for the target
