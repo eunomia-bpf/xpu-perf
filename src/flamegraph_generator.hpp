@@ -8,8 +8,11 @@
 #include <fstream>
 #include <filesystem>
 
-// Forward declaration
+// Forward declarations
 class FlameGraphView;
+class WallClockAnalyzer;
+class ProfileCollector;
+class OffCPUTimeCollector;
 
 struct FlamegraphEntry {
     std::string stack_trace;
@@ -54,12 +57,16 @@ public:
     // Create output directory
     bool create_output_directory();
     
-    // New methods for wallclock analyzer
+    // Methods for wallclock analyzer
     void generate_single_flamegraph(const std::map<pid_t, std::unique_ptr<FlameGraphView>>& per_thread_data,
                                    const std::vector<pid_t>& pids);
     
     void generate_multithread_flamegraphs(const std::map<pid_t, std::unique_ptr<FlameGraphView>>& per_thread_data,
                                         const std::vector<ThreadInfo>& detected_threads);
+    
+    // New methods that take a WallClockAnalyzer as input
+    void generate_flamegraph_files_for_wallclock(WallClockAnalyzer& analyzer);
+    std::unique_ptr<FlameGraphView> get_flamegraph_for_wallclock(WallClockAnalyzer& analyzer);
 
 private:
     std::string get_flamegraph_script_path();
@@ -71,6 +78,9 @@ private:
     
     // Helper method for getting thread role
     std::string get_thread_role(pid_t tid, const std::string& cmd, const std::vector<pid_t>& pids);
+    
+    // Helper methods for wallclock analyzer
+    std::string create_output_directory_for_wallclock(WallClockAnalyzer& analyzer);
 };
 
 #endif /* __FLAMEGRAPH_GENERATOR_HPP */ 

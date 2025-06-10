@@ -24,7 +24,6 @@ private:
     std::unique_ptr<ProfileCollector> profile_collector_;
     std::unique_ptr<OffCPUTimeCollector> offcpu_collector_;
     std::unique_ptr<WallClockAnalyzerConfig> config_;
-    std::unique_ptr<FlamegraphGenerator> flamegraph_gen_;
     
     // Thread analysis data
     std::vector<ThreadInfo> detected_threads_;
@@ -42,12 +41,10 @@ public:
     
     // IAnalyzer interface
     bool start() override;
-    std::unique_ptr<FlameGraphView> get_flamegraph() override;
     std::map<pid_t, std::unique_ptr<FlameGraphView>> get_per_thread_flamegraphs() override;
     
     // New functionality matching Python script
     bool discover_threads();
-    void generate_flamegraph_files();
     
     // Config access
     const WallClockAnalyzerConfig& get_config() const { return *config_; }
@@ -55,12 +52,18 @@ public:
     // Access to individual collectors for fine-grained control
     ProfileCollector* get_profile_collector() { return profile_collector_.get(); }
     OffCPUTimeCollector* get_offcpu_collector() { return offcpu_collector_.get(); }
+    
+    // Access to thread information
+    const std::vector<ThreadInfo>& get_detected_threads() const { return detected_threads_; }
+    bool is_multithreaded() const { return is_multithreaded_; }
+    
+    // Runtime information
+    double get_actual_runtime_seconds() const;
 
 private:
     void configure_collectors();
     std::string get_thread_role(pid_t tid, const std::string& cmd);
     std::string create_output_directory();
-    double get_actual_runtime_seconds() const;
 };
 
 #endif /* __WALLCLOCK_ANALYZER_HPP */ 

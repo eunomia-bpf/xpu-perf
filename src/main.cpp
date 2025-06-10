@@ -13,6 +13,7 @@
 #include <filesystem>
 
 #include "analyzers/analyzer.hpp"
+#include "analyzers/wallclock_analyzer.hpp"
 #include "args_parser.hpp"
 #include "collectors/utils.hpp"
 #include "collectors/oncpu/profile.hpp"
@@ -175,7 +176,21 @@ int main(int argc, char **argv)
     double actual_runtime_seconds = runtime_duration.count() / 1000.0;
 
     // Get the flamegraph from the analyzer
-    auto flamegraph = analyzer->get_flamegraph();
+    std::unique_ptr<FlameGraphView> flamegraph;
+    
+    if (analyzer->get_name() == "wallclock_analyzer") {
+        // For wallclock analyzer, use the flamegraph generator approach
+        WallClockAnalyzer* wallclock_analyzer = dynamic_cast<WallClockAnalyzer*>(analyzer.get());
+        if (wallclock_analyzer) {
+            std::string output_dir = create_output_filename("wallclock", args);
+            FlamegraphGenerator fg_gen(output_dir, args.frequency, actual_runtime_seconds);
+            flamegraph = fg_gen.get_flamegraph_for_wallclock(*wallclock_analyzer);
+        }
+    } else {
+        // For other analyzers, use the standard approach
+        flamegraph = analyzer->get_flamegraph();
+    }
+    
     if (!flamegraph || !flamegraph->success) {
         std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
         
@@ -205,7 +220,7 @@ int main(int argc, char **argv)
         } else if (analyzer->get_name() == "offcputime_analyzer") {
             generate_flamegraph_for_analyzer("offcputime", flamegraph, args, actual_runtime_seconds);
         } else if (analyzer->get_name() == "wallclock_analyzer") {
-            // Wallclock analyzer handles its own file generation
+            // Wallclock analyzer handles its own file generation through the generator
             std::cout << "\nWallclock analyzer completed - files generated in output directory" << std::endl;
         }
         

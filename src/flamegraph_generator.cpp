@@ -1,5 +1,7 @@
 #include "flamegraph_generator.hpp"
 #include "analyzers/flamegraph_view.hpp"
+#include "analyzers/wallclock_analyzer.hpp"
+#include "collectors/sampling_data.hpp"
 #include <iostream>
 #include <sstream>
 #include <cstdlib>
@@ -415,4 +417,91 @@ std::string FlamegraphGenerator::get_thread_role(pid_t tid, const std::string& c
     } else {
         return "thread_" + std::to_string(tid);
     }
+}
+
+std::string FlamegraphGenerator::create_output_directory_for_wallclock(WallClockAnalyzer& analyzer) {
+    auto now = std::time(nullptr);
+    std::stringstream ss;
+    
+    const auto& config = analyzer.get_config();
+    if (!config.pids.empty()) {
+        ss << "wallclock_profile_pid" << config.pids[0] << "_" << now;
+    } else {
+        ss << "wallclock_profile_" << now;
+    }
+    
+    return ss.str();
+}
+
+void FlamegraphGenerator::generate_flamegraph_files_for_wallclock(WallClockAnalyzer& analyzer) {
+    // Get data from both collectors
+    auto profile_collector = analyzer.get_profile_collector();
+    auto offcpu_collector = analyzer.get_offcpu_collector();
+    
+    if (!profile_collector || !offcpu_collector) {
+        std::cerr << "Failed to get collectors from analyzer" << std::endl;
+        return;
+    }
+    
+    auto profile_data = profile_collector->get_data();
+    auto offcpu_data = offcpu_collector->get_data();
+    
+    if (!profile_data || !profile_data->success || !offcpu_data || !offcpu_data->success) {
+        std::cerr << "Failed to get data from collectors" << std::endl;
+        return;
+    }
+    
+    auto* profile_sampling = dynamic_cast<SamplingData*>(profile_data.get());
+    auto* offcpu_sampling = dynamic_cast<SamplingData*>(offcpu_data.get());
+    
+    if (!profile_sampling || !offcpu_sampling) {
+        std::cerr << "Invalid sampling data format" << std::endl;
+        return;
+    }
+    
+    // Update output directory and runtime
+    output_dir_ = create_output_directory_for_wallclock(analyzer);
+    actual_wall_clock_time_ = analyzer.get_actual_runtime_seconds();
+    
+    // Generate flamegraphs using the new approach
+    auto per_thread_data = analyzer.get_per_thread_flamegraphs();
+    
+    // Let flamegraph generator handle all file generation and output
+    if (analyzer.is_multithreaded()) {
+        generate_multithread_flamegraphs(per_thread_data, analyzer.get_detected_threads());
+    } else {
+        const auto& config = analyzer.get_config();
+        generate_single_flamegraph(per_thread_data, config.pids);
+    }
+}
+
+std::unique_ptr<FlameGraphView> FlamegraphGenerator::get_flamegraph_for_wallclock(WallClockAnalyzer& analyzer) {
+    // Generate flamegraph files as side effect
+    generate_flamegraph_files_for_wallclock(analyzer);
+    
+    // Return combined flamegraph from all threads for compatibility
+    auto per_thread_data = analyzer.get_per_thread_flamegraphs();
+    
+    auto combined = std::make_unique<FlameGraphView>(analyzer.get_name(), true);
+    combined->time_unit = "microseconds";
+    
+    for (auto& [tid, flamegraph] : per_thread_data) {
+        if (flamegraph && flamegraph->success) {
+            for (const auto& entry : flamegraph->entries) {
+                std::vector<std::string> user_stack;
+                std::vector<std::string> kernel_stack;
+                
+                combined->add_stack_trace(
+                    user_stack, kernel_stack,
+                    entry.command,
+                    entry.pid,
+                    entry.sample_count,
+                    entry.is_oncpu
+                );
+            }
+        }
+    }
+    
+    combined->finalize();
+    return combined;
 } 
