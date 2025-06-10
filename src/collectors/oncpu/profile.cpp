@@ -283,12 +283,6 @@ std::unique_ptr<CollectorData> ProfileCollector::get_data() {
 }
 
 int ProfileCollector::open_and_attach_perf_event(struct bpf_program *prog) {
-	struct perf_event_attr attr = {
-		.type = PERF_TYPE_SOFTWARE,
-		.config = PERF_COUNT_SW_CPU_CLOCK,
-		.sample_freq = static_cast<__u64>(config.sample_freq),
-		.freq = config.freq,
-	};
 	int i, fd;
 
     // Resize links vector to accommodate all CPUs
@@ -298,7 +292,7 @@ int ProfileCollector::open_and_attach_perf_event(struct bpf_program *prog) {
 		if (config.cpu != -1 && config.cpu != i)
 			continue;
 
-		fd = syscall(__NR_perf_event_open, &attr, -1, i, -1, 0);
+		fd = syscall(__NR_perf_event_open, &config.attr, -1, i, -1, 0);
 		if (fd < 0) {
 			/* Ignore CPU that is offline */
 			if (errno == ENODEV)

@@ -63,7 +63,6 @@ public:
 private:
     void configure_collectors();
     std::string get_thread_role(pid_t tid, const std::string& cmd);
-    std::string create_output_directory();
 };
 
 #endif /* __WALLCLOCK_ANALYZER_HPP */ 

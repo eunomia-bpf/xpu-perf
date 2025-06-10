@@ -26,19 +26,6 @@ WallClockAnalyzer::WallClockAnalyzer(std::unique_ptr<WallClockAnalyzerConfig> co
     configure_collectors();
 }
 
-std::string WallClockAnalyzer::create_output_directory() {
-    auto now = std::time(nullptr);
-    std::stringstream ss;
-    
-    if (!config_->pids.empty()) {
-        ss << "wallclock_profile_pid" << config_->pids[0] << "_" << now;
-    } else {
-        ss << "wallclock_profile_" << now;
-    }
-    
-    return ss.str();
-}
-
 void WallClockAnalyzer::configure_collectors() {
     if (!profile_collector_ || !offcpu_collector_ || !config_) {
         return;
@@ -47,7 +34,7 @@ void WallClockAnalyzer::configure_collectors() {
     // Configure profile collector
     auto& profile_config = profile_collector_->get_config();
     profile_config.duration = config_->duration;
-    profile_config.sample_freq = config_->frequency;
+    profile_config.attr.sample_freq = config_->frequency;
     profile_config.pids = config_->pids;
     profile_config.tids = config_->tids;
     

@@ -44,7 +44,7 @@ inline ProfileAnalyzer::ProfileAnalyzer(std::unique_ptr<ProfileAnalyzerConfig> c
         
         // Apply essential settings
         collector_config.duration = config_->duration;
-        collector_config.sample_freq = config_->frequency;
+        collector_config.attr.sample_freq = config_->frequency;
         
         // Copy PIDs and TIDs directly to vectors
         collector_config.pids = config_->pids;

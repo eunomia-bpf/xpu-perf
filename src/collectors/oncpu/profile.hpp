@@ -33,16 +33,21 @@ struct blazesym;
 // Profile specific configuration
 class ProfileConfig : public Config {
 public:
-    bool freq;
-    int sample_freq;
+    struct perf_event_attr attr;
     bool include_idle;
 
     ProfileConfig() : Config() {
         // Profile specific defaults
         duration = INT_MAX;
-        freq = true;
-        sample_freq = 50;
         include_idle = false;
+        
+        // Initialize perf_event_attr with default values
+        attr = {
+            .type = PERF_TYPE_SOFTWARE,
+            .config = PERF_COUNT_SW_CPU_CLOCK,
+            .sample_freq = 50,
+            .freq = 1,
+        };
         
         // Validate configuration
         validate();
@@ -55,7 +60,7 @@ protected:
         if (user_stacks_only && kernel_stacks_only) {
             throw std::invalid_argument("user_stacks_only and kernel_stacks_only cannot be used together");
         }
-        if (sample_freq <= 0) {
+        if (attr.sample_freq <= 0) {
             throw std::invalid_argument("sample_freq must be positive");
         }
     }
