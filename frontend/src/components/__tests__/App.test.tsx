@@ -15,8 +15,8 @@ vi.mock('@react-three/drei', () => ({
   Text: ({ children }: { children: React.ReactNode }) => <div data-testid="text">{children}</div>,
 }));
 
-// Mock the store
-vi.mock('../../stores/flameGraphStore', () => ({
+// Mock the modular store
+vi.mock('../../stores', () => ({
   useFlameGraphStore: () => ({
     loadSampleData: vi.fn(),
     isLoading: false,
