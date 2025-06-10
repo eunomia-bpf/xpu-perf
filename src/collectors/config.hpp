@@ -2,6 +2,7 @@
 #define __CONFIG_HPP
 
 #include "utils.hpp"
+#include <vector>
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,8 +22,8 @@ extern "C" {
 // Base configuration class
 class Config {
 public:
-    pid_t pids[MAX_PID_NR];
-    pid_t tids[MAX_TID_NR];
+    std::vector<pid_t> pids;
+    std::vector<pid_t> tids;
     bool user_threads_only;
     bool kernel_threads_only;
     bool user_stacks_only;
@@ -36,9 +37,9 @@ public:
     int cpu;
 
     Config() {
-        // Initialize arrays to zero
-        memset(pids, 0, sizeof(pids));
-        memset(tids, 0, sizeof(tids));
+        // Initialize vectors as empty
+        pids.clear();
+        tids.clear();
         
         // Set default values
         user_threads_only = false;

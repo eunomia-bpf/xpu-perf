@@ -3,3 +3,6 @@
 tools/profiler
 .cache
 nohup.out
+off.txt
+FlameGraph
+res*.svg

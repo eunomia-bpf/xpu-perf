@@ -1,10 +1,14 @@
 #ifndef __OFFCPUTIME_ANALYZER_HPP
 #define __OFFCPUTIME_ANALYZER_HPP
 
-#include "analyzers/flamegraph_view.hpp"
+#include "flamegraph_view.hpp"
 #include "base_analyzer.hpp"
+#include "analyzer_config.hpp"
 #include "collectors/offcpu/offcputime.hpp"
+#include "collectors/utils.hpp"
 #include <memory>
+#include <cstring>
+#include <algorithm>
 
 // Forward declaration
 class OffCPUTimeCollector;
@@ -12,9 +16,10 @@ class OffCPUTimeCollector;
 class OffCPUTimeAnalyzer : public BaseAnalyzer {
 private:
     std::unique_ptr<OffCPUTimeCollector> collector_;
+    std::unique_ptr<OffCPUAnalyzerConfig> config_;
 
 public:
-    OffCPUTimeAnalyzer();
+    explicit OffCPUTimeAnalyzer(std::unique_ptr<OffCPUAnalyzerConfig> config);
     virtual ~OffCPUTimeAnalyzer() = default;
     
     // IAnalyzer interface
@@ -22,13 +27,29 @@ public:
     std::unique_ptr<FlameGraphView> get_flamegraph() override;
     
     // Config access
-    OffCPUTimeConfig& get_config() { return collector_->get_config(); }
-    const OffCPUTimeConfig& get_config() const { return collector_->get_config(); }
+    const OffCPUAnalyzerConfig& get_config() const { return *config_; }
+
+private:
 };
 
 // Implementation
-inline OffCPUTimeAnalyzer::OffCPUTimeAnalyzer() 
-    : BaseAnalyzer("offcputime_analyzer"), collector_(std::make_unique<OffCPUTimeCollector>()) {
+inline OffCPUTimeAnalyzer::OffCPUTimeAnalyzer(std::unique_ptr<OffCPUAnalyzerConfig> config) 
+    : BaseAnalyzer("offcputime_analyzer"), 
+      collector_(std::make_unique<OffCPUTimeCollector>()),
+      config_(std::move(config)) {
+    
+    // Configure collector directly in constructor
+    if (collector_ && config_) {
+        auto& collector_config = collector_->get_config();
+        
+        // Apply essential settings
+        collector_config.duration = config_->duration;
+        collector_config.min_block_time = config_->min_block_us;
+        
+        // Copy PIDs and TIDs directly to vectors
+        collector_config.pids = config_->pids;
+        collector_config.tids = config_->tids;
+    }
 }
 
 inline bool OffCPUTimeAnalyzer::start() {

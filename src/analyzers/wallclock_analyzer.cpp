@@ -1,34 +1,41 @@
 #include "wallclock_analyzer.hpp"
 #include "collectors/sampling_data.hpp"
+#include "collectors/utils.hpp"
 #include <algorithm>
 #include <set>
 #include <sys/types.h>
+#include <cstring>
 
-WallClockAnalyzer::WallClockAnalyzer() 
+WallClockAnalyzer::WallClockAnalyzer(std::unique_ptr<WallClockAnalyzerConfig> config) 
     : BaseAnalyzer("wallclock_analyzer"),
       profile_collector_(std::make_unique<ProfileCollector>()),
       offcpu_collector_(std::make_unique<OffCPUTimeCollector>()),
-      sampling_frequency_(49) {
+      config_(std::move(config)) {
+    configure_collectors();
 }
 
-void WallClockAnalyzer::configure(int duration, int pid, int frequency, __u64 min_block_us) {
-    sampling_frequency_ = frequency;
+void WallClockAnalyzer::configure_collectors() {
+    if (!profile_collector_ || !offcpu_collector_ || !config_) {
+        return;
+    }
     
     // Configure profile collector
     auto& profile_config = profile_collector_->get_config();
-    profile_config.duration = duration;
-    profile_config.sample_freq = frequency;
-    if (pid > 0) {
-        profile_config.pids[0] = pid;
-    }
+    profile_config.duration = config_->duration;
+    profile_config.sample_freq = config_->frequency;
+    
+    // Copy PIDs and TIDs to profile collector
+    profile_config.pids = config_->pids;
+    profile_config.tids = config_->tids;
     
     // Configure offcpu collector  
     auto& offcpu_config = offcpu_collector_->get_config();
-    offcpu_config.duration = duration;
-    offcpu_config.min_block_time = min_block_us;
-    if (pid > 0) {
-        offcpu_config.pids[0] = pid;
-    }
+    offcpu_config.duration = config_->duration;
+    offcpu_config.min_block_time = config_->min_block_us;
+    
+    // Copy PIDs and TIDs to offcpu collector
+    offcpu_config.pids = config_->pids;
+    offcpu_config.tids = config_->tids;
 }
 
 bool WallClockAnalyzer::start() {
@@ -159,7 +166,7 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
         }
         
         // Process off-CPU data with normalization for this thread
-        double normalization_factor = (1.0 / sampling_frequency_) * 1000000.0;  // microseconds per sample
+        double normalization_factor = (1.0 / config_->frequency) * 1000000.0;  // microseconds per sample
         
         for (const auto& entry : offcpu_sampling->entries) {
             if (entry.key.pid == tid) {

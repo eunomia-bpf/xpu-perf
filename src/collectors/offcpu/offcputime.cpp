@@ -87,9 +87,9 @@ bool OffCPUTimeCollector::start() {
     obj->rodata->max_block_ns = config.max_block_time;
 
     /* User space PID and TID correspond to TGID and PID in the kernel, respectively */
-    if (config.pids[0])
+    if (!config.pids.empty())
         obj->rodata->filter_by_tgid = true;
-    if (config.tids[0])
+    if (!config.tids.empty())
         obj->rodata->filter_by_pid = true;
 
     bpf_map__set_value_size(obj->maps.stackmap,
@@ -107,20 +107,20 @@ bool OffCPUTimeCollector::start() {
         goto cleanup;
     }
 
-    if (config.pids[0]) {
+    if (!config.pids.empty()) {
         /* User pids_fd points to the tgids map in the BPF program */
         int pids_fd = bpf_map__fd(obj->maps.tgids);
-        for (i = 0; i < MAX_PID_NR && config.pids[i]; i++) {
+        for (size_t i = 0; i < config.pids.size() && i < MAX_PID_NR; i++) {
             if (bpf_map_update_elem(pids_fd, &(config.pids[i]), &val, BPF_ANY) != 0) {
                 fprintf(stderr, "failed to init pids map: %s\n", strerror(errno));
                 goto cleanup;
             }
         }
     }
-    if (config.tids[0]) {
+    if (!config.tids.empty()) {
         /* User tids_fd points to the pids map in the BPF program */
         int tids_fd = bpf_map__fd(obj->maps.pids);
-        for (i = 0; i < MAX_TID_NR && config.tids[i]; i++) {
+        for (size_t i = 0; i < config.tids.size() && i < MAX_TID_NR; i++) {
             if (bpf_map_update_elem(tids_fd, &(config.tids[i]), &val, BPF_ANY) != 0) {
                 fprintf(stderr, "failed to init tids map: %s\n", strerror(errno));
                 goto cleanup;

@@ -215,6 +215,7 @@ target_link_libraries(profiler_lib PUBLIC
 # Create the main executable using the library
 add_executable(profiler
     src/main.cpp
+    src/args_parser.cpp
 )
 
 # Set C++ standard for the target

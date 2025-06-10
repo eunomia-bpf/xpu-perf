@@ -20,7 +20,7 @@
 // Configuration
 #define NUM_WORKER_THREADS 4
 #define REQUEST_QUEUE_SIZE 100
-#define SIMULATION_DURATION 60  // seconds
+#define SIMULATION_DURATION 6000  // seconds
 #define BUFFER_SIZE 4096
 
 // Global state
