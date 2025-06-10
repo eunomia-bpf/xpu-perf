@@ -1,6 +1,5 @@
 #include "wallclock_analyzer.hpp"
 #include "collectors/sampling_data.hpp"
-#include "collectors/utils.hpp"
 #include <algorithm>
 #include <set>
 #include <sys/types.h>

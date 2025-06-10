@@ -1,7 +1,6 @@
 #ifndef __SYMBOL_RESOLVER_HPP
 #define __SYMBOL_RESOLVER_HPP
 
-#include "collectors/utils.hpp"
 #include "collectors/config.hpp"
 #include "collectors/bpf_event.h"
 #include <memory>
@@ -10,9 +9,21 @@
 #include <string>
 #include "collectors/sampling_data.hpp"
 
-struct blazesym;
+// Forward declare blazesym functions until blazesym.h is available
+extern "C" {
+    struct blazesym;
+    struct blazesym* blazesym_new(void);
+    void blazesym_free(struct blazesym* symbolizer);
+}
+
 // Custom deleter for blazesym
-struct BlazesymDeleter;
+struct BlazesymDeleter {
+    void operator()(struct blazesym* sym) const {
+        if (sym) {
+            blazesym_free(sym);
+        }
+    }
+};
 
 /**
  * SymbolResolver - A class to resolve symbols using blazesym
@@ -25,11 +36,9 @@ private:
     std::unique_ptr<struct blazesym, BlazesymDeleter> symbolizer_;
     
     // Private helper methods
-    std::string print_entry_multiline(const SamplingEntry& entry, const Config& config, const std::string& value_label = "");
-    std::string print_entry_folded(const SamplingEntry& entry, const Config& config);
     std::string stack_trace_to_string(const std::vector<std::string>& symbols);
     std::string stack_trace_to_folded_string(const std::vector<std::string>& symbols, 
-                                           char separator = ';', bool reverse = true);
+                                           char separator = ';', bool reverse = false);
 
 public:
     /**
@@ -56,15 +65,6 @@ public:
      * @return: Vector of function names
      */
     std::vector<std::string> get_stack_trace_symbols(__u64 *stack, int stack_sz, pid_t pid);
-    
-    /**
-     * print_data - Format and print sampling data
-     * @data: The sampling data to print
-     * @config: Configuration for output formatting
-     * @value_label: Optional label for the value column
-     * @return: Formatted string representation
-     */
-    std::string print_data(const SamplingData& data, const Config& config, const std::string& value_label = "");
     
     /**
      * is_valid - Check if the symbolizer is properly initialized

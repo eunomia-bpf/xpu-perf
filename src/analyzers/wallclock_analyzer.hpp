@@ -5,7 +5,6 @@
 #include "analyzer_config.hpp"
 #include "collectors/oncpu/profile.hpp"
 #include "collectors/offcpu/offcputime.hpp"
-#include "collectors/utils.hpp"
 #include "../flamegraph_generator.hpp"
 #include <memory>
 #include <map>

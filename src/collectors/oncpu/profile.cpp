@@ -28,7 +28,6 @@ extern "C" {
 
 #include "profile.skel.h"
 #include "profile.hpp"
-#include "collectors/utils.hpp"
 #include <algorithm>
 #include <unordered_map>
 #include <thread>

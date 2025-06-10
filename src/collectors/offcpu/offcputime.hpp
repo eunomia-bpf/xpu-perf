@@ -3,11 +3,9 @@
 
 #include "collectors/collector_interface.hpp"
 #include "collectors/bpf_event.h"
-#include "collectors/utils.hpp"
 #include "collectors/sampling_data.hpp"
 #include "collectors/config.hpp"
 #include <memory>
-#include <vector>
 #include <stdexcept>
 
 #ifdef __cplusplus

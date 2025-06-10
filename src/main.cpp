@@ -16,7 +16,6 @@
 #include "analyzers/analyzer.hpp"
 #include "analyzers/wallclock_analyzer.hpp"
 #include "args_parser.hpp"
-#include "collectors/utils.hpp"
 #include "collectors/oncpu/profile.hpp"
 #include "collectors/offcpu/offcputime.hpp"
 #include "flamegraph_generator.hpp"

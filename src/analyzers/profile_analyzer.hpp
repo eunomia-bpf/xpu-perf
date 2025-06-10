@@ -5,7 +5,6 @@
 #include "base_analyzer.hpp"
 #include "analyzer_config.hpp"
 #include "collectors/oncpu/profile.hpp"
-#include "collectors/utils.hpp"
 #include <memory>
 #include <cstring>
 #include <algorithm>

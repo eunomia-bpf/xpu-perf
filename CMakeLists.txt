@@ -240,6 +240,8 @@ enable_testing()
 add_executable(profiler_tests
     tests/test_main.cpp
     tests/test_flamegraph_view.cpp
+    tests/test_profile_collector.cpp
+    tests/test_offcputime_collector.cpp
 )
 
 # Set C++ standard for tests

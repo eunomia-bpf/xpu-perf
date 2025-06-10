@@ -1,123 +1,143 @@
-# Profiler Test Framework
+# BPF Profiler Tests
 
-This directory contains the test suite for the BPF Profiler project using the Catch2 testing framework.
+This directory contains unit tests for the BPF profiler components using Catch2 framework.
 
-## Test Structure
+## Test Organization
 
-- `test_main.cpp` - Contains the main test runner with Catch2 configuration
-- `test_flamegraph_view.cpp` - Comprehensive tests for the FlameGraphView class
-- **Catch2 is automatically downloaded via CMake FetchContent** (v2.13.10)
+We use a **single test executable** approach for better build performance and easier CI/CD integration.
 
-## Dependencies
+### Current Test Coverage
 
-The test framework automatically downloads and builds:
-- **Catch2 v2.13.10** - Modern C++ testing framework via CMake FetchContent
+#### Core Components
+- `test_flamegraph_view.cpp` - FlameGraph data structure and visualization tests
+- `test_profile_collector.cpp` - ProfileCollector (on-CPU profiling) tests  
+- `test_offcputime_collector.cpp` - OffCPUTimeCollector (off-CPU profiling) tests
 
-No manual setup required! Just build the project and the dependencies will be fetched automatically.
+#### Test Categories
+- **Configuration Tests** - Validate config classes, defaults, and parameter handling
+- **Collector Tests** - Test collector lifecycle, functionality, and API
+- **Data Structure Tests** - Verify data types, aliases, and data handling
+- **Edge Case Tests** - Test boundary conditions and error scenarios
 
 ## Running Tests
 
-### Build and Run Tests
+### Build and Run All Tests
 ```bash
-# From the project root directory
-make -C build              # Build everything including tests (downloads Catch2 automatically)
-./build/profiler_tests     # Run tests directly
+make test
 ```
 
-### Using CTest
+### Run Specific Test Categories
 ```bash
-# From the build directory
-cd build
-ctest --verbose           # Run all tests with verbose output
-ctest                     # Run tests quietly
+# Run all profile collector tests
+./build/profiler_tests "[profile]"
+
+# Run all off-CPU tests  
+./build/profiler_tests "[offcpu]"
+
+# Run all config-related tests
+./build/profiler_tests "[config]"
+
+# Run collector functionality tests
+./build/profiler_tests "[collector]"
+
+# Run edge case tests
+./build/profiler_tests "[edge]"
 ```
 
-### Test specific functionality
+### Run Individual Test Cases
 ```bash
-# Run only flamegraph tests
-./build/profiler_tests "[flamegraph]"
+# Run specific test case
+./build/profiler_tests "ProfileConfig validation and defaults"
+
+# Run with verbose output
+./build/profiler_tests "[profile]" -v
 
 # List all available tests
 ./build/profiler_tests --list-tests
 ```
 
-## CMake Integration
+## Test Structure
 
-The project uses modern CMake practices:
+### ProfileCollector Tests (`test_profile_collector.cpp`)
 
-### FetchContent for Dependencies
-```cmake
-include(FetchContent)
+Tests for on-CPU profiling functionality:
 
-FetchContent_Declare(
-    Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG        v2.13.10
-    GIT_SHALLOW    TRUE
-)
+- ✅ **Configuration Validation**: Default values, perf_event_attr setup
+- ✅ **Collector Lifecycle**: Constructor, destructor, name retrieval
+- ✅ **Config Management**: Mutable/const access, PID/TID filtering
+- ✅ **Data Structures**: ProfileData/ProfileEntry type aliases  
+- ✅ **Edge Cases**: Multiple collectors, libbpf output isolation
+- ✅ **Performance Events**: perf_event_attr configuration options
 
-FetchContent_MakeAvailable(Catch2)
-```
+### OffCPUTimeCollector Tests (`test_offcputime_collector.cpp`)
 
-### Force Unix Makefiles Generator
-The project is configured to use Unix Makefiles to avoid issues with Ninja and the custom BPF build commands. This is enforced through:
-- `CMakePresets.json` - Defines build presets with Unix Makefiles
-- `.vscode/settings.json` - VS Code configuration for proper generator selection
+Tests for off-CPU profiling functionality:
 
-## What's Tested
+- ✅ **Configuration Validation**: Block time ranges, state filtering
+- ✅ **Collector Lifecycle**: Constructor, destructor, name retrieval
+- ✅ **Blocking Analysis**: Min/max block times, state values (TASK_*)
+- ✅ **Data Structures**: OffCPUData/OffCPUEntry type aliases
+- ✅ **Edge Cases**: Extreme values, collector isolation
+- ✅ **State Semantics**: TASK_INTERRUPTIBLE, TASK_UNINTERRUPTIBLE
 
-### FlameGraphView Vector-based Functionality
-- ✅ **FlameGraphEntry structure** - Basic data structure operations
-- ✅ **FlameGraphView basic functionality** - Constructor and initialization
-- ✅ **Add stack trace and build folded stack** - Core stack building logic
-- ✅ **Stack depth calculation** - Proper depth counting for vector-based stacks
-- ✅ **Folded format output** - Conversion back to semicolon-separated format
-- ✅ **Readable format output** - Human-readable stack trace formatting
-- ✅ **Function totals aggregation** - Cross-stack function counting
-- ✅ **Top stacks retrieval** - Sorting and limiting functionality
+### FlameGraph Tests (`test_flamegraph_view.cpp`)
 
-## Key Changes from String to Vector
+Tests for flamegraph data visualization:
 
-The tests validate the transition from string-based to vector-based folded stacks:
+- ✅ **Data Structures**: FlameGraphEntry, stack trace handling
+- ✅ **Vector-based Stacks**: Folded stack functionality
 
-### Before (String-based)
-```cpp
-std::string folded_stack = "myapp;main;process_data;parse_input";
-```
+## Test Design Principles
 
-### After (Vector-based)
-```cpp
-std::vector<std::string> folded_stack = {"myapp", "main", "process_data", "parse_input"};
-```
+### Why Single Executable?
+1. **Faster Build Times** - Shared dependencies, single link step
+2. **Easier CI/CD** - One command to run all tests
+3. **Better Resource Management** - Shared fixtures and utilities
+4. **Catch2 Integration** - Built-in test discovery and filtering
 
-### Benefits Tested
-1. **Performance** - Direct access to individual functions without parsing
-2. **Flexibility** - Each function is a separate element for easier analysis
-3. **Maintainability** - Cleaner code logic without string manipulation
-4. **Compatibility** - Output formats maintain backward compatibility
+### Testing Protected Methods
+Since `validate()` methods are protected, we test validation **indirectly**:
+- Through constructor behavior
+- Through configuration setters/getters
+- Through actual collector operations
 
-## Test Coverage
-
-The test suite covers:
-- Stack trace construction with user and kernel stacks
-- Delimiter handling between user and kernel space
-- Stack depth calculations
-- Sample aggregation and percentage calculations
-- Output format generation (both folded and readable)
-- Function-level statistics
-- Sorting and top-stack retrieval
+### Test Categories (Tags)
+- `[config]` - Configuration classes and validation
+- `[collector]` - Collector lifecycle and functionality  
+- `[data]` - Data structures and type aliases
+- `[edge]` - Edge cases and error conditions
+- `[profile]` - ProfileCollector specific tests
+- `[offcpu]` - OffCPUTimeCollector specific tests
 
 ## Adding New Tests
 
-To add new tests, create a new `TEST_CASE` in an appropriate file:
+### For New Collectors
+1. Create `test_<collector_name>.cpp`
+2. Add to `CMakeLists.txt` in `profiler_tests` target
+3. Follow the existing patterns for config/collector/data tests
+4. Use appropriate tags for categorization
 
-```cpp
-TEST_CASE("Your test description", "[tag]") {
-    SECTION("Specific functionality") {
-        // Your test code here
-        REQUIRE(condition == expected_value);
-    }
-}
+### For New Features
+1. Add test sections to existing files if related
+2. Use descriptive section names
+3. Include both positive and negative test cases
+4. Test edge cases and boundary conditions
+
+## Integration with Build System
+
+Tests are automatically built and run via:
+```cmake
+# In CMakeLists.txt
+add_executable(profiler_tests
+    tests/test_main.cpp
+    tests/test_flamegraph_view.cpp
+    tests/test_profile_collector.cpp
+    tests/test_offcputime_collector.cpp
+)
 ```
 
-For more information about Catch2, see: https://github.com/catchorg/Catch2 
+The tests use the same `profiler_lib` as the main application, ensuring consistency
+
+## Test Structure
+
+- `test_main.cpp`

@@ -25,7 +25,6 @@ extern "C" {
 #include "collectors/bpf_event.h"
 #include "offcputime.skel.h"
 #include "offcputime.hpp"
-#include "collectors/utils.hpp"
 #include <sstream>
 #include <unordered_map>
 #include <thread>

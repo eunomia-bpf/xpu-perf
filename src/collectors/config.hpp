@@ -1,7 +1,6 @@
 #ifndef __CONFIG_HPP
 #define __CONFIG_HPP
 
-#include "utils.hpp"
 #include <vector>
 
 #ifdef __cplusplus

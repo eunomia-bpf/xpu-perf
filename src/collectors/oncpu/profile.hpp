@@ -4,7 +4,6 @@
 #include "collectors/collector_interface.hpp"
 #include "profile.skel.h"
 #include "collectors/config.hpp"
-#include "collectors/utils.hpp"
 #include "collectors/sampling_data.hpp"
 #include <memory>
 #include <vector>
