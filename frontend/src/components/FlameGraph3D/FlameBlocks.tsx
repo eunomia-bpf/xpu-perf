@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import * as THREE from 'three';
 import { FlameTreeNode } from '@/types/flame.types';
-import { useFlameGraphStore } from '@/stores/flameGraphStore';
+import { useFlameGraphStore } from '@/stores';
 import { getColorForFunction } from '@/utils/colorSchemes';
 
 interface FlameBlocksProps {

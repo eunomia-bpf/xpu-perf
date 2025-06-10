@@ -1,5 +1,5 @@
 import React from 'react';
-import { useFlameGraphStore } from '@/stores/flameGraphStore';
+import { useFlameGraphStore } from '@/stores';
 
 interface InfoPanelProps {
   className?: string;
