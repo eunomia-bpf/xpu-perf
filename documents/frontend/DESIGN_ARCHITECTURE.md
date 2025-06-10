@@ -1,405 +1,326 @@
 # Zero-Instrument Interactive Profiler Tool - Architecture Design
 
+||
+
 ## 🎯 Project Vision
 
-A comprehensive, zero-instrument, online profiler tool that provides multi-session management, multiple analyzer types, real-time data collection, and multi-modal visualization (2D/3D/4D) for complete system performance analysis.
+A zero-instrument, online profiler tool that starts simple but scales to comprehensive multi-analyzer capabilities. Built with modularity and extensibility as core principles, allowing progressive enhancement from MVP to full-featured system.
 
-## 🏗️ Application Architecture
+## 🏗️ **MVP-First Architecture**
 
-### Core Architecture Principles
-- **Multi-Session Management**: Each profiling session runs independently with its own tab
-- **Multi-Analyzer Support**: Each session can run multiple analyzer types simultaneously
-- **Real-time Data Streaming**: Live data collection from various analyzer sources
-- **Modular Visualization**: Pluggable visualization components tied to specific view types
-- **Data-View Separation**: Clear separation between data collection, storage, and visualization
-- **Analyzer-Specific Controls**: Each analyzer type has dedicated control components
+### **Core Architecture Principles**
+- **Progressive Enhancement**: Start simple, add complexity incrementally
+- **Modular Design**: Each component can be developed and deployed independently
+- **Extensible Framework**: Easy addition of new analyzer types and view types
+- **Data-View Separation**: Clear separation between data collection, processing, and visualization
+- **Plugin Architecture**: New analyzers and views can be added without core changes
 
-### System Component Hierarchy
+### **MVP System Architecture (Phase 1)**
 
 ```
 ProfilerApp/
-├── SessionManager/
-│   ├── TabManager (multi-session tabs)
-│   ├── SessionContainer
-│   ├── SessionState
-│   └── SessionPersistence
 ├── AnalyzerEngine/
-│   ├── TraceAnalyzer/          # Function probes, events with timestamps
-│   │   ├── FunctionProbeCollector
-│   │   ├── EventStreamProcessor
-│   │   └── TimestampCorrelator
-│   ├── MetricsAnalyzer/        # PMU data, system metrics
-│   │   ├── PMUDataCollector
-│   │   ├── SystemMetricsReader
-│   │   └── MetricsAggregator
-│   ├── FlameGraphAnalyzer/     # Stack traces, call graphs
-│   │   ├── StackTraceCollector
-│   │   ├── CallGraphBuilder
-│   │   └── FlameDataProcessor
-│   └── StaticAnalyzer/         # Program structure, symbols
-│       ├── SymbolTableReader
-│       ├── BinaryAnalyzer
-│       └── SourceCodeMapper
+│   ├── AnalyzerManager/           # Core analyzer orchestration
+│   ├── FlameGraphAnalyzer/        # MVP: Primary analyzer (existing enhanced)
+│   └── BaseAnalyzer/              # Extension point for new analyzers
+├── ViewportEngine/
+│   ├── ViewportManager/           # Single viewport for MVP
+│   ├── FlameGraph3D/              # MVP: Enhanced existing 3D view
+│   ├── DataTableView/             # MVP: Simple data display view
+│   └── BaseView/                  # Extension point for new view types
 ├── ControlCenter/
-│   ├── AnalyzerControls/       # Start/stop/config analyzers
-│   │   ├── AnalyzerManager
-│   │   ├── AnalyzerConfigPanel
-│   │   └── AnalyzerStatusMonitor
-│   ├── VisualizationControls/  # Configure view types and data sources
-│   │   ├── ViewportManager
-│   │   ├── DataSourceSelector
-│   │   └── ViewConfigPanel
-│   └── DataBrowser/           # Browse all collected data
-│       ├── DataExplorer
-│       ├── DataFilterPanel
-│       └── DataExportManager
-├── VisualizationEngine/
-│   ├── ViewportContainer/      # Manages multiple view instances
-│   ├── FlameGraph3D/          # 3D flame graph with specific controls
-│   │   ├── FlameGraph3DRenderer
-│   │   ├── FlameGraph3DControls (tied to this view)
-│   │   └── FlameGraph3DInteractions
-│   ├── FlameGraph2D/          # 2D flame graph with specific controls
-│   │   ├── FlameGraph2DRenderer
-│   │   ├── FlameGraph2DControls (tied to this view)
-│   │   └── FlameGraph2DInteractions
-│   ├── TimelineChart/         # Timeline views with specific controls
-│   │   ├── TimelineRenderer
-│   │   ├── TimelineControls (tied to this view)
-│   │   └── TimelineInteractions
-│   ├── MetricsChart/          # System metrics visualization
-│   │   ├── MetricsRenderer
-│   │   ├── MetricsControls
-│   │   └── MetricsInteractions
-│   └── TraceViewer/           # Event trace visualization
-│       ├── TraceRenderer
-│       ├── TraceControls
-│       └── TraceInteractions
+│   ├── AnalyzerControls/          # Simple start/stop/config for active analyzer
+│   ├── ViewControls/              # View type selector and basic controls
+│   └── DataControls/              # Simple data filtering and export
 ├── DataManager/
-│   ├── SessionDataStore/      # Per-session data storage
-│   ├── AnalyzerDataBuffer/    # Real-time data buffering
-│   ├── DataSynchronizer/      # Cross-analyzer data correlation
-│   └── BrowserStorage/        # Temporary browser storage
+│   ├── DataStore/                 # Single session store for MVP
+│   ├── DataProcessor/             # Basic data processing pipeline
+│   └── DataExporter/              # Simple export functionality
 └── LayoutManager/
-    ├── AppShell
-    ├── TabSystem
-    └── ViewportLayout
+    ├── AppShell/                  # Basic layout wrapper
+    └── SingleViewLayout/          # MVP: Single view, no complex layouts
 ```
 
-## 📊 Enhanced Data Architecture
+### **Extension Architecture (Post-MVP)**
 
-### Multi-Session Data Flow
 ```
-Session 1 Tab ─┐
-               ├─► SessionDataStore ─► VisualizationEngine
-Session 2 Tab ─┤                      │
-               └─► (Independent)       ▼
-Session N Tab...                   ViewportContainer
-                                      │
-┌─────────────────────────────────────┼────────────────────────────────────┐
-│ Per-Session Analyzer Pipeline       ▼                                    │
-│                                                                          │
-│ TraceAnalyzer ──┐                                                       │
-│ MetricsAnalyzer ├──► DataSynchronizer ──► AnalyzerDataBuffer ──►        │
-│ FlameAnalyzer ──┤                                                │       │
-│ StaticAnalyzer ─┘                                                ▼       │
-│                                                                  │       │
-│                                        BrowserStorage ◄─────────┘       │
-└──────────────────────────────────────────────────────────────────────────┘
+// New analyzer types plug into existing framework
+AnalyzerEngine/
+├── FlameGraphAnalyzer/            ✅ MVP
+├── TraceAnalyzer/                 📋 Phase 2
+├── MetricsAnalyzer/               📋 Phase 3
+├── StaticAnalyzer/                📋 Phase 4
+└── CustomAnalyzer/                📋 Plugin system
+
+// New view types plug into existing framework
+ViewportEngine/
+├── FlameGraph3D/                  ✅ MVP
+├── DataTableView/                 ✅ MVP
+├── FlameGraph2D/                  📋 Phase 2
+├── TimelineChart/                 📋 Phase 3
+├── MetricsChart/                  📋 Phase 4
+└── CustomView/                    📋 Plugin system
+
+// Session management added later
+SessionManager/                    📋 Phase 2+
+├── MultiSessionTabs/
+├── SessionPersistence/
+└── SessionSharing/
 ```
 
-### Analyzer-Specific Data Models
+## 📊 **MVP Data Architecture**
 
-#### Trace Analyzer Data
+### **Simplified Data Flow (MVP)**
+```
+Single Analyzer → Data Processing → Single View
+     │                 │               │
+FlameGraphAnalyzer → DataStore → [FlameGraph3D | DataTable]
+```
+
+### **Extensible Data Flow (Post-MVP)**
+```
+Multiple Analyzers → Data Correlation → Multiple Views
+        │                  │               │
+[Flame|Trace|Metrics] → Correlation → [3D|2D|Timeline|Table]
+```
+
+### **MVP Data Models**
+
+#### **Simplified Analyzer Interface**
 ```typescript
-interface TraceData {
-  events: TraceEvent[]
-  timeline: Timeline
-  correlationMap: CorrelationMap
-}
-
-interface TraceEvent {
-  timestamp: number
-  eventType: 'function_entry' | 'function_exit' | 'custom_event'
-  functionName: string
-  threadId: string
-  processId: string
-  parameters?: Record<string, any>
-  stackTrace?: string[]
-}
-```
-
-#### Metrics Analyzer Data
-```typescript
-interface MetricsData {
-  systemMetrics: SystemMetrics[]
-  pmuData: PMUData[]
-  resourceUsage: ResourceUsage[]
-}
-
-interface PMUData {
-  timestamp: number
-  cpuCycles: number
-  instructions: number
-  cacheHits: number
-  cacheMisses: number
-  branchPredictions: number
+interface BaseAnalyzer {
+  id: string
+  type: AnalyzerType
+  status: 'stopped' | 'starting' | 'running' | 'stopping'
+  
+  // Core methods
+  start(): Promise<void>
+  stop(): Promise<void>
+  configure(config: AnalyzerConfig): void
+  getData(): AnalyzerData
+  
+  // Event system for real-time updates
+  onDataUpdate(callback: (data: AnalyzerData) => void): void
+  onStatusChange(callback: (status: AnalyzerStatus) => void): void
 }
 ```
 
-#### FlameGraph Analyzer Data
+#### **Simplified View Interface**
 ```typescript
-interface FlameGraphData {
-  stackTraces: StackTrace[]
-  callGraph: CallGraph
-  aggregatedData: AggregatedFlameData
-}
-
-interface StackTrace {
-  timestamp: number
-  threadId: string
-  frames: StackFrame[]
-  sampleCount: number
-}
-```
-
-#### Static Analyzer Data
-```typescript
-interface StaticData {
-  symbolTable: SymbolTable
-  binaryInfo: BinaryInfo
-  sourceMapping: SourceMapping
-  dependencies: Dependency[]
+interface BaseView {
+  id: string
+  type: ViewType
+  
+  // Core methods
+  render(data: AnalyzerData): void
+  configure(config: ViewConfig): void
+  getControls(): React.ComponentType
+  
+  // Interaction events
+  onSelection(callback: (selection: ViewSelection) => void): void
+  onFilter(callback: (filter: DataFilter) => void): void
 }
 ```
 
-## 🎛️ Enhanced Control Architecture
-
-### Session-Level Controls
+#### **MVP Data Store**
 ```typescript
-interface SessionControls {
-  sessionManager: {
-    createSession: () => SessionId
-    switchSession: (id: SessionId) => void
-    closeSession: (id: SessionId) => void
-    duplicateSession: (id: SessionId) => SessionId
+interface DataStore {
+  // Single analyzer for MVP
+  activeAnalyzer: BaseAnalyzer | null
+  analyzerData: AnalyzerData | null
+  
+  // Single view for MVP
+  activeView: BaseView
+  viewConfig: ViewConfig
+  
+  // Simple state management
+  setAnalyzer(analyzer: BaseAnalyzer): void
+  setView(view: BaseView): void
+  updateData(data: AnalyzerData): void
+}
+```
+
+## 🎯 **Analyzer Plugin System**
+
+### **Analyzer Registration (Extensible)**
+```typescript
+interface AnalyzerRegistry {
+  registerAnalyzer(type: string, factory: AnalyzerFactory): void
+  createAnalyzer(type: string, config: AnalyzerConfig): BaseAnalyzer
+  getAvailableAnalyzers(): AnalyzerInfo[]
+}
+
+// Example: Adding new analyzer type
+analyzerRegistry.registerAnalyzer('trace', (config) => new TraceAnalyzer(config))
+analyzerRegistry.registerAnalyzer('metrics', (config) => new MetricsAnalyzer(config))
+```
+
+### **View Plugin System**
+```typescript
+interface ViewRegistry {
+  registerView(type: string, factory: ViewFactory): void
+  createView(type: string, config: ViewConfig): BaseView
+  getAvailableViews(): ViewInfo[]
+  getCompatibleViews(dataType: DataType): ViewInfo[]
+}
+
+// Example: Adding new view type
+viewRegistry.registerView('timeline', (config) => new TimelineChart(config))
+viewRegistry.registerView('heatmap', (config) => new HeatmapView(config))
+```
+
+## 🔧 **MVP Implementation Strategy**
+
+### **Phase 1: MVP Foundation (Weeks 1-4)**
+**Goal**: Validate core concept with minimal viable product
+
+**Scope**:
+- Single analyzer: Enhanced FlameGraph (build on existing)
+- Two view types: 3D FlameGraph + Data Table
+- Simple controls: Start/Stop analyzer, switch views
+- Basic data export
+
+**Implementation**:
+```typescript
+// MVP Analyzer Manager
+class MVPAnalyzerManager {
+  private activeAnalyzer: FlameGraphAnalyzer | null = null
+  
+  async startFlameAnalyzer(config: FlameConfig): Promise<void> {
+    this.activeAnalyzer = new FlameGraphAnalyzer(config)
+    await this.activeAnalyzer.start()
   }
   
-  analyzerManager: {
-    startAnalyzer: (type: AnalyzerType, config: AnalyzerConfig) => void
-    stopAnalyzer: (analyzerId: AnalyzerId) => void
-    configureAnalyzer: (analyzerId: AnalyzerId, config: AnalyzerConfig) => void
-    getAnalyzerStatus: (analyzerId: AnalyzerId) => AnalyzerStatus
+  stopAnalyzer(): void {
+    this.activeAnalyzer?.stop()
+    this.activeAnalyzer = null
   }
 }
-```
 
-### View-Specific Controls
-```typescript
-interface ViewControls {
-  flameGraph3D: FlameGraph3DControls
-  flameGraph2D: FlameGraph2DControls
-  timelineChart: TimelineControls
-  metricsChart: MetricsControls
-  traceViewer: TraceControls
-}
-
-interface FlameGraph3DControls {
-  camera: CameraControls
-  rendering: RenderingControls
-  interaction: InteractionControls
-  data: DataControls
-}
-```
-
-### Visualization Controls
-```typescript
-interface VisualizationControls {
-  viewportManager: {
-    addViewport: (type: ViewType, config: ViewConfig) => ViewportId
-    removeViewport: (id: ViewportId) => void
-    configureViewport: (id: ViewportId, config: ViewConfig) => void
-    setDataSource: (viewportId: ViewportId, dataSource: DataSource) => void
+// MVP View Manager
+class MVPViewManager {
+  private views = {
+    '3d-flame': () => new FlameGraph3D(),
+    'data-table': () => new DataTableView()
   }
   
-  layoutManager: {
-    setLayout: (layout: LayoutType) => void // grid, tabs, split
-    arrangeViewports: (arrangement: ViewportArrangement) => void
+  switchView(type: '3d-flame' | 'data-table'): BaseView {
+    return this.views[type]()
   }
 }
 ```
 
-## 🔄 Analyzer Types & Capabilities
+### **Phase 2: Multi-Analyzer Support (Weeks 5-8)**
+**Goal**: Add analyzer extensibility and basic coordination
 
-### 1. Trace Analyzer
-**Purpose**: Function-level tracing with events and timestamps
-**Data Sources**: 
-- Function entry/exit probes
-- Custom event markers
-- System call traces
-- User-defined trace points
+**New Features**:
+- Analyzer plugin system
+- Second analyzer type (Trace or Metrics)
+- Basic data correlation
+- Analyzer switching in UI
 
-**Capabilities**:
-- Real-time function call tracking
-- Event correlation across threads
-- Timeline visualization
-- Performance bottleneck identification
+### **Phase 3: Multi-View Support (Weeks 9-12)**
+**Goal**: Add view extensibility and multi-viewport
 
-### 2. Metrics Analyzer  
-**Purpose**: System and hardware performance metrics
-**Data Sources**:
-- Performance Monitoring Unit (PMU)
-- System resource utilization
-- Hardware counters
-- Custom metric endpoints
+**New Features**:
+- View plugin system
+- Multi-viewport layouts
+- View-specific controls
+- Cross-view interactions
 
-**Capabilities**:
-- CPU performance analysis
-- Memory utilization tracking
-- Cache performance monitoring
-- Hardware event correlation
+### **Phase 4: Session Management (Weeks 13-16)**
+**Goal**: Add session persistence and sharing
 
-### 3. FlameGraph Analyzer
-**Purpose**: Call stack profiling and flame graph generation
-**Data Sources**:
-- Stack trace sampling
-- Call graph generation
-- Symbol resolution
-- Sample aggregation
+**New Features**:
+- Multi-session tabs
+- Session persistence
+- Data export/import
+- Basic collaboration
 
-**Capabilities**:
-- Traditional 2D flame graphs
-- Interactive 3D flame stacks
-- Call hierarchy analysis
-- Hot path identification
+## 🎨 **Modular Component Architecture**
 
-### 4. Static Analyzer
-**Purpose**: Program structure and symbol analysis
-**Data Sources**:
-- Binary symbol tables
-- Source code mapping
-- Dependency analysis
-- Program metadata
-
-**Capabilities**:
-- Symbol resolution
-- Source code correlation
-- Dependency visualization
-- Program structure analysis
-
-## 🎨 Multi-Modal Visualization Integration
-
-### View Type Registration
+### **MVP Component Structure**
 ```typescript
-interface ViewTypeRegistry {
-  '3d-flame-graph': {
-    component: FlameGraph3D
-    controls: FlameGraph3DControls
-    dataTypes: ['flamegraph', 'stacktrace']
-    requirements: ['webgl']
-  }
-  
-  '2d-flame-graph': {
-    component: FlameGraph2D
-    controls: FlameGraph2DControls
-    dataTypes: ['flamegraph', 'stacktrace']
-    requirements: ['canvas']
-  }
-  
-  'timeline-chart': {
-    component: TimelineChart
-    controls: TimelineControls
-    dataTypes: ['trace', 'metrics', 'events']
-    requirements: ['d3']
-  }
-  
-  'metrics-dashboard': {
-    component: MetricsChart
-    controls: MetricsControls
-    dataTypes: ['metrics', 'pmu']
-    requirements: ['charts']
-  }
-}
+components/
+├── App.tsx                        # Simple app wrapper
+├── analyzers/
+│   ├── AnalyzerControl.tsx        # Simple start/stop controls
+│   └── FlameAnalyzerConfig.tsx    # Configuration for flame analyzer
+├── views/
+│   ├── ViewSelector.tsx           # Switch between 3D/Table views
+│   ├── FlameGraph3D/              # Enhanced existing component
+│   └── DataTable/                 # Simple data display
+├── controls/
+│   ├── SimpleControls.tsx         # Basic controls only
+│   └── ExportControls.tsx         # Simple export functionality
+└── layout/
+    └── SimpleLayout.tsx           # Basic header + main content
 ```
 
-### Data-View Binding
+### **Extension Points**
 ```typescript
-interface DataViewBinding {
-  viewportId: ViewportId
-  viewType: ViewType
-  dataSource: {
-    analyzerId: AnalyzerId
-    dataType: DataType
-    filters: DataFilter[]
-    transformations: DataTransformation[]
-  }
-  config: ViewConfig
-}
+// Adding new analyzer
+components/analyzers/TraceAnalyzerConfig.tsx     # Drops in automatically
+components/analyzers/MetricsAnalyzerConfig.tsx   # Drops in automatically
+
+// Adding new view
+components/views/TimelineChart/                  # Drops in automatically
+components/views/HeatmapView/                    # Drops in automatically
 ```
 
-## 🚀 Implementation Phases
+## 🚀 **Technical Benefits of This Design**
 
-### Phase 1: Multi-Session Foundation (Weeks 1-4)
-1. **Session Management System**
-   - Tab-based session interface
-   - Session state management
-   - Session persistence in browser storage
+### **1. Progressive Complexity**
+- Start with 1 analyzer → Add more incrementally
+- Start with single view → Add multi-viewport later
+- Start with single session → Add multi-session later
 
-2. **Basic Analyzer Framework**
-   - Analyzer base classes
-   - Simple trace analyzer implementation
-   - Basic data collection pipeline
+### **2. True Modularity**
+- New analyzers implement `BaseAnalyzer` interface
+- New views implement `BaseView` interface
+- Plugin registration system allows runtime extensibility
 
-### Phase 2: Analyzer Engine (Weeks 5-8)
-1. **Complete Analyzer Implementation**
-   - All four analyzer types
-   - Real-time data streaming
-   - Data synchronization between analyzers
+### **3. Reduced Cognitive Load**
+- MVP UI shows only essential information
+- Advanced features added progressively as users need them
+- Clear separation between core and extension features
 
-2. **Enhanced Control System**
-   - Analyzer control panels
-   - Visualization control interface
-   - Data browser implementation
+### **4. Easy Testing**
+- Each analyzer can be tested independently
+- Each view can be tested independently
+- Plugin system allows isolated development
 
-### Phase 3: Advanced Visualization (Weeks 9-12)
-1. **View-Specific Controls**
-   - Dedicated controls for each view type
-   - Dynamic control panel generation
-   - View configuration persistence
+### **5. Deployment Flexibility**
+- Core system can be deployed independently
+- Plugins can be deployed separately
+- Feature flags can control which analyzers/views are available
 
-2. **Multi-Viewport Support**
-   - Multiple simultaneous views
-   - Cross-view data correlation
-   - Layout management
+## 📈 **Scalability Path**
 
-### Phase 4: Production Features (Weeks 13-16)
-1. **Performance Optimization**
-   - Large dataset handling
-   - Real-time streaming optimization
-   - Memory management
-
-2. **Enterprise Features**
-   - Data export/import
-   - Session sharing
-   - Advanced analytics
-
-## 🔧 Technical Implementation Strategy
-
-### Modular Architecture Benefits
-1. **Analyzer Independence**: Each analyzer can be developed and tested separately
-2. **View Flexibility**: New visualization types can be added without affecting others
-3. **Control Separation**: View-specific controls maintain tight coupling with their views
-4. **Data Isolation**: Session data is completely isolated, preventing cross-contamination
-5. **Scalability**: System can handle multiple concurrent sessions with different analyzer configurations
-
-### Real-time Data Coordination
+### **MVP → Basic Multi-Analyzer**
 ```typescript
-interface DataCoordinator {
-  synchronizeAnalyzers: (analyzers: AnalyzerId[]) => void
-  correlateTimestamps: (data: AnalyzerData[]) => CorrelatedData
-  distributeToViews: (data: CorrelatedData, views: ViewportId[]) => void
-  handleDataConflicts: (conflicts: DataConflict[]) => Resolution[]
-}
+// MVP: Single analyzer
+const analyzer = new FlameGraphAnalyzer(config)
+
+// Multi-analyzer: Plugin system
+const analyzer1 = analyzerRegistry.create('flamegraph', config1)
+const analyzer2 = analyzerRegistry.create('trace', config2)
 ```
 
-This enhanced architecture provides a solid foundation for building a comprehensive, professional-grade profiler that can handle complex multi-analyzer scenarios while maintaining clean separation of concerns and excellent user experience. 
+### **Single View → Multi-Viewport**
+```typescript
+// MVP: Single view
+<ViewportContainer>
+  <FlameGraph3D data={data} />
+</ViewportContainer>
+
+// Multi-viewport: Layout system
+<ViewportContainer layout="grid-2x2">
+  <FlameGraph3D data={flameData} />
+  <TimelineChart data={traceData} />
+  <MetricsChart data={metricsData} />
+  <DataTable data={allData} />
+</ViewportContainer>
+```
+
+This design provides a clear, extensible foundation that starts simple but can grow into a comprehensive profiling platform without architectural rewrites. 

@@ -2,771 +2,379 @@
 
 ## 📋 Project Overview
 
-**Project**: Multi-Session, Multi-Analyzer Profiler Frontend  
+**Project**: MVP-First Profiler with Progressive Enhancement  
 **Tech Stack**: React 19 + TypeScript + Vite + Three.js + Zustand + pnpm  
 **Current Status**: Basic 3D visualization foundation established ✅  
-**Target**: Production-ready comprehensive profiler with real-time multi-analyzer capabilities
+**Target**: Quick MVP validation followed by modular feature additions
 
-## 🏗️ **Current Code Analysis & Architectural Transformation**
+## 🎯 **MVP-First Strategy**
 
-### **Existing Implementation Assessment**
+### **Core MVP Principles**
+- **Start Simple**: Single analyzer, two views, immediate value
+- **Validate Early**: Test core concept with minimal complexity
+- **Build Foundation**: Extensible architecture from day one
+- **Progressive Enhancement**: Add features based on user feedback
+- **Short Iterations**: 2-week sprints for rapid iteration
+
+## 🏗️ **Current Code Foundation Analysis**
+
+### **Assets Available ✅**
 ```
-✅ IMPLEMENTED (Foundation):
-├── Basic 3D FlameGraph3D.tsx with React Three Fiber
-├── FlameBlocks.tsx and ThreadLabel.tsx components  
-├── Core flameGraphStore.ts with Zustand + devtools
-├── ControlPanel.tsx with basic interactive controls
-├── InfoPanel.tsx for data display
-├── Utils: flameDataLoader.ts, colorSchemes.ts
-├── Types: flame.types.ts
-└── Basic layout components (AppLayout, NavigationHeader, etc.)
-
-🔄 NEEDS TRANSFORMATION:
-├── Single-session → Multi-session tab system
-├── Single analyzer → Multi-analyzer engine
-├── Monolithic controls → View-specific control components
-├── Static data → Real-time streaming architecture
-├── Single view → Multi-viewport system
-└── Basic state → Comprehensive session management
-```
-
-### **Target Multi-Analyzer Architecture**
-
-#### **1. Session Management System**
-```typescript
-// New: Multi-session architecture
 src/
+├── components/
+│   ├── FlameGraph3D.tsx           ✅ Core 3D visualization
+│   ├── FlameBlocks.tsx            ✅ 3D flame block rendering
+│   ├── ThreadLabel.tsx            ✅ Thread visualization
+│   ├── ControlPanel.tsx           ✅ Basic controls (needs enhancement)
+│   ├── InfoPanel.tsx              ✅ Data display (needs modularity)
+│   └── layout/
+│       ├── AppLayout.tsx          ✅ Basic layout structure
+│       └── NavigationHeader.tsx   ✅ Header component
 ├── stores/
-│   ├── session/
-│   │   ├── sessionManager.ts      📝 (Multi-session orchestration)
-│   │   ├── sessionStore.ts        📝 (Individual session state)
-│   │   └── sessionPersistence.ts  📝 (Browser storage)
-│   ├── analyzers/
-│   │   ├── analyzerManager.ts     📝 (Analyzer lifecycle)
-│   │   ├── traceAnalyzer.ts       📝 (Trace data collection)
-│   │   ├── metricsAnalyzer.ts     📝 (PMU/system metrics)
-│   │   ├── flameAnalyzer.ts       📝 (Enhanced existing)
-│   │   └── staticAnalyzer.ts      📝 (Binary/symbol analysis)
-│   └── ui/
-│       ├── viewportStore.ts       📝 (Multi-viewport management)
-│       ├── layoutStore.ts         📝 (Grid/tab layouts)
-│       └── correlationStore.ts    📝 (Cross-view data correlation)
+│   └── flameGraphStore.ts         ✅ Basic Zustand store (needs modularization)
+├── utils/
+│   ├── flameDataLoader.ts         ✅ Data loading utility
+│   └── colorSchemes.ts           ✅ Visualization utilities
+└── types/
+    └── flame.types.ts             ✅ Type definitions
 ```
 
-#### **2. Enhanced Component Architecture**
+### **MVP Transformation Strategy**
+```
+Phase 1 (2 weeks): MVP Foundation
+├── Enhance existing FlameGraph3D ✅
+├── Add DataTable view (reuse InfoPanel logic)
+├── Create simple AnalyzerManager
+├── Add view switching
+└── Basic export functionality
+
+Phase 2 (2 weeks): Multi-Analyzer
+├── Plugin system foundation
+├── Add TraceAnalyzer
+├── Analyzer switching UI
+└── Basic data correlation
+
+Phase 3 (2 weeks): Multi-Viewport
+├── Viewport management
+├── Layout system
+├── View-specific controls
+└── Cross-view interactions
+
+Phase 4 (2 weeks): Production Ready
+├── Session persistence
+├── Export/import
+├── Performance optimization
+└── Production deployment
+```
+
+## 🚀 **Phase 1: MVP Foundation (Weeks 1-2)**
+
+### **Goal**: Validate core concept with minimal viable product
+
+### **Sprint 1.1 (Week 1): Core Enhancement**
+
+#### **Day 1-2: Analyzer Manager Foundation**
 ```typescript
-// Evolved: View-specific controls with tight coupling
-components/
-├── Sessions/                      📝 (New: session management)
-│   ├── SessionTabs.tsx
-│   ├── SessionManager.tsx
-│   └── SessionPersistence.tsx
-├── Analyzers/                     📝 (New: analyzer controls)
-│   ├── AnalyzerManager.tsx
-│   ├── TraceAnalyzerControl.tsx
-│   ├── MetricsAnalyzerControl.tsx
-│   ├── FlameAnalyzerControl.tsx
-│   └── StaticAnalyzerControl.tsx
-├── Visualizations/                🔄 (Enhanced: view-specific)
-│   ├── FlameGraph3D/             ✅ (Enhanced existing)
-│   │   ├── FlameGraph3D.tsx      ✅ (Core component)
-│   │   ├── FlameGraph3DControls.tsx 📝 (Dedicated controls)
-│   │   └── FlameGraph3DInteractions.tsx 📝 (Interaction logic)
-│   ├── FlameGraph2D/             📝 (New: 2D alternative)
-│   │   ├── FlameGraph2D.tsx
-│   │   ├── FlameGraph2DControls.tsx
-│   │   └── FlameGraph2DInteractions.tsx
-│   ├── TimelineChart/            📝 (New: trace visualization)
-│   │   ├── TimelineChart.tsx
-│   │   ├── TimelineControls.tsx
-│   │   └── TimelineInteractions.tsx
-│   ├── MetricsChart/             📝 (New: system metrics)
-│   │   ├── MetricsChart.tsx
-│   │   ├── MetricsControls.tsx
-│   │   └── MetricsInteractions.tsx
-│   └── DataTable/                📝 (New: data browser)
-│       ├── DataTable.tsx
-│       ├── DataTableControls.tsx
-│       └── DataTableInteractions.tsx
-├── ControlCenter/                📝 (New: centralized controls)
-│   ├── AnalyzerControlPanel.tsx
-│   ├── VisualizationControlPanel.tsx
-│   └── DataBrowserPanel.tsx
-└── Layout/                       ✅ (Enhanced existing)
-    ├── AppLayout.tsx             ✅ (Multi-session support)
-    ├── ViewportContainer.tsx     📝 (Multi-viewport)
-    └── GridLayout.tsx            📝 (Dynamic layouts)
-```
-
-## 🛠️ **Phase 1: Multi-Session Foundation (Weeks 1-4)**
-
-### **1.1 Session Management Implementation**
-
-#### **Enhanced Package Configuration for Multi-Session Support**
-```json
-// package.json additions for session management
-{
-  "dependencies": {
-    // Existing dependencies...
-    "uuid": "^9.0.0",              // Session ID generation
-    "zustand": "^4.4.0",           // Enhanced state management
-    "immer": "^10.0.0",            // Immutable state updates
-    "broadcast-channel": "^5.1.0", // Cross-tab communication
-    "idb": "^8.0.0"                // IndexedDB for persistence
-  },
-  "scripts": {
-    // Enhanced development workflow
-    "dev:multi": "concurrently \"pnpm dev\" \"pnpm dev:storybook\"",
-    "test:session": "vitest run --config vitest.session.config.ts",
-    "test:analyzers": "vitest run --config vitest.analyzers.config.ts"
-  }
-}
-```
-
-#### **Session Store Architecture**
-```typescript
-// stores/session/sessionManager.ts
-interface SessionManager {
-  // Session lifecycle
-  sessions: Map<SessionId, SessionState>
-  activeSessionId: SessionId | null
+// stores/analyzers/analyzerManager.ts (New - MVP)
+interface MVPAnalyzerManager {
+  // Single analyzer for MVP
+  activeAnalyzer: FlameGraphAnalyzer | null
+  status: 'idle' | 'starting' | 'running' | 'stopping'
   
-  // Session operations
-  createSession: (config?: SessionConfig) => SessionId
-  switchSession: (id: SessionId) => void
-  closeSession: (id: SessionId) => void
-  duplicateSession: (id: SessionId) => SessionId
-  
-  // Session persistence
-  saveSession: (id: SessionId) => Promise<void>
-  loadSession: (id: SessionId) => Promise<void>
-  exportSession: (id: SessionId, format: ExportFormat) => Promise<Blob>
+  // Simple operations
+  startAnalyzer: (config?: FlameConfig) => Promise<void>
+  stopAnalyzer: () => Promise<void>
+  getAnalyzerData: () => FlameGraphData | null
 }
 
-// stores/session/sessionStore.ts  
-interface SessionState {
-  id: SessionId
-  name: string
-  createdAt: Date
-  updatedAt: Date
-  
-  // Analyzer state
-  analyzers: Map<AnalyzerId, AnalyzerState>
-  activeAnalyzers: Set<AnalyzerId>
-  
-  // Visualization state
-  viewports: Map<ViewportId, ViewportState>
-  layout: LayoutConfig
-  
-  // Data state
-  data: SessionData
-  metadata: SessionMetadata
-}
+// Enhance existing flameGraphStore.ts
+// Wrap existing functionality in new analyzer interface
 ```
 
-#### **Session Tab Component**
+#### **Day 3-4: View System Foundation**
 ```typescript
-// components/Sessions/SessionTabs.tsx
-const SessionTabs: React.FC = () => {
-  const { sessions, activeSessionId, createSession, switchSession, closeSession } = useSessionManager()
-  
-  return (
-    <div className="session-tabs">
-      {Array.from(sessions.entries()).map(([id, session]) => (
-        <SessionTab
-          key={id}
-          session={session}
-          isActive={id === activeSessionId}
-          onActivate={() => switchSession(id)}
-          onClose={() => closeSession(id)}
-          onDuplicate={() => duplicateSession(id)}
-        />
-      ))}
-      <NewSessionButton onCreate={createSession} />
-    </div>
-  )
-}
-```
-
-### **1.2 Analyzer Framework Foundation**
-
-#### **Base Analyzer Architecture**
-```typescript
-// stores/analyzers/analyzerManager.ts
-interface AnalyzerManager {
-  // Analyzer lifecycle
-  startAnalyzer: (sessionId: SessionId, type: AnalyzerType, config: AnalyzerConfig) => AnalyzerId
-  stopAnalyzer: (analyzerId: AnalyzerId) => void
-  configureAnalyzer: (analyzerId: AnalyzerId, config: AnalyzerConfig) => void
-  
-  // Analyzer state
-  getAnalyzerStatus: (analyzerId: AnalyzerId) => AnalyzerStatus
-  getAnalyzerData: (analyzerId: AnalyzerId) => AnalyzerData
-  
-  // Data synchronization
-  synchronizeAnalyzers: (analyzerIds: AnalyzerId[]) => void
-  correlateData: (analyzerIds: AnalyzerId[]) => CorrelatedData
+// components/views/ViewManager.tsx (New)
+interface ViewManager {
+  activeView: 'flame3d' | 'datatable'
+  switchView: (view: ViewType) => void
 }
 
-// Base analyzer interface
-interface BaseAnalyzer {
-  id: AnalyzerId
-  type: AnalyzerType
-  sessionId: SessionId
-  config: AnalyzerConfig
-  status: AnalyzerStatus
-  
-  start: () => Promise<void>
-  stop: () => Promise<void>
-  configure: (config: AnalyzerConfig) => void
-  getData: () => AnalyzerData
-}
+// components/views/DataTableView.tsx (New - Reuse InfoPanel logic)
+// Extract table logic from InfoPanel into standalone view
+// Support filtering, sorting, export
 ```
 
-#### **FlameGraph Analyzer Enhancement (Build on Existing)**
+#### **Day 5: Simple Layout Integration**
 ```typescript
-// stores/analyzers/flameAnalyzer.ts (Enhanced from existing flameGraphStore.ts)
-class FlameAnalyzer extends BaseAnalyzer {
-  constructor(sessionId: SessionId, config: FlameAnalyzerConfig) {
-    super(sessionId, 'flamegraph', config)
-  }
-  
-  async start() {
-    // Enhanced from existing loadSampleData functionality
-    this.status = 'starting'
-    await this.initializeStackSampling()
-    this.status = 'running'
-    this.startDataCollection()
-  }
-  
-  private async initializeStackSampling() {
-    // Use existing flameDataLoader logic
-    const loader = new FlameDataLoader()
-    const initialData = await loader.loadSampleData()
-    this.updateData(initialData)
-  }
-  
-  private startDataCollection() {
-    // Real-time stack sampling
-    this.samplingInterval = setInterval(() => {
-      this.collectStackSample()
-    }, this.config.sampleInterval || 100)
-  }
-}
+// Enhanced App.tsx structure
+<AppLayout>
+  <ControlPanel>
+    <AnalyzerControl />
+    <ViewSelector />
+    <ViewControls />
+  </ControlPanel>
+  <MainViewport>
+    {activeView === 'flame3d' ? <FlameGraph3D /> : <DataTableView />}
+  </MainViewport>
+  <StatusBar />
+</AppLayout>
 ```
 
-### **1.3 Multi-Viewport System**
+### **Sprint 1.2 (Week 2): Polish & Testing**
 
-#### **Viewport Container Implementation**
-```typescript
-// components/Layout/ViewportContainer.tsx
-const ViewportContainer: React.FC<ViewportContainerProps> = ({ sessionId }) => {
-  const session = useSession(sessionId)
-  const { viewports, layout } = session
-  
-  return (
-    <div className="viewport-container">
-      <ViewportLayoutRenderer layout={layout}>
-        {Array.from(viewports.entries()).map(([id, viewport]) => (
-          <ViewportWrapper key={id} viewport={viewport}>
-            <ViewportComponent
-              type={viewport.type}
-              dataSource={viewport.dataSource}
-              config={viewport.config}
-              controls={viewport.controls}
-            />
-          </ViewportWrapper>
-        ))}
-      </ViewportLayoutRenderer>
-    </div>
-  )
-}
-```
-
-## 🎨 **Phase 2: Analyzer Engine Implementation (Weeks 5-8)**
-
-### **2.1 Complete Analyzer Implementation**
-
-#### **Trace Analyzer (Function Probes + Events)**
-```typescript
-// stores/analyzers/traceAnalyzer.ts
-class TraceAnalyzer extends BaseAnalyzer {
-  private eventBuffer: TraceEvent[] = []
-  private webSocketConnection: WebSocket | null = null
-  
-  async start() {
-    await this.establishConnection()
-    await this.setupFunctionProbes()
-    this.startEventCollection()
-  }
-  
-  private async setupFunctionProbes() {
-    const { includePatterns, excludePatterns } = this.config
-    // Setup function entry/exit probes
-    await this.instrumentFunctions(includePatterns, excludePatterns)
-  }
-  
-  private startEventCollection() {
-    this.webSocketConnection?.addEventListener('message', (event) => {
-      const traceEvent: TraceEvent = JSON.parse(event.data)
-      this.processTraceEvent(traceEvent)
-    })
-  }
-  
-  private processTraceEvent(event: TraceEvent) {
-    this.eventBuffer.push(event)
-    if (this.eventBuffer.length >= this.config.bufferSize) {
-      this.flushBuffer()
-    }
-  }
-}
-```
-
-#### **Metrics Analyzer (PMU + System Metrics)**
-```typescript
-// stores/analyzers/metricsAnalyzer.ts
-class MetricsAnalyzer extends BaseAnalyzer {
-  private metricsCollector: MetricsCollector
-  private pmuReader: PMUReader
-  
-  async start() {
-    await this.initializePMU()
-    this.startMetricsCollection()
-  }
-  
-  private async initializePMU() {
-    this.pmuReader = new PMUReader({
-      events: ['cpu_cycles', 'instructions', 'cache_misses'],
-      interval: this.config.interval || 100
-    })
-  }
-  
-  private startMetricsCollection() {
-    setInterval(() => {
-      const systemMetrics = this.collectSystemMetrics()
-      const pmuData = this.pmuReader.read()
-      
-      this.updateData({
-        timestamp: Date.now(),
-        systemMetrics,
-        pmuData
-      })
-    }, this.config.interval)
-  }
-}
-```
-
-#### **Static Analyzer (Binary + Symbol Analysis)**
-```typescript
-// stores/analyzers/staticAnalyzer.ts
-class StaticAnalyzer extends BaseAnalyzer {
-  private symbolTable: SymbolTable = new Map()
-  private binaryInfo: BinaryInfo | null = null
-  
-  async start() {
-    await this.loadBinary()
-    await this.parseSymbols()
-    await this.mapSourceCode()
-  }
-  
-  private async loadBinary() {
-    const binaryPath = this.config.binaryPath
-    this.binaryInfo = await this.parseBinary(binaryPath)
-  }
-  
-  private async parseSymbols() {
-    if (!this.binaryInfo) return
-    
-    this.symbolTable = await this.extractSymbols(this.binaryInfo)
-    this.updateData({ symbols: this.symbolTable })
-  }
-}
-```
-
-### **2.2 View-Specific Control Components**
-
-#### **3D Flame Graph Controls (Tight Coupling)**
-```typescript
-// components/Visualizations/FlameGraph3D/FlameGraph3DControls.tsx
-const FlameGraph3DControls: React.FC<FlameGraph3DControlsProps> = ({ 
-  flameGraphRef,
-  data,
-  onConfigChange 
-}) => {
-  // Direct integration with 3D scene
-  const handleCameraReset = () => {
-    flameGraphRef.current?.resetCamera()
-  }
-  
-  const handleZSpacingChange = (spacing: number) => {
-    flameGraphRef.current?.updateZSpacing(spacing)
-    onConfigChange({ zSpacing: spacing })
-  }
-  
-  return (
-    <div className="flamegraph-3d-controls">
-      <ControlSection title="Camera">
-        <Button onClick={handleCameraReset}>Reset View</Button>
-        <Button onClick={() => flameGraphRef.current?.fitToView()}>Fit All</Button>
-      </ControlSection>
-      
-      <ControlSection title="Rendering">
-        <Slider
-          label="Z-Spacing"
-          value={config.zSpacing}
-          onChange={handleZSpacingChange}
-          min={5}
-          max={50}
-        />
-      </ControlSection>
-      
-      <ControlSection title="Data">
-        <ThreadFilter
-          threads={data.threads}
-          selected={config.selectedThreads}
-          onChange={handleThreadSelection}
-        />
-      </ControlSection>
-    </div>
-  )
-}
-```
-
-#### **Timeline Chart Controls**
-```typescript
-// components/Visualizations/TimelineChart/TimelineControls.tsx
-const TimelineControls: React.FC<TimelineControlsProps> = ({
-  timelineRef,
-  data,
-  onTimeRangeChange
-}) => {
-  return (
-    <div className="timeline-controls">
-      <ControlSection title="Navigation">
-        <TimeRangeSlider
-          min={data.startTime}
-          max={data.endTime}
-          value={[config.viewStart, config.viewEnd]}
-          onChange={onTimeRangeChange}
-        />
-      </ControlSection>
-      
-      <ControlSection title="Correlation">
-        <Checkbox
-          label="Link with 3D Flame Graph"
-          checked={config.linkWithFlameGraph}
-          onChange={handleLinkChange}
-        />
-      </ControlSection>
-    </div>
-  )
-}
-```
-
-## 🧪 **Phase 3: Enhanced Testing Strategy (Weeks 9-12)**
-
-### **3.1 Multi-Session Testing Framework**
-```typescript
-// src/__tests__/session/sessionManager.test.ts
-describe('SessionManager', () => {
-  let sessionManager: SessionManager
-  
-  beforeEach(() => {
-    sessionManager = new SessionManager()
-  })
-  
-  describe('session lifecycle', () => {
-    it('should create new session with unique ID', () => {
-      const sessionId = sessionManager.createSession({ name: 'Test Session' })
-      expect(sessionManager.sessions.has(sessionId)).toBe(true)
-    })
-    
-    it('should switch between sessions without data loss', () => {
-      const session1 = sessionManager.createSession({ name: 'Session 1' })
-      const session2 = sessionManager.createSession({ name: 'Session 2' })
-      
-      sessionManager.switchSession(session1)
-      expect(sessionManager.activeSessionId).toBe(session1)
-      
-      sessionManager.switchSession(session2)
-      expect(sessionManager.activeSessionId).toBe(session2)
-      expect(sessionManager.sessions.size).toBe(2)
-    })
-  })
-})
-```
-
-### **3.2 Analyzer Testing Framework**
-```typescript
-// src/__tests__/analyzers/traceAnalyzer.test.ts
-describe('TraceAnalyzer', () => {
-  let analyzer: TraceAnalyzer
-  let mockWebSocket: MockWebSocket
-  
-  beforeEach(() => {
-    mockWebSocket = new MockWebSocket()
-    analyzer = new TraceAnalyzer('session-1', { 
-      target: 'test-process',
-      bufferSize: 1000
-    })
-  })
-  
-  it('should collect and process trace events', async () => {
-    await analyzer.start()
-    
-    const mockEvent: TraceEvent = {
-      timestamp: Date.now(),
-      eventType: 'function_entry',
-      functionName: 'main',
-      threadId: 'thread-1'
-    }
-    
-    mockWebSocket.simulateMessage(mockEvent)
-    
-    const data = analyzer.getData()
-    expect(data.events).toContainEqual(mockEvent)
-  })
-})
-```
-
-### **3.3 Visual Testing for Multi-Viewport**
-```typescript
-// src/__tests__/visual/multiViewport.test.tsx
-describe('Multi-Viewport Layouts', () => {
-  it('should render grid layout with multiple views', async () => {
-    const { container } = render(
-      <SessionProvider sessionId="test-session">
-        <ViewportContainer layout="grid-2x2">
-          <FlameGraph3D />
-          <TimelineChart />
-          <MetricsChart />
-          <DataTable />
-        </ViewportContainer>
-      </SessionProvider>
-    )
-    
-    expect(container.querySelectorAll('.viewport')).toHaveLength(4)
-    expect(container.querySelector('.grid-layout')).toBeInTheDocument()
-  })
-  
-  it('should maintain view state during layout changes', async () => {
-    const { rerender } = render(
-      <ViewportContainer layout="grid-2x2">
-        <FlameGraph3D config={{ zSpacing: 25 }} />
-      </ViewportContainer>
-    )
-    
-    rerender(
-      <ViewportContainer layout="tab">
-        <FlameGraph3D config={{ zSpacing: 25 }} />
-      </ViewportContainer>
-    )
-    
-    // Verify 3D view maintains configuration
-    expect(screen.getByDisplayValue('25')).toBeInTheDocument()
-  })
-})
-```
-
-## 🚀 **Phase 4: Production Features & Optimization (Weeks 13-16)**
-
-### **4.1 Real-time Performance Optimization**
-
-#### **Data Streaming Optimization**
-```typescript
-// utils/streaming/dataStreamOptimizer.ts
-class DataStreamOptimizer {
-  private bufferManager: CircularBuffer
-  private compressionHandler: CompressionHandler
-  private rateLimiter: RateLimiter
-  
-  optimizeDataStream(stream: DataStream): OptimizedStream {
-    return stream
-      .pipe(this.rateLimiter.throttle(60)) // 60 FPS max
-      .pipe(this.compressionHandler.compress())
-      .pipe(this.bufferManager.buffer(1000))
-  }
-}
-```
-
-#### **Multi-Analyzer Coordination**
-```typescript
-// stores/coordination/dataCoordinator.ts
-class DataCoordinator {
-  synchronizeAnalyzers(analyzers: AnalyzerId[]): void {
-    const timestamps = this.getLatestTimestamps(analyzers)
-    const syncTime = Math.min(...timestamps)
-    
-    analyzers.forEach(id => {
-      this.syncAnalyzerToTime(id, syncTime)
-    })
-  }
-  
-  correlateData(analyzerIds: AnalyzerId[]): CorrelatedData {
-    const datasets = analyzerIds.map(id => this.getAnalyzerData(id))
-    return this.correlationEngine.correlate(datasets)
-  }
-}
-```
-
-### **4.2 Advanced Visualization Features**
-
-#### **Cross-View Data Correlation**
-```typescript
-// components/Visualizations/CrossViewCorrelation.tsx
-const CrossViewCorrelation: React.FC = () => {
-  const { correlatedData, activeSelection } = useDataCorrelation()
-  
-  useEffect(() => {
-    if (activeSelection.type === 'function' && activeSelection.source === '3d-flame') {
-      // Highlight function in timeline
-      highlightInTimeline(activeSelection.functionName)
-      // Show metrics for function
-      showMetricsForFunction(activeSelection.functionName)
-    }
-  }, [activeSelection])
-  
-  return null // Pure coordination component
-}
-```
-
-#### **Advanced Export Capabilities**
-```typescript
-// utils/export/sessionExporter.ts
-class SessionExporter {
-  async exportSession(sessionId: SessionId, format: ExportFormat): Promise<Blob> {
-    const session = await this.getSessionData(sessionId)
-    
-    switch (format) {
-      case 'json':
-        return this.exportAsJSON(session)
-      case 'report':
-        return this.generateReport(session)
-      case 'flamegraph':
-        return this.exportFlameGraphSVG(session)
-      case 'csv':
-        return this.exportAsCSV(session)
-    }
-  }
-}
-```
-
-## 📊 **Migration Timeline & Risk Assessment**
-
-### **Week-by-Week Implementation Plan**
-
-**Week 1-2: Session Foundation**
-- Implement SessionManager and SessionStore ✅
-- Create SessionTabs component 
-- Add session persistence to browser storage
-- Migrate existing flameGraphStore to session-aware architecture
-
-**Week 3-4: Basic Multi-Analyzer**
-- Implement AnalyzerManager foundation
-- Enhance existing FlameAnalyzer (from flameGraphStore)
-- Create basic TraceAnalyzer and MetricsAnalyzer
-- Add analyzer control components
-
-**Week 5-6: Visualization Enhancement**
+#### **Day 6-8: Component Enhancement**
+- Enhance existing ControlPanel with view switching
 - Extract view-specific controls from existing components
-- Implement ViewportContainer with layout management
-- Add TimelineChart and MetricsChart components
-- Integrate controls with view components
+- Add basic export functionality
+- Improve error handling and loading states
 
-**Week 7-8: Data Coordination**
-- Implement cross-analyzer data synchronization
-- Add real-time streaming capabilities
-- Create data correlation engine
-- Add cross-view interaction features
+#### **Day 9-10: Testing & Documentation**
+```typescript
+// __tests__/mvp/
+├── analyzerManager.test.ts     # Test single analyzer operations
+├── viewSwitching.test.ts       # Test view transitions
+├── dataExport.test.ts          # Test export functionality
+└── integration.test.ts         # End-to-end MVP workflow
+```
 
-**Week 9-10: Testing & Quality**
-- Comprehensive test suite for session management
-- Analyzer testing framework
-- Visual regression testing for multi-viewport
-- Performance testing for real-time data
+### **MVP Acceptance Criteria**
+- [ ] Users can start/stop flame graph analyzer
+- [ ] Users can switch between 3D view and data table
+- [ ] Users can export data as CSV/JSON
+- [ ] Application loads in <3 seconds
+- [ ] No memory leaks during analyzer start/stop
+- [ ] Works in Chrome, Firefox, Safari
 
-**Week 11-12: Performance Optimization**
-- Data streaming optimization
-- Memory management for large datasets
-- Rendering performance optimization
+## 🔧 **Phase 2: Multi-Analyzer Support (Weeks 3-4)**
+
+### **Goal**: Add analyzer extensibility without breaking MVP
+
+### **Sprint 2.1 (Week 3): Plugin Architecture**
+
+#### **Analyzer Plugin System**
+```typescript
+// stores/analyzers/baseAnalyzer.ts (New)
+abstract class BaseAnalyzer {
+  abstract start(): Promise<void>
+  abstract stop(): Promise<void>
+  abstract getData(): AnalyzerData
+}
+
+// stores/analyzers/analyzerRegistry.ts (New)
+class AnalyzerRegistry {
+  private analyzers = new Map<string, AnalyzerFactory>()
+  
+  register(type: string, factory: AnalyzerFactory): void
+  create(type: string, config: any): BaseAnalyzer
+}
+
+// Register built-in analyzers
+analyzerRegistry.register('flamegraph', (config) => new FlameGraphAnalyzer(config))
+analyzerRegistry.register('trace', (config) => new TraceAnalyzer(config))
+```
+
+#### **Enhanced UI for Multiple Analyzers**
+```typescript
+// components/analyzers/AnalyzerSelector.tsx (New)
+const AnalyzerSelector = () => {
+  const availableAnalyzers = ['flamegraph', 'trace']
+  return (
+    <select onChange={handleAnalyzerChange}>
+      {availableAnalyzers.map(type => (
+        <option key={type}>{type}</option>
+      ))}
+    </select>
+  )
+}
+```
+
+### **Sprint 2.2 (Week 4): Second Analyzer**
+- Implement TraceAnalyzer with timeline data
+- Add TimelineChart view for trace data
+- Context-aware view selector (show compatible views)
+- Basic data correlation between analyzers
+
+## 🎨 **Phase 3: Multi-Viewport Support (Weeks 5-6)**
+
+### **Goal**: Enable multiple simultaneous views
+
+### **Sprint 3.1 (Week 5): Viewport System**
+```typescript
+// components/viewport/ViewportContainer.tsx (New)
+interface ViewportState {
+  id: string
+  viewType: ViewType
+  dataSource: AnalyzerId
+  config: ViewConfig
+}
+
+const ViewportContainer = ({ layout, viewports }) => {
+  return (
+    <div className={`layout-${layout}`}>
+      {viewports.map(viewport => (
+        <ViewportWrapper key={viewport.id}>
+          <DynamicView 
+            type={viewport.viewType}
+            data={getDataForViewport(viewport)}
+            config={viewport.config}
+          />
+        </ViewportWrapper>
+      ))}
+    </div>
+  )
+}
+```
+
+### **Sprint 3.2 (Week 6): Layout & Interactions**
+- Grid layout system (1x1, 1x2, 2x2)
+- Tab layout system
+- Cross-view selection synchronization
+- View-specific control panels
+
+## 📈 **Phase 4: Production Ready (Weeks 7-8)**
+
+### **Goal**: Production deployment and optimization
+
+### **Sprint 4.1 (Week 7): Session Management**
+- Browser storage persistence
+- Session export/import
+- Basic sharing (export URLs)
+- Data cleanup and memory management
+
+### **Sprint 4.2 (Week 8): Production Polish**
+- Performance optimization
 - Bundle optimization
+- Error tracking
+- Production deployment
 
-**Week 13-14: Advanced Features**
-- Export/import functionality
-- Session sharing capabilities
-- Advanced analytics features
-- Cross-browser compatibility
+## 🧪 **Enhanced Testing Strategy**
 
-**Week 15-16: Production Readiness**
-- Final performance optimization
-- Documentation and user guides
-- Deployment preparation
-- Production monitoring setup
-
-### **Risk Mitigation Strategies**
-
-1. **Data Loss During Migration**
-   - *Risk*: Existing session data loss during store refactoring
-   - *Mitigation*: Implement migration utilities, maintain backward compatibility
-   - *Testing*: Comprehensive data migration tests
-
-2. **Performance Degradation**
-   - *Risk*: Multi-session overhead affects performance
-   - *Mitigation*: Lazy loading, memory management, efficient state updates
-   - *Testing*: Continuous performance monitoring
-
-3. **UI Complexity**
-   - *Risk*: Multi-analyzer interface becomes overwhelming
-   - *Mitigation*: Progressive disclosure, smart defaults, user guidance
-   - *Testing*: Usability testing with target users
-
-## 🛠️ **Enhanced Development Workflow**
-
-### **Multi-Environment Development**
-```bash
-# Development commands for multi-analyzer system
-pnpm dev:session          # Session-focused development
-pnpm dev:analyzers        # Analyzer development mode
-pnpm dev:visualizations   # Visualization development
-pnpm dev:full            # Full system development
-
-# Testing commands
-pnpm test:session        # Session management tests
-pnpm test:analyzers      # Analyzer engine tests
-pnpm test:ui             # UI component tests
-pnpm test:integration    # Cross-component integration tests
-pnpm test:performance    # Performance regression tests
+### **MVP Testing (Phase 1)**
+```typescript
+// Basic unit tests for core functionality
+describe('MVP Core', () => {
+  it('should start and stop analyzer', async () => {
+    const manager = new MVPAnalyzerManager()
+    await manager.startAnalyzer()
+    expect(manager.status).toBe('running')
+    
+    await manager.stopAnalyzer()
+    expect(manager.status).toBe('idle')
+  })
+  
+  it('should switch between views', () => {
+    const { getByText, queryByTestId } = render(<App />)
+    
+    fireEvent.click(getByText('Data Table'))
+    expect(queryByTestId('flame-3d')).not.toBeInTheDocument()
+    expect(queryByTestId('data-table')).toBeInTheDocument()
+  })
+})
 ```
 
-### **Enhanced CI/CD Pipeline**
-```yaml
-# .github/workflows/multi-analyzer.yml
-name: Multi-Analyzer Profiler CI/CD
-on: [push, pull_request]
-
-jobs:
-  test-session:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-      - run: pnpm test:session
-
-  test-analyzers:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-      - run: pnpm test:analyzers
-
-  test-integration:
-    runs-on: ubuntu-latest
-    needs: [test-session, test-analyzers]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-      - run: pnpm test:integration
-      - run: pnpm test:performance
+### **Integration Testing (Phase 2+)**
+```typescript
+// Test analyzer plugin system
+describe('Analyzer Plugin System', () => {
+  it('should register and create analyzers', () => {
+    const registry = new AnalyzerRegistry()
+    registry.register('custom', (config) => new CustomAnalyzer(config))
+    
+    const analyzer = registry.create('custom', {})
+    expect(analyzer).toBeInstanceOf(CustomAnalyzer)
+  })
+})
 ```
 
-This comprehensive implementation plan provides a clear, phased approach to transforming the existing basic 3D flame graph viewer into a professional, multi-session, multi-analyzer profiler while maintaining stability and performance throughout the migration. 
+### **Performance Testing**
+```typescript
+// Performance benchmarks
+describe('Performance', () => {
+  it('should handle large datasets', async () => {
+    const largeDataset = generateFlameData(10000) // 10k samples
+    const startTime = performance.now()
+    
+    render(<FlameGraph3D data={largeDataset} />)
+    
+    const renderTime = performance.now() - startTime
+    expect(renderTime).toBeLessThan(1000) // Under 1 second
+  })
+})
+```
+
+## 📦 **Development Workflow**
+
+### **Enhanced Package.json Scripts**
+```json
+{
+  "scripts": {
+    "dev:mvp": "vite --mode mvp",
+    "dev:full": "vite --mode development",
+    "test:mvp": "vitest run src/__tests__/mvp/",
+    "test:analyzer": "vitest run src/__tests__/analyzers/",
+    "test:performance": "vitest run src/__tests__/performance/",
+    "build:mvp": "vite build --mode mvp",
+    "preview:mvp": "vite preview --port 3000"
+  }
+}
+```
+
+### **Feature Flags for Progressive Enhancement**
+```typescript
+// utils/featureFlags.ts
+export const FEATURES = {
+  MULTI_ANALYZER: process.env.NODE_ENV !== 'mvp',
+  MULTI_VIEWPORT: process.env.NODE_ENV === 'development',
+  SESSION_MANAGEMENT: process.env.NODE_ENV === 'production',
+  ADVANCED_EXPORT: process.env.NODE_ENV === 'production'
+}
+
+// Use in components
+const AnalyzerSelector = () => {
+  if (!FEATURES.MULTI_ANALYZER) return null
+  return <MultiAnalyzerControls />
+}
+```
+
+## 🎯 **Success Metrics & Validation**
+
+### **MVP Success Criteria**
+- **User Engagement**: 70% of users complete full workflow (start → view → export)
+- **Performance**: App loads in <3 seconds, flamegraph renders in <1 second
+- **Usability**: Users can complete basic task without documentation
+- **Stability**: Zero crashes during 30-minute sessions
+
+### **Phase Validation Checkpoints**
+- **Phase 1**: MVP user testing with 5 developers
+- **Phase 2**: Multi-analyzer workflow testing
+- **Phase 3**: Complex layout usability testing
+- **Phase 4**: Production load testing
+
+## 📊 **Resource Allocation**
+
+### **Team Structure (Flexible)**
+- **Week 1-2**: Single developer (MVP foundation)
+- **Week 3-4**: Primary developer + UX feedback
+- **Week 5-6**: Primary developer + performance specialist
+- **Week 7-8**: Primary developer + DevOps for deployment
+
+### **Risk Mitigation**
+- **Scope Creep**: Strict MVP feature freeze
+- **Technical Debt**: Refactor existing code gradually
+- **User Adoption**: Early user feedback at each phase
+- **Performance**: Continuous benchmarking
+
+## 🚀 **Deployment Strategy**
+
+### **MVP Deployment (Week 2)**
+- Vercel/Netlify static deployment
+- Basic analytics (Plausible)
+- Error tracking (Sentry)
+
+### **Production Deployment (Week 8)**
+- CDN distribution
+- Performance monitoring
+- A/B testing infrastructure
+- User feedback collection
+
+This MVP-first plan focuses on delivering immediate value while building a solid foundation for future enhancements. The 8-week timeline is realistic and allows for rapid iteration based on user feedback. 
