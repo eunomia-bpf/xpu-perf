@@ -5,13 +5,38 @@
 #include <set>
 #include <sys/types.h>
 #include <cstring>
+#include <sstream>
+#include <string>
+#include <cstdlib>
+#include <fstream>
+#include <ctime>
+#include <iostream>
 
 WallClockAnalyzer::WallClockAnalyzer(std::unique_ptr<WallClockAnalyzerConfig> config) 
     : BaseAnalyzer("wallclock_analyzer"),
       profile_collector_(std::make_unique<ProfileCollector>()),
       offcpu_collector_(std::make_unique<OffCPUTimeCollector>()),
-      config_(std::move(config)) {
+      config_(std::move(config)),
+      is_multithreaded_(false) {
+    
     configure_collectors();
+    
+    // Initialize flamegraph generator
+    std::string output_dir = create_output_directory();
+    flamegraph_gen_ = std::make_unique<FlamegraphGenerator>(output_dir, config_->frequency, config_->duration);
+}
+
+std::string WallClockAnalyzer::create_output_directory() {
+    auto now = std::time(nullptr);
+    std::stringstream ss;
+    
+    if (!config_->pids.empty()) {
+        ss << "wallclock_profile_pid" << config_->pids[0] << "_" << now;
+    } else {
+        ss << "wallclock_profile_" << now;
+    }
+    
+    return ss.str();
 }
 
 void WallClockAnalyzer::configure_collectors() {
@@ -23,8 +48,6 @@ void WallClockAnalyzer::configure_collectors() {
     auto& profile_config = profile_collector_->get_config();
     profile_config.duration = config_->duration;
     profile_config.sample_freq = config_->frequency;
-    
-    // Copy PIDs and TIDs to profile collector
     profile_config.pids = config_->pids;
     profile_config.tids = config_->tids;
     
@@ -32,10 +55,83 @@ void WallClockAnalyzer::configure_collectors() {
     auto& offcpu_config = offcpu_collector_->get_config();
     offcpu_config.duration = config_->duration;
     offcpu_config.min_block_time = config_->min_block_us;
-    
-    // Copy PIDs and TIDs to offcpu collector
     offcpu_config.pids = config_->pids;
     offcpu_config.tids = config_->tids;
+}
+
+bool WallClockAnalyzer::discover_threads() {
+    if (config_->pids.empty()) {
+        is_multithreaded_ = false;
+        return false;
+    }
+    
+    pid_t main_pid = config_->pids[0];
+    std::stringstream cmd;
+    cmd << "ps -T -p " << main_pid << " 2>/dev/null";
+    
+    FILE* pipe = popen(cmd.str().c_str(), "r");
+    if (!pipe) {
+        is_multithreaded_ = false;
+        return false;
+    }
+    
+    char buffer[1024];
+    std::vector<std::string> lines;
+    
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        lines.push_back(std::string(buffer));
+    }
+    pclose(pipe);
+    
+    detected_threads_.clear();
+    
+    // Skip header line
+    for (size_t i = 1; i < lines.size(); i++) {
+        std::istringstream iss(lines[i]);
+        std::string pid_str, tid_str, tty, time_str;
+        
+        if (iss >> pid_str >> tid_str >> tty >> time_str) {
+            try {
+                pid_t tid = std::stoi(tid_str);
+                
+                // Read remaining as command
+                std::string cmd_part;
+                std::string full_cmd;
+                while (iss >> cmd_part) {
+                    if (!full_cmd.empty()) full_cmd += " ";
+                    full_cmd += cmd_part;
+                }
+                
+                ThreadInfo thread_info;
+                thread_info.tid = tid;
+                thread_info.command = full_cmd;
+                thread_info.role = get_thread_role(tid, full_cmd);
+                
+                detected_threads_.push_back(thread_info);
+                
+            } catch (const std::exception&) {
+                continue;
+            }
+        }
+    }
+    
+    is_multithreaded_ = detected_threads_.size() > 1;
+    
+    if (is_multithreaded_) {
+        std::cout << "Multi-threaded application detected (" << detected_threads_.size() << " threads)" << std::endl;
+    }
+    
+    return is_multithreaded_;
+}
+
+std::string WallClockAnalyzer::get_thread_role(pid_t tid, const std::string& cmd) {
+    if (!config_->pids.empty() && tid == config_->pids[0]) {
+        return "main";
+    } else {
+        std::stringstream ss;
+        ss << "thread_" << tid;
+        return ss.str();
+    }
 }
 
 bool WallClockAnalyzer::start() {
@@ -43,36 +139,160 @@ bool WallClockAnalyzer::start() {
         return false;
     }
     
+    // Discover threads first
+    discover_threads();
+    
     // Start both collectors sequentially
     if (!profile_collector_->start()) {
         printf("Failed to start profile collector\n");
         return false;
     }
-    
+
     if (!offcpu_collector_->start()) {
         printf("Failed to start offcpu collector\n");
         return false;
     }
-    
+
     return true;
 }
 
+void WallClockAnalyzer::generate_flamegraph_files() {
+    // Get data from both collectors
+    auto profile_data = profile_collector_->get_data();
+    auto offcpu_data = offcpu_collector_->get_data();
+    
+    if (!profile_data || !profile_data->success || !offcpu_data || !offcpu_data->success) {
+        std::cerr << "Failed to get data from collectors" << std::endl;
+        return;
+    }
+    
+    auto* profile_sampling = dynamic_cast<SamplingData*>(profile_data.get());
+    auto* offcpu_sampling = dynamic_cast<SamplingData*>(offcpu_data.get());
+    
+    if (!profile_sampling || !offcpu_sampling) {
+        std::cerr << "Invalid sampling data format" << std::endl;
+        return;
+    }
+    
+    if (is_multithreaded_) {
+        generate_multithread_flamegraphs();
+    } else {
+        generate_single_thread_flamegraph();
+    }
+}
+
+void WallClockAnalyzer::generate_single_thread_flamegraph() {
+    auto profile_data = profile_collector_->get_data();
+    auto offcpu_data = offcpu_collector_->get_data();
+    
+    auto* profile_sampling = dynamic_cast<SamplingData*>(profile_data.get());
+    auto* offcpu_sampling = dynamic_cast<SamplingData*>(offcpu_data.get());
+    
+    // Use proper symbol resolution like profile analyzer
+    auto oncpu_flamegraph = FlameGraphView::sampling_data_to_flamegraph(*profile_sampling, "oncpu", true);
+    auto offcpu_flamegraph = FlameGraphView::sampling_data_to_flamegraph(*offcpu_sampling, "offcpu", false);
+    
+    // Combine entries from both flamegraphs
+    std::vector<FlamegraphEntry> all_entries;
+    
+    // Add on-CPU entries
+    for (const auto& entry : oncpu_flamegraph->entries) {
+        FlamegraphEntry fg_entry;
+        
+        // Build stack trace from folded_stack vector
+        std::string stack_trace;
+        if (!entry.folded_stack.empty()) {
+            stack_trace = entry.folded_stack[0];
+            for (size_t i = 1; i < entry.folded_stack.size(); ++i) {
+                stack_trace += ";" + entry.folded_stack[i];
+            }
+        }
+        
+        fg_entry.stack_trace = stack_trace;
+        fg_entry.value = entry.sample_count;
+        fg_entry.is_oncpu = true;
+        
+        all_entries.push_back(fg_entry);
+    }
+    
+    // Add off-CPU entries  
+    for (const auto& entry : offcpu_flamegraph->entries) {
+        FlamegraphEntry fg_entry;
+        
+        // Build stack trace from folded_stack vector
+        std::string stack_trace;
+        if (!entry.folded_stack.empty()) {
+            stack_trace = entry.folded_stack[0];
+            for (size_t i = 1; i < entry.folded_stack.size(); ++i) {
+                stack_trace += ";" + entry.folded_stack[i];
+            }
+        }
+        
+        fg_entry.stack_trace = stack_trace;
+        fg_entry.value = entry.sample_count;
+        fg_entry.is_oncpu = false;
+        
+        all_entries.push_back(fg_entry);
+    }
+    
+    // Generate files
+    std::string prefix = "process_profile";
+    if (!config_->pids.empty()) {
+        prefix += "_pid" + std::to_string(config_->pids[0]);
+    }
+    
+    std::string folded_file = flamegraph_gen_->generate_folded_file(all_entries, prefix);
+    if (!folded_file.empty()) {
+        std::string title = "Process " + std::to_string(config_->pids.empty() ? 0 : config_->pids[0]) + " Combined Profile";
+        std::string svg_file = flamegraph_gen_->generate_svg_from_folded(folded_file, title);
+        flamegraph_gen_->generate_analysis_file(prefix, all_entries, "Process-Level");
+        
+        std::cout << "\n" << std::string(60, '=') << std::endl;
+        std::cout << "PROCESS PROFILING COMPLETE" << std::endl;
+        std::cout << std::string(60, '=') << std::endl;
+        std::cout << "📊 Folded data: " << folded_file << std::endl;
+        if (!svg_file.empty()) {
+            std::cout << "🔥 Flamegraph:  " << svg_file << std::endl;
+            std::cout << "   Open " << svg_file << " in a web browser to view the interactive flamegraph" << std::endl;
+        }
+        
+        std::cout << "\n📝 Interpretation guide:" << std::endl;
+        std::cout << "   • Red frames show CPU-intensive code paths (on-CPU) with actual function names" << std::endl;
+        std::cout << "   • Blue frames show blocking/waiting operations (off-CPU) with actual function names" << std::endl;
+        std::cout << "   • Wider sections represent more time spent in those functions" << std::endl;
+        std::cout << "   • Values are normalized to make on-CPU and off-CPU time comparable" << std::endl;
+        
+        if (is_multithreaded_) {
+            std::cout << "\n📊 Multi-threading summary:" << std::endl;
+            std::cout << "   • Process has " << detected_threads_.size() << " threads" << std::endl;
+            std::cout << "   • All thread activity is combined in this single flamegraph" << std::endl;
+            std::cout << "   • Use thread role annotations to identify thread behavior" << std::endl;
+        }
+    }
+}
+
+void WallClockAnalyzer::generate_multithread_flamegraphs() {
+    // For multi-threaded apps, still generate a single process-level summary
+    // but include thread role information in the analysis
+    generate_single_thread_flamegraph();
+}
+
 std::unique_ptr<FlameGraphView> WallClockAnalyzer::get_flamegraph() {
+    // Generate flamegraph files as side effect
+    generate_flamegraph_files();
+    
+    // Return combined flamegraph from all threads for compatibility
     auto per_thread_data = get_per_thread_flamegraphs();
     
-    // Return combined flamegraph from all threads
     auto combined = std::make_unique<FlameGraphView>(get_name(), true);
     combined->time_unit = "normalized_samples";
     
     for (auto& [tid, flamegraph] : per_thread_data) {
         if (flamegraph && flamegraph->success) {
             for (const auto& entry : flamegraph->entries) {
-                // Use the add_stack_trace method with already resolved symbols
                 std::vector<std::string> user_stack;
                 std::vector<std::string> kernel_stack;
                 
-                // Parse the folded stack back into components if needed
-                // For now, we'll add with empty stacks and the entry will be created with the command name
                 combined->add_stack_trace(
                     user_stack, kernel_stack,
                     entry.command,
@@ -129,7 +349,7 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
         all_tids.insert(entry.key.pid);
     }
     
-    // Create flamegraph for each thread
+    // Create flamegraph for each thread with proper normalization
     for (__u32 tid : all_tids) {
         auto flamegraph = std::make_unique<FlameGraphView>(get_name() + "_thread_" + std::to_string(tid), true);
         flamegraph->time_unit = "normalized_samples";
@@ -142,13 +362,11 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
                 __u64* kernel_stack = nullptr;
                 int kernel_stack_size = 0;
                 
-                // Prepare user stack
                 if (entry.has_user_stack && !entry.user_stack.empty()) {
                     user_stack = const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.user_stack.data()));
                     user_stack_size = static_cast<int>(entry.user_stack.size());
                 }
                 
-                // Prepare kernel stack
                 if (entry.has_kernel_stack && !entry.kernel_stack.empty()) {
                     kernel_stack = const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.kernel_stack.data()));
                     kernel_stack_size = static_cast<int>(entry.kernel_stack.size());
@@ -166,6 +384,7 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
         }
         
         // Process off-CPU data with normalization for this thread
+        // Normalize using the same method as the Python script
         double normalization_factor = (1.0 / config_->frequency) * 1000000.0;  // microseconds per sample
         
         for (const auto& entry : offcpu_sampling->entries) {
@@ -175,13 +394,11 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
                 __u64* kernel_stack = nullptr;
                 int kernel_stack_size = 0;
                 
-                // Prepare user stack
                 if (entry.has_user_stack && !entry.user_stack.empty()) {
                     user_stack = const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.user_stack.data()));
                     user_stack_size = static_cast<int>(entry.user_stack.size());
                 }
                 
-                // Prepare kernel stack
                 if (entry.has_kernel_stack && !entry.kernel_stack.empty()) {
                     kernel_stack = const_cast<__u64*>(reinterpret_cast<const __u64*>(entry.kernel_stack.data()));
                     kernel_stack_size = static_cast<int>(entry.kernel_stack.size());

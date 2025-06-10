@@ -1,4 +1,4 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include "../src/analyzers/flamegraph_view.hpp"
 #include "../src/analyzers/symbol_resolver.hpp"
 #include <vector>

@@ -58,10 +58,11 @@ void FlameGraphView::add_stack_trace_raw(__u64* user_stack, int user_stack_size,
         user_stack_symbols = symbolizer_->get_stack_trace_symbols(
             user_stack, user_stack_size, pid);
         
-        // Add annotation based on CPU type
-        const std::string annotation = is_oncpu ? "_[c]" : "_[o]";
-        // add only the first 1 symbols
-        user_stack_symbols[0] += annotation;
+        // Add annotation only to the deepest (last) symbol to avoid duplicates
+        if (!user_stack_symbols.empty()) {
+            const std::string annotation = is_oncpu ? "_[c]" : "_[o]";
+            user_stack_symbols.back() += annotation;
+        }
     }
     
     // Resolve kernel stack symbols
@@ -69,9 +70,11 @@ void FlameGraphView::add_stack_trace_raw(__u64* user_stack, int user_stack_size,
         kernel_stack_symbols = symbolizer_->get_stack_trace_symbols(
             kernel_stack, kernel_stack_size, 0);  // kernel symbols use pid 0
         
-        // Add annotation based on CPU type
-        const std::string annotation = is_oncpu ? "_[c]" : "_[o]";
-        kernel_stack_symbols[0] += annotation;
+        // Add annotation only to the deepest (last) symbol to avoid duplicates
+        if (!kernel_stack_symbols.empty()) {
+            const std::string annotation = is_oncpu ? "_[c]" : "_[o]";
+            kernel_stack_symbols.back() += annotation;
+        }
     }
     
     // Add to flamegraph

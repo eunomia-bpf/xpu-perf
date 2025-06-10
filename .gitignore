@@ -6,3 +6,5 @@ nohup.out
 off.txt
 FlameGraph
 res*.svg
+profile_profile*
+wallclock_profile*

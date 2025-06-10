@@ -6,8 +6,11 @@
 #include "collectors/oncpu/profile.hpp"
 #include "collectors/offcpu/offcputime.hpp"
 #include "collectors/utils.hpp"
+#include "../flamegraph_generator.hpp"
 #include <memory>
 #include <map>
+#include <vector>
+#include <string>
 #include <cstring>
 #include <algorithm>
 
@@ -15,11 +18,22 @@
 class ProfileCollector;
 class OffCPUTimeCollector;
 
+struct ThreadInfo {
+    pid_t tid;
+    std::string command;
+    std::string role;
+};
+
 class WallClockAnalyzer : public BaseAnalyzer {
 private:
     std::unique_ptr<ProfileCollector> profile_collector_;
     std::unique_ptr<OffCPUTimeCollector> offcpu_collector_;
     std::unique_ptr<WallClockAnalyzerConfig> config_;
+    std::unique_ptr<FlamegraphGenerator> flamegraph_gen_;
+    
+    // Thread analysis data
+    std::vector<ThreadInfo> detected_threads_;
+    bool is_multithreaded_;
     
     // Helper methods
     std::map<pid_t, std::unique_ptr<FlameGraphView>> combine_and_resolve_data();
@@ -33,15 +47,23 @@ public:
     std::unique_ptr<FlameGraphView> get_flamegraph() override;
     std::map<pid_t, std::unique_ptr<FlameGraphView>> get_per_thread_flamegraphs() override;
     
+    // New functionality matching Python script
+    bool discover_threads();
+    void generate_flamegraph_files();
+    void generate_single_thread_flamegraph();
+    void generate_multithread_flamegraphs();
+    
     // Config access
     const WallClockAnalyzerConfig& get_config() const { return *config_; }
     
-    // Access to individual collectors for fine-grained control (if needed)
+    // Access to individual collectors for fine-grained control
     ProfileCollector* get_profile_collector() { return profile_collector_.get(); }
     OffCPUTimeCollector* get_offcpu_collector() { return offcpu_collector_.get(); }
 
 private:
     void configure_collectors();
+    std::string get_thread_role(pid_t tid, const std::string& cmd);
+    std::string create_output_directory();
 };
 
 #endif /* __WALLCLOCK_ANALYZER_HPP */ 

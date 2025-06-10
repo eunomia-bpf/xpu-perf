@@ -1,5 +1,4 @@
-#define CATCH_CONFIG_MAIN
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 // This file will include all test files
-// The CATCH_CONFIG_MAIN macro creates the main() function for us 
+// Catch2WithMain provides the main() function for us 

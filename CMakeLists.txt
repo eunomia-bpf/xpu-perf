@@ -10,28 +10,9 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Include FetchContent module for downloading dependencies
-include(FetchContent)
-
-# Download Catch2 testing framework
-FetchContent_Declare(
-    Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG        v2.13.10
-    GIT_SHALLOW    TRUE
-)
-
-FetchContent_MakeAvailable(Catch2)
-
-# Download argparse library for command-line argument parsing
-FetchContent_Declare(
-    argparse
-    GIT_REPOSITORY https://github.com/p-ranav/argparse.git
-    GIT_TAG        v3.1
-    GIT_SHALLOW    TRUE
-)
-
-FetchContent_MakeAvailable(argparse)
+# Add local third-party dependencies as subdirectories
+add_subdirectory(src/third_party/Catch2)
+add_subdirectory(src/third_party/argparse)
 
 # Find required packages
 find_program(CLANG_EXECUTABLE NAMES clang REQUIRED)
@@ -176,6 +157,7 @@ add_library(profiler_lib STATIC
     src/analyzers/wallclock_analyzer.cpp
     src/analyzers/symbol_resolver.cpp
     src/analyzers/flamegraph_view.cpp
+    src/flamegraph_generator.cpp
 )
 
 # Set C++ standard for the library
@@ -256,7 +238,7 @@ target_include_directories(profiler_tests PRIVATE
 # Link test executable with the library and Catch2
 target_link_libraries(profiler_tests PRIVATE 
     profiler_lib
-    Catch2::Catch2
+    Catch2::Catch2WithMain
 )
 
 # Add test to CTest
