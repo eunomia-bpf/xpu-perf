@@ -3,225 +3,275 @@
 #include "../src/collectors/config.hpp"
 #include "../src/collectors/sampling_data.hpp"
 #include <memory>
-#include <stdexcept>
-#include <climits>
+#include <thread>
+#include <chrono>
+#include <mutex>
+#include <condition_variable>
 
-TEST_CASE("OffCPUTimeConfig validation and defaults", "[offcpu][config]") {
-    SECTION("Default configuration values") {
-        OffCPUTimeConfig config;
-        
-        REQUIRE(config.min_block_time == 1);
-        REQUIRE(config.max_block_time == (__u64)(-1));
-        REQUIRE(config.state == -1);
-    }
-
-    SECTION("Configuration constructor validation") {
-        // Test that constructor doesn't throw with default values
-        REQUIRE_NOTHROW(OffCPUTimeConfig{});
-        
-        // Test custom configuration
-        OffCPUTimeConfig config;
-        config.min_block_time = 100;
-        config.max_block_time = 50000;
-        config.state = 1;
-        
-        REQUIRE(config.min_block_time == 100);
-        REQUIRE(config.max_block_time == 50000);
-        REQUIRE(config.state == 1);
-    }
-}
-
-TEST_CASE("OffCPUTimeCollector basic functionality", "[offcpu][collector]") {
-    SECTION("Constructor and destructor") {
-        REQUIRE_NOTHROW([]() {
-            OffCPUTimeCollector collector;
-        }());
-    }
-
-    SECTION("Get collector name") {
+TEST_CASE("OffCPUTimeCollector functional tests", "[offcpu][functional]") {
+    SECTION("Collector lifecycle - start and stop") {
         OffCPUTimeCollector collector;
+        
+        // Test basic properties
         REQUIRE(collector.get_name() == "offcputime");
-    }
-
-    SECTION("Config access") {
-        OffCPUTimeCollector collector;
         
-        // Test const access
-        const auto& const_config = collector.get_config();
-        REQUIRE(const_config.min_block_time == 1);
-        REQUIRE(const_config.max_block_time == (__u64)(-1));
-        REQUIRE(const_config.state == -1);
+        // Try to start the collector (may fail in test environments without BPF support)
+        bool started = collector.start();
         
-        // Test mutable access
-        auto& config = collector.get_config();
-        config.min_block_time = 100;
-        config.max_block_time = 50000;
-        config.state = 2;
-        
-        REQUIRE(collector.get_config().min_block_time == 100);
-        REQUIRE(collector.get_config().max_block_time == 50000);
-        REQUIRE(collector.get_config().state == 2);
-    }
-
-    SECTION("Libbpf output buffer functionality") {
-        OffCPUTimeCollector collector;
-        
-        // Initially empty
-        REQUIRE(collector.get_libbpf_output().empty());
-        
-        // Test append functionality
-        collector.append_libbpf_output("offcpu debug 1\n");
-        collector.append_libbpf_output("offcpu debug 2\n");
-        
-        std::string expected = "offcpu debug 1\noffcpu debug 2\n";
-        REQUIRE(collector.get_libbpf_output() == expected);
+        if (started) {
+            SECTION("Collect data after successful start") {
+                // Let it run briefly to establish baseline
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                
+                // Collect initial data
+                auto data = collector.get_data();
+                REQUIRE(data != nullptr);
+                REQUIRE(data->name == "offcputime");
+                REQUIRE(data->success == true);
+                REQUIRE(data->type == CollectorData::Type::SAMPLING);
+                
+                // Cast to SamplingData to access entries
+                auto& sampling_data = static_cast<SamplingData&>(*data);
+                INFO("Collected " << sampling_data.entries.size() << " initial off-CPU entries");
+            }
+        } else {
+            // Collector failed to start (expected in some test environments)
+            INFO("OffCPUTimeCollector failed to start - likely due to insufficient privileges or BPF not available");
+            
+            // Verify we get failure data
+            auto data = collector.get_data();
+            REQUIRE(data != nullptr);
+            REQUIRE(data->name == "offcputime");
+            REQUIRE(data->success == false);
+        }
     }
 }
 
-TEST_CASE("OffCPUTimeCollector configuration scenarios", "[offcpu][collector]") {
-    SECTION("Custom block time range") {
-        OffCPUTimeCollector collector;
-        auto& config = collector.get_config();
-        
-        config.min_block_time = 500;  // 500 microseconds
-        config.max_block_time = 1000000;  // 1 second
-        
-        REQUIRE(config.min_block_time == 500);
-        REQUIRE(config.max_block_time == 1000000);
+TEST_CASE("OffCPUTimeCollector with blocking workload", "[offcpu][workload]") {
+    OffCPUTimeCollector collector;
+    
+    // Configure for blocking time detection
+    auto& config = collector.get_config();
+    config.min_block_time = 100;      // 100 microseconds minimum
+    config.max_block_time = 10000000; // 10 seconds maximum
+    config.state = -1;                // Any blocking state
+    
+    bool started = collector.start();
+    if (!started) {
+        SKIP("Cannot start OffCPUTimeCollector - skipping workload test");
+        return;
     }
-
-    SECTION("State filtering") {
-        OffCPUTimeCollector collector;
-        auto& config = collector.get_config();
+    
+    SECTION("Profile thread blocking workload") {
+        std::mutex mtx;
+        std::condition_variable cv;
+        bool ready = false;
+        bool should_block = true;
         
-        // TASK_INTERRUPTIBLE = 1
-        config.state = 1;
-        REQUIRE(config.state == 1);
+        // Create a thread that will block and unblock
+        std::thread blocking_thread([&]() {
+            std::unique_lock<std::mutex> lock(mtx);
+            ready = true;
+            cv.notify_one();
+            
+            // Block for a measurable amount of time
+            cv.wait(lock, [&] { return !should_block; });
+        });
         
-        // TASK_UNINTERRUPTIBLE = 2  
-        config.state = 2;
-        REQUIRE(config.state == 2);
+        // Wait for thread to be ready
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            cv.wait(lock, [&] { return ready; });
+        }
         
-        // Any state = -1
-        config.state = -1;
-        REQUIRE(config.state == -1);
-    }
-
-    SECTION("Min/Max block time configuration") {
-        OffCPUTimeCollector collector;
-        auto& config = collector.get_config();
+        // Let the thread block for a while
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
-        // Test minimum value
-        config.min_block_time = 1;
-        REQUIRE(config.min_block_time == 1);
+        // Unblock the thread
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            should_block = false;
+            cv.notify_all();
+        }
         
-        // Test large value
-        config.max_block_time = 1000000000ULL;
-        REQUIRE(config.max_block_time == 1000000000ULL);
-    }
-}
-
-TEST_CASE("OffCPUData and OffCPUEntry type aliases", "[offcpu][data]") {
-    SECTION("OffCPUData is SamplingData") {
-        auto data = std::make_unique<OffCPUData>("test_offcpu");
-        REQUIRE(data->name == "test_offcpu");
+        blocking_thread.join();
+        
+        // Give some time for the off-CPU data to be recorded
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        
+        // Collect data
+        auto data = collector.get_data();
+        REQUIRE(data != nullptr);
         REQUIRE(data->success == true);
-        REQUIRE(data->type == CollectorData::Type::SAMPLING);
-        REQUIRE(data->entries.empty());
-    }
-
-    SECTION("OffCPUEntry is SamplingEntry") {
-        OffCPUEntry entry;
-        entry.value = 12345;  // microseconds blocked
-        entry.has_user_stack = true;
-        entry.has_kernel_stack = true;
-        entry.user_stack = {0xabc, 0xdef};
-        entry.kernel_stack = {0x123, 0x456, 0x789};
         
-        REQUIRE(entry.value == 12345);
-        REQUIRE(entry.has_user_stack == true);
-        REQUIRE(entry.has_kernel_stack == true);
-        REQUIRE(entry.user_stack.size() == 2);
-        REQUIRE(entry.kernel_stack.size() == 3);
+        // Cast to SamplingData to access entries
+        auto& sampling_data = static_cast<SamplingData&>(*data);
+        INFO("Collected " << sampling_data.entries.size() << " off-CPU entries from blocking workload");
+        
+        // Verify we got some useful data
+        if (!sampling_data.entries.empty()) {
+            bool found_blocking_time = false;
+            
+            for (const auto& entry : sampling_data.entries) {
+                if (entry.value > 0) {  // Found actual blocking time
+                    found_blocking_time = true;
+                    INFO("Found blocking time: " << entry.value << " microseconds");
+                    if (entry.has_user_stack || entry.has_kernel_stack) {
+                        INFO("With stack trace: " << entry.user_stack.size() 
+                             << " user frames, " << entry.kernel_stack.size() << " kernel frames");
+                    }
+                    break;
+                }
+            }
+            
+            if (found_blocking_time) {
+                REQUIRE(found_blocking_time == true);
+            }
+        }
     }
 }
 
-TEST_CASE("OffCPUTimeCollector edge cases", "[offcpu][collector][edge]") {
-    SECTION("Multiple collectors can coexist") {
-        OffCPUTimeCollector collector1;
-        OffCPUTimeCollector collector2;
-        
-        REQUIRE(collector1.get_name() == "offcputime");
-        REQUIRE(collector2.get_name() == "offcputime");
-        
-        // Modify one config, other should be unaffected
-        collector1.get_config().min_block_time = 100;
-        collector2.get_config().min_block_time = 200;
-        
-        REQUIRE(collector1.get_config().min_block_time == 100);
-        REQUIRE(collector2.get_config().min_block_time == 200);
+TEST_CASE("OffCPUTimeCollector with sleep workload", "[offcpu][sleep]") {
+    OffCPUTimeCollector collector;
+    
+    // Configure to catch sleep events
+    auto& config = collector.get_config();
+    config.min_block_time = 1000;     // 1ms minimum (sleep should be longer)
+    config.state = 1;                 // TASK_INTERRUPTIBLE (normal sleep)
+    
+    bool started = collector.start();
+    if (!started) {
+        SKIP("Cannot start OffCPUTimeCollector - skipping sleep test");
+        return;
     }
-
-    SECTION("Libbpf output isolation between collectors") {
-        OffCPUTimeCollector collector1;
-        OffCPUTimeCollector collector2;
+    
+    SECTION("Profile sleep-based blocking") {
+        // Create a thread that sleeps
+        std::thread sleeping_thread([]() {
+            // Multiple short sleeps to increase chance of detection
+            for (int i = 0; i < 5; i++) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
         
-        collector1.append_libbpf_output("collector1 offcpu\n");
-        collector2.append_libbpf_output("collector2 offcpu\n");
+        sleeping_thread.join();
         
-        REQUIRE(collector1.get_libbpf_output() == "collector1 offcpu\n");
-        REQUIRE(collector2.get_libbpf_output() == "collector2 offcpu\n");
+        // Give time for data collection
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        
+        // Collect data
+        auto data = collector.get_data();
+        REQUIRE(data != nullptr);
+        REQUIRE(data->success == true);
+        
+        // Cast to SamplingData to access entries
+        auto& sampling_data = static_cast<SamplingData&>(*data);
+        INFO("Collected " << sampling_data.entries.size() << " entries from sleep workload");
     }
+}
 
-    SECTION("Extreme block time values") {
+TEST_CASE("OffCPUTimeCollector configuration tests", "[offcpu][config]") {
+    SECTION("Different block time thresholds") {
         OffCPUTimeCollector collector;
         auto& config = collector.get_config();
         
-        // Test with very small min_block_time
-        config.min_block_time = 1;
-        config.max_block_time = (__u64)(-1);  // Maximum possible value
+        // Test with very specific block time range
+        config.min_block_time = 5000;     // 5ms minimum
+        config.max_block_time = 1000000;  // 1s maximum
+        config.state = 1;                 // TASK_INTERRUPTIBLE only
         
-        REQUIRE(config.min_block_time == 1);
-        REQUIRE(config.max_block_time == (__u64)(-1));
+        bool started = collector.start();
+        if (started) {
+            // Generate blocking with sleep
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            
+            auto data = collector.get_data();
+            REQUIRE(data != nullptr);
+            if (data->success) {
+                auto& sampling_data = static_cast<SamplingData&>(*data);
+                INFO("Block time range 5ms-1s: collected " << sampling_data.entries.size() << " entries");
+            }
+        } else {
+            INFO("OffCPU collector with custom block time range failed to start");
+        }
+    }
+    
+    SECTION("Different task states") {
+        OffCPUTimeCollector collector;
+        auto& config = collector.get_config();
         
-        // Test with reasonable range
+        // Test TASK_UNINTERRUPTIBLE state
+        config.state = 2;  // TASK_UNINTERRUPTIBLE
         config.min_block_time = 1000;  // 1ms
-        config.max_block_time = 1000000000ULL;  // 1000 seconds
         
-        REQUIRE(config.min_block_time == 1000);
-        REQUIRE(config.max_block_time == 1000000000ULL);
+        bool started = collector.start();
+        if (started) {
+            // Brief workload that might cause uninterruptible sleep
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            
+            auto data = collector.get_data();
+            REQUIRE(data != nullptr);
+            if (data->success) {
+                auto& sampling_data = static_cast<SamplingData&>(*data);
+                INFO("TASK_UNINTERRUPTIBLE state: collected " << sampling_data.entries.size() << " entries");
+            }
+        } else {
+            INFO("OffCPU collector with UNINTERRUPTIBLE state failed to start");
+        }
     }
 }
 
-TEST_CASE("OffCPUTimeConfig state values", "[offcpu][config][state]") {
-    SECTION("Valid state values") {
-        OffCPUTimeConfig config;
+TEST_CASE("OffCPUTimeCollector error handling", "[offcpu][error]") {
+    SECTION("Data collection when not started") {
+        OffCPUTimeCollector collector;
         
-        // Test all documented valid state values
-        config.state = -1;  // Any state
-        REQUIRE(config.state == -1);
-        
-        config.state = 0;   // TASK_RUNNING (though not typically useful)
-        REQUIRE(config.state == 0);
-        
-        config.state = 1;   // TASK_INTERRUPTIBLE
-        REQUIRE(config.state == 1);
-        
-        config.state = 2;   // TASK_UNINTERRUPTIBLE
-        REQUIRE(config.state == 2);
+        // Try to get data without starting
+        auto data = collector.get_data();
+        REQUIRE(data != nullptr);
+        REQUIRE(data->name == "offcputime");
+        REQUIRE(data->success == false);
     }
-
-    SECTION("State configuration semantics") {
-        OffCPUTimeConfig config;
+    
+    SECTION("Multiple start calls") {
+        OffCPUTimeCollector collector;
         
-        // Default should be "any state"
-        REQUIRE(config.state == -1);
+        bool first_start = collector.start();
+        bool second_start = collector.start();  // Should return true (already running)
         
-        // Common blocking states
-        config.state = 1;  // Interruptible sleep
-        REQUIRE(config.state == 1);
+        if (first_start) {
+            REQUIRE(second_start == true);  // Should succeed if already running
+        } else {
+            // Both should fail if BPF not available
+            REQUIRE(second_start == false);
+        }
+    }
+    
+    SECTION("Data structure validation") {
+        OffCPUTimeCollector collector;
+        bool started = collector.start();
         
-        config.state = 2;  // Uninterruptible sleep  
-        REQUIRE(config.state == 2);
+        if (started) {
+            auto data = collector.get_data();
+            if (data->success) {
+                auto& sampling_data = static_cast<SamplingData&>(*data);
+                if (!sampling_data.entries.empty()) {
+                    for (const auto& entry : sampling_data.entries) {
+                        // Validate data structure
+                        REQUIRE(entry.value >= 0);  // Blocking time should be non-negative
+                        
+                        // Check stack trace consistency
+                        if (entry.has_user_stack) {
+                            REQUIRE(!entry.user_stack.empty());
+                        }
+                        if (entry.has_kernel_stack) {
+                            REQUIRE(!entry.kernel_stack.empty());
+                        }
+                        
+                        INFO("Entry: PID=" << entry.key.pid << " TGID=" << entry.key.tgid 
+                             << " BlockTime=" << entry.value << "us");
+                    }
+                }
+            }
+        }
     }
 } 

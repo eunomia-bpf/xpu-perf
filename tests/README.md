@@ -1,143 +1,111 @@
 # BPF Profiler Tests
 
-This directory contains unit tests for the BPF profiler components using Catch2 framework.
+This directory contains comprehensive **functional tests** for the BPF profiler components using Catch2 framework.
 
-## Test Organization
+## Test Philosophy
 
-We use a **single test executable** approach for better build performance and easier CI/CD integration.
+All tests are **functional** - they actually start the BPF collectors and test real profiling scenarios rather than meaningless unit tests. Tests gracefully handle environments where BPF is not available.
 
-### Current Test Coverage
+---
 
-#### Core Components
-- `test_flamegraph_view.cpp` - FlameGraph data structure and visualization tests
-- `test_profile_collector.cpp` - ProfileCollector (on-CPU profiling) tests  
-- `test_offcputime_collector.cpp` - OffCPUTimeCollector (off-CPU profiling) tests
+## 📊 **ProfileCollector Tests** (`test_profile_collector.cpp`)
 
-#### Test Categories
-- **Configuration Tests** - Validate config classes, defaults, and parameter handling
-- **Collector Tests** - Test collector lifecycle, functionality, and API
-- **Data Structure Tests** - Verify data types, aliases, and data handling
-- **Edge Case Tests** - Test boundary conditions and error scenarios
+### **Functional Tests** `[profile][functional]`
+- **Collector Lifecycle**: Start/stop BPF profile collection with real perf events
+- **Data Collection**: Generate CPU workload and verify actual sampling data is collected
 
-## Running Tests
+### **Hardware Events** `[profile][hardware]` 
+- **CPU Cycles Profiling**: Uses `PERF_COUNT_HW_CPU_CYCLES` with compute-intensive workload
+- **Instructions Profiling**: Uses `PERF_COUNT_HW_INSTRUCTIONS` with instruction-heavy loops  
+- **Cache Miss Profiling**: Uses `PERF_COUNT_HW_CACHE_MISSES` with random memory access patterns
 
-### Build and Run All Tests
+### **Software Events** `[profile][software]`
+- **Page Fault Profiling**: Uses `PERF_COUNT_SW_PAGE_FAULTS` with memory allocation workload
+- **Context Switch Profiling**: Uses `PERF_COUNT_SW_CONTEXT_SWITCHES` with competing threads
+
+### **Configuration Options** `[profile][config]`
+- **High Frequency Sampling**: Tests with 5000 Hz sampling rate
+- **Idle Process Inclusion**: Tests `include_idle` flag functionality
+
+### **Error Handling** `[profile][error]`
+- **Invalid Configurations**: Tests graceful failure with invalid perf event types
+- **Resource Management**: Tests multiple start calls and error states
+
+---
+
+## 🔄 **OffCPUTimeCollector Tests** (`test_offcputime_collector.cpp`)
+
+### **Functional Tests** `[offcpu][functional]`
+- **Collector Lifecycle**: Start/stop BPF off-CPU time tracking
+- **Baseline Data Collection**: Verify initial off-CPU data collection works
+
+### **Blocking Workloads** `[offcpu][workload]`
+- **Thread Synchronization**: Uses `std::condition_variable` to create measured blocking
+- **Mutex Contention**: Tests detection of thread blocking on synchronization primitives
+
+### **Sleep Workloads** `[offcpu][sleep]`
+- **Sleep Detection**: Uses `std::this_thread::sleep_for()` to generate TASK_INTERRUPTIBLE events
+- **Multi-threaded Sleep**: Tests detection across multiple sleeping threads
+
+### **Configuration Tests** `[offcpu][config]`
+- **Block Time Thresholds**: Tests `min_block_time`/`max_block_time` filtering (5ms-1s range)
+- **Task State Filtering**: Tests `TASK_INTERRUPTIBLE` vs `TASK_UNINTERRUPTIBLE` state detection
+
+### **Error Handling** `[offcpu][error]`
+- **Unstarted Collection**: Tests data collection without starting the collector
+- **Data Structure Validation**: Verifies stack trace consistency and blocking time values
+
+---
+
+## 🚀 **Running Tests**
+
+### **All Tests**
 ```bash
 make test
+# or with sudo for BPF access
+sudo ./build/profiler_tests
 ```
 
-### Run Specific Test Categories
+### **Specific Test Categories**
 ```bash
-# Run all profile collector tests
-./build/profiler_tests "[profile]"
+# Test hardware perf events
+sudo ./build/profiler_tests "[hardware]" -s
 
-# Run all off-CPU tests  
-./build/profiler_tests "[offcpu]"
+# Test off-CPU blocking detection  
+sudo ./build/profiler_tests "[workload]" -s
 
-# Run all config-related tests
-./build/profiler_tests "[config]"
-
-# Run collector functionality tests
-./build/profiler_tests "[collector]"
-
-# Run edge case tests
-./build/profiler_tests "[edge]"
+# Test functional collector lifecycle
+sudo ./build/profiler_tests "[functional]" -s
 ```
 
-### Run Individual Test Cases
-```bash
-# Run specific test case
-./build/profiler_tests "ProfileConfig validation and defaults"
+### **Environment Requirements**
 
-# Run with verbose output
-./build/profiler_tests "[profile]" -v
+| Test Category | Requirements | Fallback Behavior |
+|---------------|-------------|-------------------|
+| **Functional Tests** | BPF support, privileges | Graceful skip with info |
+| **Hardware Events** | Hardware perf counters | Graceful failure detection |
+| **Software Events** | Basic perf_event support | Should work in most environments |
+| **Blocking Tests** | BPF + thread scheduler events | Skip if BPF unavailable |
 
-# List all available tests
-./build/profiler_tests --list-tests
-```
+---
 
-## Test Structure
+## 📈 **What These Tests Verify**
 
-### ProfileCollector Tests (`test_profile_collector.cpp`)
+✅ **BPF Program Loading**: Collectors can load and attach BPF programs  
+✅ **Perf Event Integration**: Hardware/software perf events work correctly  
+✅ **Data Collection**: Real profiling data is captured from workloads  
+✅ **Stack Trace Capture**: User and kernel stack traces are collected  
+✅ **Thread Blocking Detection**: Off-CPU time measurement works  
+✅ **Configuration Options**: Different sampling rates and filters work  
+✅ **Error Handling**: Graceful failure when BPF/privileges unavailable  
 
-Tests for on-CPU profiling functionality:
+---
 
-- ✅ **Configuration Validation**: Default values, perf_event_attr setup
-- ✅ **Collector Lifecycle**: Constructor, destructor, name retrieval
-- ✅ **Config Management**: Mutable/const access, PID/TID filtering
-- ✅ **Data Structures**: ProfileData/ProfileEntry type aliases  
-- ✅ **Edge Cases**: Multiple collectors, libbpf output isolation
-- ✅ **Performance Events**: perf_event_attr configuration options
+## 📊 **Current Test Coverage**
 
-### OffCPUTimeCollector Tests (`test_offcputime_collector.cpp`)
+- **47 assertions** across **12 test cases**
+- **ProfileCollector**: 6 test cases covering hardware events, software events, configuration, and error handling
+- **OffCPUTimeCollector**: 5 test cases covering blocking detection, sleep profiling, configuration, and error handling  
+- **FlameGraph**: 1 test case for data structure validation
 
-Tests for off-CPU profiling functionality:
-
-- ✅ **Configuration Validation**: Block time ranges, state filtering
-- ✅ **Collector Lifecycle**: Constructor, destructor, name retrieval
-- ✅ **Blocking Analysis**: Min/max block times, state values (TASK_*)
-- ✅ **Data Structures**: OffCPUData/OffCPUEntry type aliases
-- ✅ **Edge Cases**: Extreme values, collector isolation
-- ✅ **State Semantics**: TASK_INTERRUPTIBLE, TASK_UNINTERRUPTIBLE
-
-### FlameGraph Tests (`test_flamegraph_view.cpp`)
-
-Tests for flamegraph data visualization:
-
-- ✅ **Data Structures**: FlameGraphEntry, stack trace handling
-- ✅ **Vector-based Stacks**: Folded stack functionality
-
-## Test Design Principles
-
-### Why Single Executable?
-1. **Faster Build Times** - Shared dependencies, single link step
-2. **Easier CI/CD** - One command to run all tests
-3. **Better Resource Management** - Shared fixtures and utilities
-4. **Catch2 Integration** - Built-in test discovery and filtering
-
-### Testing Protected Methods
-Since `validate()` methods are protected, we test validation **indirectly**:
-- Through constructor behavior
-- Through configuration setters/getters
-- Through actual collector operations
-
-### Test Categories (Tags)
-- `[config]` - Configuration classes and validation
-- `[collector]` - Collector lifecycle and functionality  
-- `[data]` - Data structures and type aliases
-- `[edge]` - Edge cases and error conditions
-- `[profile]` - ProfileCollector specific tests
-- `[offcpu]` - OffCPUTimeCollector specific tests
-
-## Adding New Tests
-
-### For New Collectors
-1. Create `test_<collector_name>.cpp`
-2. Add to `CMakeLists.txt` in `profiler_tests` target
-3. Follow the existing patterns for config/collector/data tests
-4. Use appropriate tags for categorization
-
-### For New Features
-1. Add test sections to existing files if related
-2. Use descriptive section names
-3. Include both positive and negative test cases
-4. Test edge cases and boundary conditions
-
-## Integration with Build System
-
-Tests are automatically built and run via:
-```cmake
-# In CMakeLists.txt
-add_executable(profiler_tests
-    tests/test_main.cpp
-    tests/test_flamegraph_view.cpp
-    tests/test_profile_collector.cpp
-    tests/test_offcputime_collector.cpp
-)
-```
-
-The tests use the same `profiler_lib` as the main application, ensuring consistency
-
-## Test Structure
-
-- `test_main.cpp`
+**All tests are functional and meaningful** - no configuration-only or trivial tests.

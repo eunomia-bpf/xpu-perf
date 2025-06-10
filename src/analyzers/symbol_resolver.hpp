@@ -35,11 +35,6 @@ class SymbolResolver {
 private:
     std::unique_ptr<struct blazesym, BlazesymDeleter> symbolizer_;
     
-    // Private helper methods
-    std::string stack_trace_to_string(const std::vector<std::string>& symbols);
-    std::string stack_trace_to_folded_string(const std::vector<std::string>& symbols, 
-                                           char separator = ';', bool reverse = false);
-
 public:
     /**
      * Constructor - Creates a new SymbolResolver with its own symbolizer

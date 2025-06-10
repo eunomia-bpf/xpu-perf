@@ -265,7 +265,7 @@ target_link_libraries(profiler_tests PRIVATE
 )
 
 # Add test to CTest
-add_test(NAME flamegraph_tests COMMAND profiler_tests)
+add_test(NAME unit_tests COMMAND profiler_tests)
 
 # Create custom targets for dependencies
 add_custom_target(libbpf_target DEPENDS ${LIBBPF_OBJ})
