@@ -60,11 +60,6 @@ int main(int argc, char **argv)
         spdlog::info("Starting server mode...");
         
         server::ServerConfig config;
-        config.host = "0.0.0.0";
-        config.port = 8080;
-        config.log_level = args.verbose ? "debug" : "info";
-        config.frontend_directory = "frontend";
-        
         server::ProfileServer server(config);
         
         // Set up signal handler for graceful shutdown

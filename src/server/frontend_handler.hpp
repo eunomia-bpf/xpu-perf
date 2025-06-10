@@ -11,7 +11,7 @@ private:
     std::string frontend_directory;
 
 public:
-    explicit FrontendHandler(const std::string& frontend_dir = "frontend");
+    explicit FrontendHandler(const std::string& frontend_dir);
     
     // Serve static files from frontend directory
     void handle_static_file(const httplib::Request& req, httplib::Response& res);
