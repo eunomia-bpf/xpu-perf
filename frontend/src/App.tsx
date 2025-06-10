@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { FlameGraph3D } from '@/components/FlameGraph3D/FlameGraph3D';
-import { InfoPanel } from '@/components/UI/InfoPanel';
-import { ControlPanel } from '@/components/Controls/ControlPanel';
 import { AppLayout } from '@/components/Layout';
+import { ControlPanelLayout } from '@/components/Controls/ControlPanelLayout';
+import { InfoPanelLayout } from '@/components/UI/InfoPanelLayout';
 import { LoadingSpinner, ErrorDisplay } from '@/components/UI/shared';
 import { useFlameGraphStore } from '@/stores';
 
@@ -15,7 +15,7 @@ function App() {
   }, [loadSampleData]);
 
   return (
-    <AppLayout>
+    <AppLayout sidebar={<ControlPanelLayout />}>
       {/* Loading indicator */}
       {isLoading && <LoadingSpinner message="Loading 3D Flame Graph..." />}
 
@@ -25,9 +25,8 @@ function App() {
       {/* Main 3D visualization */}
       <FlameGraph3D />
 
-      {/* UI overlays */}
-      <InfoPanel />
-      <ControlPanel />
+      {/* Info panel overlay */}
+      <InfoPanelLayout />
     </AppLayout>
   );
 }
