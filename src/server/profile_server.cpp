@@ -37,9 +37,7 @@ bool ProfileServer::start() {
     
     // Log available endpoints
     spdlog::info("Available endpoints:");
-    spdlog::info("  GET  /              - Frontend (mounted from {})", config.frontend_directory);
     spdlog::info("  GET  /*             - Static files (mounted from {})", config.frontend_directory);
-    spdlog::info("  GET  /api/status    - Server status");
     
     running = true;
     
@@ -65,7 +63,16 @@ void ProfileServer::setup_handlers() {
     spdlog::debug("Setting up handlers");
     
     status_handler = std::make_unique<StatusHandler>();
-    // Frontend handler is no longer needed with mount point approach
+    analyzer_registry = std::make_unique<AnalyzerHandlerRegistry>();
+    register_default_analyzers();
+}
+
+void ProfileServer::register_default_analyzers() {
+    spdlog::debug("Registering default analyzers");
+    analyzer_registry->register_handler(std::make_unique<ProfileAnalyzerHandler>());
+    // Add more analyzers here as needed:
+    // analyzer_registry->register_handler(std::make_unique<OffCPUAnalyzerHandler>());
+    // analyzer_registry->register_handler(std::make_unique<WallClockAnalyzerHandler>());
 }
 
 void ProfileServer::setup_routes() {
@@ -94,6 +101,67 @@ void ProfileServer::setup_routes() {
     server->Get("/api/status", [this](const httplib::Request& req, httplib::Response& res) {
         status_handler->handle(req, res);
     });
+    
+    // Analyzer API routes with extensible design
+    // POST /api/v1/analyzers/{analyzer_type}/start
+    server->Post(R"(/api/v1/analyzers/([^/]+)/start)", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string analyzer_type = req.matches[1];
+        auto handler = analyzer_registry->get_handler(analyzer_type);
+        if (handler) {
+            handler->handle_start(req, res);
+        } else {
+            res.status = 404;
+            res.set_content("{\"error\": {\"code\": \"ANALYZER_NOT_SUPPORTED\", \"message\": \"Analyzer type not supported\"}}", "application/json");
+        }
+    });
+    
+    // GET /api/v1/analyzers/{analyzer_type}/{session_id}/status
+    server->Get(R"(/api/v1/analyzers/([^/]+)/([^/]+)/status)", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string analyzer_type = req.matches[1];
+        auto handler = analyzer_registry->get_handler(analyzer_type);
+        if (handler) {
+            handler->handle_status(req, res);
+        } else {
+            res.status = 404;
+            res.set_content("{\"error\": {\"code\": \"ANALYZER_NOT_SUPPORTED\", \"message\": \"Analyzer type not supported\"}}", "application/json");
+        }
+    });
+    
+    // GET /api/v1/analyzers/{analyzer_type}/{session_id}/views
+    server->Get(R"(/api/v1/analyzers/([^/]+)/([^/]+)/views)", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string analyzer_type = req.matches[1];
+        auto handler = analyzer_registry->get_handler(analyzer_type);
+        if (handler) {
+            handler->handle_views(req, res);
+        } else {
+            res.status = 404;
+            res.set_content("{\"error\": {\"code\": \"ANALYZER_NOT_SUPPORTED\", \"message\": \"Analyzer type not supported\"}}", "application/json");
+        }
+    });
+    
+    // POST /api/v1/analyzers/{analyzer_type}/{session_id}/stop
+    server->Post(R"(/api/v1/analyzers/([^/]+)/([^/]+)/stop)", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string analyzer_type = req.matches[1];
+        auto handler = analyzer_registry->get_handler(analyzer_type);
+        if (handler) {
+            handler->handle_stop(req, res);
+        } else {
+            res.status = 404;
+            res.set_content("{\"error\": {\"code\": \"ANALYZER_NOT_SUPPORTED\", \"message\": \"Analyzer type not supported\"}}", "application/json");
+        }
+    });
+    
+    // DELETE /api/v1/analyzers/{analyzer_type}/{session_id}
+    server->Delete(R"(/api/v1/analyzers/([^/]+)/([^/]+))", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string analyzer_type = req.matches[1];
+        auto handler = analyzer_registry->get_handler(analyzer_type);
+        if (handler) {
+            handler->handle_delete(req, res);
+        } else {
+            res.status = 404;
+            res.set_content("{\"error\": {\"code\": \"ANALYZER_NOT_SUPPORTED\", \"message\": \"Analyzer type not supported\"}}", "application/json");
+        }
+    });
 }
 
 void ProfileServer::setup_middleware() {
@@ -103,7 +171,7 @@ void ProfileServer::setup_middleware() {
     if (config.enable_cors) {
         server->set_pre_routing_handler([](const httplib::Request&, httplib::Response& res) {
             res.set_header("Access-Control-Allow-Origin", "*");
-            res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            res.set_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
             res.set_header("Access-Control-Allow-Headers", "Content-Type");
             return httplib::Server::HandlerResponse::Unhandled;
         });

@@ -16,6 +16,7 @@ private:
     
     // Handlers
     std::unique_ptr<StatusHandler> status_handler;
+    std::unique_ptr<AnalyzerHandlerRegistry> analyzer_registry;
     
 public:
     explicit ProfileServer(const ServerConfig& config = ServerConfig{});
@@ -34,6 +35,7 @@ private:
     void setup_handlers();
     void setup_routes();
     void setup_middleware();
+    void register_default_analyzers();
 };
 
 } // namespace server
