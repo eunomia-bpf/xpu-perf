@@ -19,3 +19,6 @@
 [submodule "src/third_party/json"]
 	path = src/third_party/json
 	url = https://github.com/nlohmann/json.git
+[submodule "src/third_party/spdlog"]
+	path = src/third_party/spdlog
+	url = https://github.com/gabime/spdlog.git
