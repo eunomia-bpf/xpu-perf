@@ -11,6 +11,8 @@
 #include <fstream>
 #include <ctime>
 #include <iostream>
+#include <vector>
+#include <memory>
 
 WallClockAnalyzer::WallClockAnalyzer(std::unique_ptr<WallClockAnalyzerConfig> config) 
     : BaseAnalyzer("wallclock_analyzer"),
@@ -174,107 +176,15 @@ void WallClockAnalyzer::generate_flamegraph_files() {
         return;
     }
     
+    // Generate flamegraphs using the new approach
+    auto per_thread_data = get_per_thread_flamegraphs();
+    
+    // Let flamegraph generator handle all file generation and output
     if (is_multithreaded_) {
-        generate_multithread_flamegraphs();
+        flamegraph_gen_->generate_multithread_flamegraphs(per_thread_data, detected_threads_);
     } else {
-        generate_single_thread_flamegraph();
+        flamegraph_gen_->generate_single_flamegraph(per_thread_data, config_->pids);
     }
-}
-
-void WallClockAnalyzer::generate_single_thread_flamegraph() {
-    auto profile_data = profile_collector_->get_data();
-    auto offcpu_data = offcpu_collector_->get_data();
-    
-    auto* profile_sampling = dynamic_cast<SamplingData*>(profile_data.get());
-    auto* offcpu_sampling = dynamic_cast<SamplingData*>(offcpu_data.get());
-    
-    // Use proper symbol resolution like profile analyzer
-    auto oncpu_flamegraph = FlameGraphView::sampling_data_to_flamegraph(*profile_sampling, "oncpu", true);
-    auto offcpu_flamegraph = FlameGraphView::sampling_data_to_flamegraph(*offcpu_sampling, "offcpu", false);
-    
-    // Combine entries from both flamegraphs
-    std::vector<FlamegraphEntry> all_entries;
-    
-    // Add on-CPU entries
-    for (const auto& entry : oncpu_flamegraph->entries) {
-        FlamegraphEntry fg_entry;
-        
-        // Build stack trace from folded_stack vector
-        std::string stack_trace;
-        if (!entry.folded_stack.empty()) {
-            stack_trace = entry.folded_stack[0];
-            for (size_t i = 1; i < entry.folded_stack.size(); ++i) {
-                stack_trace += ";" + entry.folded_stack[i];
-            }
-        }
-        
-        fg_entry.stack_trace = stack_trace;
-        fg_entry.value = entry.sample_count;
-        fg_entry.is_oncpu = true;
-        
-        all_entries.push_back(fg_entry);
-    }
-    
-    // Add off-CPU entries  
-    for (const auto& entry : offcpu_flamegraph->entries) {
-        FlamegraphEntry fg_entry;
-        
-        // Build stack trace from folded_stack vector
-        std::string stack_trace;
-        if (!entry.folded_stack.empty()) {
-            stack_trace = entry.folded_stack[0];
-            for (size_t i = 1; i < entry.folded_stack.size(); ++i) {
-                stack_trace += ";" + entry.folded_stack[i];
-            }
-        }
-        
-        fg_entry.stack_trace = stack_trace;
-        fg_entry.value = entry.sample_count;
-        fg_entry.is_oncpu = false;
-        
-        all_entries.push_back(fg_entry);
-    }
-    
-    // Generate files
-    std::string prefix = "process_profile";
-    if (!config_->pids.empty()) {
-        prefix += "_pid" + std::to_string(config_->pids[0]);
-    }
-    
-    std::string folded_file = flamegraph_gen_->generate_folded_file(all_entries, prefix);
-    if (!folded_file.empty()) {
-        std::string title = "Process " + std::to_string(config_->pids.empty() ? 0 : config_->pids[0]) + " Combined Profile";
-        std::string svg_file = flamegraph_gen_->generate_svg_from_folded(folded_file, title);
-        flamegraph_gen_->generate_analysis_file(prefix, all_entries, "Process-Level");
-        
-        std::cout << "\n" << std::string(60, '=') << std::endl;
-        std::cout << "PROCESS PROFILING COMPLETE" << std::endl;
-        std::cout << std::string(60, '=') << std::endl;
-        std::cout << "📊 Folded data: " << folded_file << std::endl;
-        if (!svg_file.empty()) {
-            std::cout << "🔥 Flamegraph:  " << svg_file << std::endl;
-            std::cout << "   Open " << svg_file << " in a web browser to view the interactive flamegraph" << std::endl;
-        }
-        
-        std::cout << "\n📝 Interpretation guide:" << std::endl;
-        std::cout << "   • Red frames show CPU-intensive code paths (on-CPU) with actual function names" << std::endl;
-        std::cout << "   • Blue frames show blocking/waiting operations (off-CPU) with actual function names" << std::endl;
-        std::cout << "   • Wider sections represent more time spent in those functions" << std::endl;
-        std::cout << "   • Values are normalized to make on-CPU and off-CPU time comparable" << std::endl;
-        
-        if (is_multithreaded_) {
-            std::cout << "\n📊 Multi-threading summary:" << std::endl;
-            std::cout << "   • Process has " << detected_threads_.size() << " threads" << std::endl;
-            std::cout << "   • All thread activity is combined in this single flamegraph" << std::endl;
-            std::cout << "   • Use thread role annotations to identify thread behavior" << std::endl;
-        }
-    }
-}
-
-void WallClockAnalyzer::generate_multithread_flamegraphs() {
-    // For multi-threaded apps, still generate a single process-level summary
-    // but include thread role information in the analysis
-    generate_single_thread_flamegraph();
 }
 
 std::unique_ptr<FlameGraphView> WallClockAnalyzer::get_flamegraph() {

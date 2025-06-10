@@ -18,12 +18,6 @@
 class ProfileCollector;
 class OffCPUTimeCollector;
 
-struct ThreadInfo {
-    pid_t tid;
-    std::string command;
-    std::string role;
-};
-
 class WallClockAnalyzer : public BaseAnalyzer {
 private:
     std::unique_ptr<ProfileCollector> profile_collector_;
@@ -50,8 +44,6 @@ public:
     // New functionality matching Python script
     bool discover_threads();
     void generate_flamegraph_files();
-    void generate_single_thread_flamegraph();
-    void generate_multithread_flamegraphs();
     
     // Config access
     const WallClockAnalyzerConfig& get_config() const { return *config_; }
