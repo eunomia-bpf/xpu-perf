@@ -38,7 +38,7 @@ const initialState: FlameGraphState = {
 
 export const useFlameGraphStore = create<FlameGraphState & FlameGraphActions>()(
   devtools(
-    (set, get) => ({
+    (set, _get) => ({
       ...initialState,
 
       setData: (data: FlameData) => {

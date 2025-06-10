@@ -1,11 +1,12 @@
 import '@testing-library/jest-dom';
+import { vi } from 'vitest';
 
 // Mock Three.js for testing
-global.URL.createObjectURL = vi.fn();
-global.URL.revokeObjectURL = vi.fn();
+(globalThis as any).URL.createObjectURL = vi.fn();
+(globalThis as any).URL.revokeObjectURL = vi.fn();
 
 // Mock canvas methods
-HTMLCanvasElement.prototype.getContext = vi.fn();
+(HTMLCanvasElement.prototype as any).getContext = vi.fn();
 
 // Mock WebGL context
 const mockWebGLContext = {
@@ -61,10 +62,10 @@ HTMLCanvasElement.prototype.getContext = vi.fn((contextId) => {
     return mockWebGLContext;
   }
   return null;
-});
+}) as any;
 
 // Mock ResizeObserver
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
+(globalThis as any).ResizeObserver = vi.fn().mockImplementation(() => ({
   observe: vi.fn(),
   unobserve: vi.fn(),
   disconnect: vi.fn(),
@@ -86,4 +87,4 @@ Object.defineProperty(window, 'matchMedia', {
 });
 
 // Mock fetch for testing data loading
-global.fetch = vi.fn(); 
+(globalThis as any).fetch = vi.fn(); 

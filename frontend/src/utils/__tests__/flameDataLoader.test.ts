@@ -41,8 +41,8 @@ pthread_condattr_setpshared;worker_thread;valid_function 42
       const result = loader.parseFoldedContent(content, 'test_thread');
 
       expect(result).toHaveLength(2);
-      expect(result[0].count).toBe(1099);
-      expect(result[1].count).toBe(42);
+      expect(result[0]!.count).toBe(1099);
+      expect(result[1]!.count).toBe(42);
     });
 
     it('should filter out empty stacks', () => {
@@ -51,7 +51,7 @@ pthread_condattr_setpshared;worker_thread;valid_function 42
       const result = loader.parseFoldedContent(content, 'test_thread');
 
       expect(result).toHaveLength(1);
-      expect(result[0].stack).toEqual(['pthread_condattr_setpshared', 'worker_thread']);
+      expect(result[0]!.stack).toEqual(['pthread_condattr_setpshared', 'worker_thread']);
     });
   });
 
@@ -65,11 +65,11 @@ pthread_condattr_setpshared;worker_thread;valid_function 42
 
       const tree = loader.buildFlameTree(data);
 
-      expect(tree.a.count).toBe(23); // 10 + 5 + 8
-      expect(tree.a.children.b.count).toBe(15); // 10 + 5
-      expect(tree.a.children.b.children.c.count).toBe(10);
-      expect(tree.a.children.b.children.d.count).toBe(5);
-      expect(tree.a.children.e.count).toBe(8);
+      expect(tree.a!.count).toBe(23); // 10 + 5 + 8
+      expect(tree.a!.children.b!.count).toBe(15); // 10 + 5
+      expect(tree.a!.children.b!.children.c!.count).toBe(10);
+      expect(tree.a!.children.b!.children.d!.count).toBe(5);
+      expect(tree.a!.children.e!.count).toBe(8);
     });
 
     it('should handle single-level stacks', () => {
@@ -81,8 +81,8 @@ pthread_condattr_setpshared;worker_thread;valid_function 42
       const tree = loader.buildFlameTree(data);
 
       expect(Object.keys(tree)).toHaveLength(2);
-      expect(tree.function1.count).toBe(10);
-      expect(tree.function2.count).toBe(5);
+      expect(tree.function1!.count).toBe(10);
+      expect(tree.function2!.count).toBe(5);
     });
   });
 
@@ -99,8 +99,8 @@ pthread_condattr_setpshared;worker_thread;valid_function 42
       const filtered = loader.filterByMinCount(data, 10);
 
       expect(filtered.thread1).toHaveLength(2);
-      expect(filtered.thread1[0].count).toBe(100);
-      expect(filtered.thread1[1].count).toBe(50);
+      expect(filtered.thread1![0]!.count).toBe(100);
+      expect(filtered.thread1![1]!.count).toBe(50);
     });
 
     it('should handle empty data', () => {
@@ -139,8 +139,8 @@ pthread_condattr_setpshared;worker_thread;valid_function 42
       expect(Object.keys(sampleData)).toContain('req_generator');
       expect(Object.keys(sampleData)).toContain('worker_0');
       expect(Array.isArray(sampleData.req_generator)).toBe(true);
-      expect(sampleData.req_generator[0]).toHaveProperty('stack');
-      expect(sampleData.req_generator[0]).toHaveProperty('count');
+      expect(sampleData.req_generator![0]!).toHaveProperty('stack');
+      expect(sampleData.req_generator![0]!).toHaveProperty('count');
     });
   });
 
@@ -157,7 +157,7 @@ pthread_condattr_setpshared;worker_thread;valid_function 42
 
       const normalized = loader.normalizeFunctionNames(data);
 
-      expect(normalized.thread1[0].stack).toEqual(['some']);
+      expect(normalized.thread1![0]!.stack).toEqual(['some']);
     });
 
     it('should filter out empty function names', () => {
@@ -172,7 +172,7 @@ pthread_condattr_setpshared;worker_thread;valid_function 42
 
       const normalized = loader.normalizeFunctionNames(data);
 
-      expect(normalized.thread1[0].stack).toEqual(['valid']);
+      expect(normalized.thread1![0]!.stack).toEqual(['valid']);
     });
   });
 }); 

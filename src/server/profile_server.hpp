@@ -3,7 +3,6 @@
 
 #include "config.hpp"
 #include "api_handler.hpp"
-#include "frontend_handler.hpp"
 #include "../third_party/cpp-httplib/httplib.h"
 #include <memory>
 
@@ -17,7 +16,6 @@ private:
     
     // Handlers
     std::unique_ptr<StatusHandler> status_handler;
-    std::unique_ptr<FrontendHandler> frontend_handler;
     
 public:
     explicit ProfileServer(const ServerConfig& config = ServerConfig{});

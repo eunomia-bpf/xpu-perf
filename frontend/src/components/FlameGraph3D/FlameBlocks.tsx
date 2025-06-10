@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { FlameTreeNode } from '@/types/flame.types';
 import { useFlameGraphStore } from '@/stores/flameGraphStore';
@@ -57,12 +56,14 @@ const FlameBlocksRecursive: React.FC<FlameBlocksRecursiveProps> = ({
   }
 
   let currentX = x;
-  const sortedFunctions = Object.keys(tree).sort((a, b) => tree[b].count - tree[a].count);
+  const sortedFunctions = Object.keys(tree).sort((a, b) => (tree[b]?.count || 0) - (tree[a]?.count || 0));
 
   return (
     <>
       {sortedFunctions.map((funcName) => {
         const data = tree[funcName];
+        if (!data) return null;
+        
         const width = Math.max(data.count / 50, 0.8);
         const blockX = currentX + width / 2;
         
@@ -120,7 +121,7 @@ const FlameBlock: React.FC<FlameBlockProps> = ({
   colorSchemeIndex
 }) => {
   const [hovered, setHovered] = useState(false);
-  const { setHoveredBlock, data } = useFlameGraphStore();
+  const { setHoveredBlock } = useFlameGraphStore();
   
   const color = getColorForFunction(funcName, colorSchemeIndex);
   const originalColor = new THREE.Color(color);
@@ -131,11 +132,6 @@ const FlameBlock: React.FC<FlameBlockProps> = ({
 
   const handlePointerEnter = () => {
     setHovered(true);
-    
-    // Calculate percentage of total samples for this thread
-    const threadData = data[threadName] || [];
-    const totalSamples = threadData.reduce((sum, entry) => sum + entry.count, 0);
-    const percentage = totalSamples > 0 ? ((count / totalSamples) * 100).toFixed(1) : '0.0';
     
     setHoveredBlock({
       funcName,

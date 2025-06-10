@@ -37,8 +37,8 @@ bool ProfileServer::start() {
     
     // Log available endpoints
     spdlog::info("Available endpoints:");
-    spdlog::info("  GET  /              - Frontend index page");
-    spdlog::info("  GET  /static/*      - Static frontend files");
+    spdlog::info("  GET  /              - Frontend (mounted from {})", config.frontend_directory);
+    spdlog::info("  GET  /*             - Static files (mounted from {})", config.frontend_directory);
     spdlog::info("  GET  /api/status    - Server status");
     
     running = true;
@@ -65,36 +65,35 @@ void ProfileServer::setup_handlers() {
     spdlog::debug("Setting up handlers");
     
     status_handler = std::make_unique<StatusHandler>();
-    frontend_handler = std::make_unique<FrontendHandler>(config.frontend_directory);
+    // Frontend handler is no longer needed with mount point approach
 }
 
 void ProfileServer::setup_routes() {
     spdlog::debug("Setting up routes");
     
-    // API routes
+    // Mount the frontend directory for static file serving
+    // This automatically handles all static files including assets
+    if (!server->set_mount_point("/", config.frontend_directory)) {
+        spdlog::error("Failed to mount frontend directory: {}", config.frontend_directory);
+    } else {
+        spdlog::info("Mounted frontend directory: {} at /", config.frontend_directory);
+    }
+    
+    // Set up additional MIME type mappings for modern web assets
+    server->set_file_extension_and_mimetype_mapping(".js", "application/javascript");
+    server->set_file_extension_and_mimetype_mapping(".mjs", "application/javascript");
+    server->set_file_extension_and_mimetype_mapping(".jsx", "application/javascript");
+    server->set_file_extension_and_mimetype_mapping(".ts", "application/javascript");
+    server->set_file_extension_and_mimetype_mapping(".tsx", "application/javascript");
+    server->set_file_extension_and_mimetype_mapping(".css", "text/css");
+    server->set_file_extension_and_mimetype_mapping(".woff", "font/woff");
+    server->set_file_extension_and_mimetype_mapping(".woff2", "font/woff2");
+    server->set_file_extension_and_mimetype_mapping(".svg", "image/svg+xml");
+    
+    // API routes - these take precedence over static files
     server->Get("/api/status", [this](const httplib::Request& req, httplib::Response& res) {
         status_handler->handle(req, res);
     });
-    
-    // Frontend routes
-    server->Get("/", [this](const httplib::Request& req, httplib::Response& res) {
-        frontend_handler->handle_index(req, res);
-    });
-    
-    // SPA fallback - serve index.html for unmatched routes
-    server->set_file_request_handler([this](const httplib::Request& req, httplib::Response& res) {
-        if (req.path.find("/api/") == 0) {
-            return false; // Don't handle API routes
-        }
-        frontend_handler->handle_index(req, res);
-        return true;
-    });
-
-
-    server->Get(R"(/(.*))", [this](const httplib::Request& req, httplib::Response& res) {
-        frontend_handler->handle_static_file(req, res);
-    });
-    
 }
 
 void ProfileServer::setup_middleware() {

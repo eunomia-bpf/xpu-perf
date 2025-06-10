@@ -16,6 +16,9 @@ public:
     // Serve static files from frontend directory
     void handle_static_file(const httplib::Request& req, httplib::Response& res);
     
+    // Serve asset files specifically
+    void handle_asset_file(const httplib::Request& req, httplib::Response& res);
+    
     // Serve the main index.html (SPA support)
     void handle_index(const httplib::Request& req, httplib::Response& res);
 

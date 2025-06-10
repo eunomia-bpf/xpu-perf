@@ -23,14 +23,14 @@ export const COLOR_SCHEMES: ColorScheme[] = [
  * Get color from scheme based on function name hash
  */
 export function getColorForFunction(functionName: string, schemeIndex: number): string {
-  const scheme = COLOR_SCHEMES[schemeIndex] || COLOR_SCHEMES[0];
+  const scheme = COLOR_SCHEMES[schemeIndex] ?? COLOR_SCHEMES[0]!;
   const hash = Math.abs(
     functionName.split('').reduce((a, b) => {
       a = ((a << 5) - a) + b.charCodeAt(0);
       return a & a;
     }, 0)
   );
-  return scheme.colors[hash % scheme.colors.length];
+  return scheme.colors[hash % scheme.colors.length] ?? scheme.colors[0]!;
 }
 
 /**
@@ -44,5 +44,5 @@ export function getColorSchemeNames(): string[] {
  * Get color scheme by index
  */
 export function getColorScheme(index: number): ColorScheme {
-  return COLOR_SCHEMES[index] || COLOR_SCHEMES[0];
+  return COLOR_SCHEMES[index] || COLOR_SCHEMES[0]!;
 } 

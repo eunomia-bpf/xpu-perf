@@ -10,7 +10,7 @@ struct ServerConfig {
     int port = 8080;
     std::string log_level = "info";
     bool enable_cors = true;
-    std::string frontend_directory = "frontend";
+    std::string frontend_directory = "frontend/dist";
     
     // Future extensibility
     int max_connections = 100;

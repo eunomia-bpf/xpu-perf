@@ -1,19 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { resolve } from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  base: './',
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
-      '@/components': resolve(__dirname, 'src/components'),
-      '@/hooks': resolve(__dirname, 'src/hooks'),
-      '@/utils': resolve(__dirname, 'src/utils'),
-      '@/types': resolve(__dirname, 'src/types'),
-      '@/stores': resolve(__dirname, 'src/stores')
+      '@': '/src',
+      '@/components': '/src/components',
+      '@/hooks': '/src/hooks',
+      '@/utils': '/src/utils',
+      '@/types': '/src/types',
+      '@/stores': '/src/stores'
     }
   },
   server: {
@@ -33,10 +33,5 @@ export default defineConfig({
         }
       }
     }
-  },
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts']
   }
 })

@@ -15,16 +15,19 @@ export class FlameGraphDataLoader {
       if (line) {
         const parts = line.split(' ');
         if (parts.length >= 2) {
-          const count = parseInt(parts[parts.length - 1], 10);
-          const stackTrace = parts.slice(0, -1).join(' ');
-          
-          if (!isNaN(count) && stackTrace) {
-            const stack = stackTrace.split(';').map(f => f.trim()).filter(f => f);
-            if (stack.length > 0) {
-              flameData.push({
-                stack,
-                count
-              });
+          const lastPart = parts[parts.length - 1];
+          if (lastPart) {
+            const count = parseInt(lastPart, 10);
+            const stackTrace = parts.slice(0, -1).join(' ');
+            
+            if (!isNaN(count) && stackTrace) {
+              const stack = stackTrace.split(';').map(f => f.trim()).filter(f => f);
+              if (stack.length > 0) {
+                flameData.push({
+                  stack,
+                  count
+                });
+              }
             }
           }
         }
@@ -166,14 +169,16 @@ export class FlameGraphDataLoader {
       normalized[threadName] = threadData.map(entry => ({
         ...entry,
         stack: entry.stack.map(func => {
+          if (!func || typeof func !== 'string') return '';
           // Remove common prefixes and clean up function names
-          return func
+          const cleaned = func
             .replace(/^pthread_condattr_setpshared;?/, '')
             .replace(/^entry_SYSCALL_64_after_hwframe;?/, '')
             .replace(/_\[c\]$/, '')
             .replace(/_\[o\]$/, '')
-            .split('_')[0] // Take first part before underscore
+            .split('_')[0]! // Take first part before underscore - always exists
             .trim();
+          return cleaned;
         }).filter(func => func && func !== '')
       })).filter(entry => entry.stack.length > 0);
     }

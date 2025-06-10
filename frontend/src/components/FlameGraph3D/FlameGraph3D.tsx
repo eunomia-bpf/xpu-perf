@@ -12,12 +12,11 @@ interface FlameGraph3DProps {
 }
 
 export const FlameGraph3D: React.FC<FlameGraph3DProps> = ({ className }) => {
-  const controlsRef = useRef<any>();
+  const controlsRef = useRef<any>(null);
   const {
     data,
     config,
     setHoveredBlock,
-    toggleAutoRotate,
     updateStats
   } = useFlameGraphStore();
 

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { FlameGraph3D } from '@/components/FlameGraph3D/FlameGraph3D';
 import { InfoPanel } from '@/components/UI/InfoPanel';
 import { ControlPanel } from '@/components/Controls/ControlPanel';
