@@ -24,7 +24,7 @@ public:
     
     // IAnalyzer interface
     bool start() override;
-    std::unique_ptr<FlameGraphView> get_flamegraph() override;
+    std::unique_ptr<FlameGraphView> get_flamegraph();
     
     // Config access
     const OffCPUAnalyzerConfig& get_config() const { return *config_; }

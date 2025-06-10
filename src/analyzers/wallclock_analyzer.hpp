@@ -41,7 +41,7 @@ public:
     
     // IAnalyzer interface
     bool start() override;
-    std::map<pid_t, std::unique_ptr<FlameGraphView>> get_per_thread_flamegraphs() override;
+    std::map<pid_t, std::unique_ptr<FlameGraphView>> get_per_thread_flamegraphs();
     
     // New functionality matching Python script
     bool discover_threads();

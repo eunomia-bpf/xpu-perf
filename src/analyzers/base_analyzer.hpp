@@ -20,17 +20,7 @@ public:
     // Start the analysis (may involve multiple collectors)
     virtual bool start() = 0;
     
-    // Get analyzed flamegraph data
-    virtual std::unique_ptr<FlameGraphView> get_flamegraph() = 0;
-    
-    // Get per-thread flamegraph data (for multi-threaded analysis)
-    virtual std::map<pid_t, std::unique_ptr<FlameGraphView>> get_per_thread_flamegraphs() {
-        // Default implementation: return single flamegraph for main thread
-        std::map<pid_t, std::unique_ptr<FlameGraphView>> result;
-        result[0] = get_flamegraph();
-        return result;
-    }
-    
+    // Get analyzed flamegraph data    
     // Get analyzer name
     virtual std::string get_name() const = 0;
 };

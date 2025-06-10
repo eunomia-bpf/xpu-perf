@@ -40,71 +40,6 @@ std::string create_output_filename(const std::string& analyzer_type, const Profi
     return ss.str();
 }
 
-void generate_flamegraph_for_analyzer(const std::string& analyzer_name, 
-                                    std::unique_ptr<FlameGraphView>& flamegraph,
-                                    const ProfilerArgs& args,
-                                    double actual_runtime_seconds) {
-    if (!flamegraph || !flamegraph->success || flamegraph->entries.empty()) {
-        return;
-    }
-    
-    // Create output directory
-    std::string output_dir = create_output_filename(analyzer_name, args);
-    std::filesystem::create_directories(output_dir);
-    
-    // Create flamegraph generator
-    FlamegraphGenerator fg_gen(output_dir, args.frequency, actual_runtime_seconds);
-    
-    // Convert FlameGraphView entries to FlamegraphEntry format
-    std::vector<FlamegraphEntry> entries;
-    for (const auto& entry : flamegraph->entries) {
-        FlamegraphEntry fg_entry;
-        
-        // Convert folded stack to stack trace
-        std::string stack_trace;
-        if (!entry.folded_stack.empty()) {
-            stack_trace = entry.folded_stack[0];
-            for (size_t i = 1; i < entry.folded_stack.size(); ++i) {
-                stack_trace += ";" + entry.folded_stack[i];
-            }
-        }
-        
-        // Use command as first part if stack trace is empty
-        if (stack_trace.empty()) {
-            stack_trace = entry.command;
-        }
-        
-        fg_entry.stack_trace = stack_trace;
-        fg_entry.value = entry.sample_count;
-        fg_entry.is_oncpu = entry.is_oncpu;
-        
-        entries.push_back(fg_entry);
-    }
-    
-    if (entries.empty()) {
-        return;
-    }
-    
-    // Generate files
-    std::string folded_file = fg_gen.generate_folded_file(entries, analyzer_name + "_profile");
-    if (!folded_file.empty()) {
-        std::string title = analyzer_name;
-        if (analyzer_name == "profile") {
-            title = "On-CPU Profile";
-        } else if (analyzer_name == "offcputime") {
-            title = "Off-CPU Profile";
-        }
-        
-        std::string svg_file = fg_gen.generate_svg_from_folded(folded_file, title);
-        fg_gen.generate_analysis_file(analyzer_name + "_profile", entries, "Single-Thread");
-        
-        std::cout << "📊 Folded data: " << folded_file << std::endl;
-        if (!svg_file.empty()) {
-            std::cout << "🔥 Flamegraph:  " << svg_file << std::endl;
-        }
-    }
-}
-
 int main(int argc, char **argv)
 {
     // Record start time for runtime calculation
@@ -175,73 +110,42 @@ int main(int argc, char **argv)
     auto runtime_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     double actual_runtime_seconds = runtime_duration.count() / 1000.0;
 
-    // Get the flamegraph from the analyzer
+    // Get the flamegraph using the generator approach for all analyzers
     std::unique_ptr<FlameGraphView> flamegraph;
+    std::string output_dir = create_output_filename(args.analyzer_type, args);
+    FlamegraphGenerator fg_gen(output_dir, args.frequency, actual_runtime_seconds);
     
     if (analyzer->get_name() == "wallclock_analyzer") {
-        // For wallclock analyzer, use the flamegraph generator approach
         WallClockAnalyzer* wallclock_analyzer = dynamic_cast<WallClockAnalyzer*>(analyzer.get());
-        if (wallclock_analyzer) {
-            std::string output_dir = create_output_filename("wallclock", args);
-            FlamegraphGenerator fg_gen(output_dir, args.frequency, actual_runtime_seconds);
-            flamegraph = fg_gen.get_flamegraph_for_wallclock(*wallclock_analyzer);
+        if (!wallclock_analyzer) {
+            std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
+            return 1;
         }
-    } else {
-        // For other analyzers, use the standard approach
-        flamegraph = analyzer->get_flamegraph();
+        flamegraph = fg_gen.get_flamegraph_for_wallclock(*wallclock_analyzer);
+        if (!flamegraph) {
+            std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
+            return 1;
+        }
+        fg_gen.generate_flamegraph_files_for_wallclock(*wallclock_analyzer);
+        std::cout << "Flamegraphs generated in " << output_dir << std::endl;
+    } else if (analyzer->get_name() == "profile_analyzer" || analyzer->get_name() == "offcputime_analyzer") {
+        ProfileAnalyzer* profile_analyzer = dynamic_cast<ProfileAnalyzer*>(analyzer.get());
+        if (!profile_analyzer) {
+            std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
+            return 1;
+        }
+        flamegraph = profile_analyzer->get_flamegraph();
+        if (!flamegraph) {
+            std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
+            return 1;
+        }
+        fg_gen.generate_single_flamegraph(std::move(flamegraph));
     }
     
-    if (!flamegraph || !flamegraph->success) {
-        std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
-        
-        // Still show runtime information
-        std::cout << "\nRuntime Summary:" << std::endl;
-        std::cout << "Actual program runtime: " << std::fixed << std::setprecision(3) << actual_runtime_seconds << "s" << std::endl;
-        std::cout << "Requested duration: " << args.duration << "s" << std::endl;
-        return 1;
-    }
-
     // Add runtime information to summary
     std::cout << "\nRuntime Summary:" << std::endl;
     std::cout << "Actual program runtime: " << std::fixed << std::setprecision(3) << actual_runtime_seconds << "s" << std::endl;
-    
-    // Check if we have any data before showing detailed output
-    bool has_data = !flamegraph->entries.empty();
-    
-    if (!has_data) {
-        std::cout << "\nNo samples collected." << std::endl;
-        if (!args.pids.empty()) {
-            std::cout << "Verify PID " << args.pids[0] << " is still running" << std::endl;
-        }
-    } else {
-        // Generate flamegraph files for single analyzers
-        if (analyzer->get_name() == "profile_analyzer") {
-            generate_flamegraph_for_analyzer("profile", flamegraph, args, actual_runtime_seconds);
-        } else if (analyzer->get_name() == "offcputime_analyzer") {
-            generate_flamegraph_for_analyzer("offcputime", flamegraph, args, actual_runtime_seconds);
-        } else if (analyzer->get_name() == "wallclock_analyzer") {
-            // Wallclock analyzer handles its own file generation through the generator
-            std::cout << "\nWallclock analyzer completed - files generated in output directory" << std::endl;
-        }
-        
-        if (args.verbose) {
-            std::cout << "\nAll stacks:" << std::endl;
-            auto top_stacks = flamegraph->entries;
-            
-            for (size_t i = 0; i < top_stacks.size(); i++) {
-                const auto& entry = top_stacks[i];
-                // Convert vector to folded string format
-                std::string folded_str;
-                if (!entry.folded_stack.empty()) {
-                    folded_str = entry.folded_stack[0];
-                    for (size_t j = 1; j < entry.folded_stack.size(); ++j) {
-                        folded_str += ";" + entry.folded_stack[j];
-                    }
-                }
-                std::cout << folded_str << " " << entry.sample_count << std::endl;
-            }
-        }
-    }
+
     
     return 0;
 } 
