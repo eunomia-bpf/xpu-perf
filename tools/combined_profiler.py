@@ -72,8 +72,8 @@ class CombinedProfiler:
         """Run the profile tool in a separate thread"""
         try:
             cmd = [
-                # str(self.profile_tool),
-                "./profiler profile",
+                str(self.profile_tool),
+                # "./profiler profile",
                 "-p", str(self.pid),
                 "-F", str(self.freq),
                 "-f",  # Folded output format
@@ -98,8 +98,8 @@ class CombinedProfiler:
         """Run the offcputime tool in a separate thread"""
         try:
             cmd = [
-                # str(self.offcpu_tool),
-                "./profiler offcputime",
+                str(self.offcpu_tool),
+                # "./profiler offcputime",
                 "-p", str(self.pid),
                 "-m", str(self.min_block_us),
                 "-f",  # Folded output format
@@ -321,7 +321,7 @@ class CombinedProfiler:
             # Calculate normalization factor
             # Assume each on-CPU sample represents 1/freq seconds of CPU time
             avg_oncpu_sample_us = (1.0 / self.freq) * 1_000_000  # microseconds per sample
-            normalization_factor = avg_oncpu_sample_us
+            normalization_factor = avg_oncpu_sample_us # / 1000.0
             
             # Calculate expected vs actual samples
             expected_samples = self.duration * self.freq

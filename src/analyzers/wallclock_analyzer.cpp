@@ -13,19 +13,22 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <chrono>
 
 WallClockAnalyzer::WallClockAnalyzer(std::unique_ptr<WallClockAnalyzerConfig> config) 
     : BaseAnalyzer("wallclock_analyzer"),
       profile_collector_(std::make_unique<ProfileCollector>()),
       offcpu_collector_(std::make_unique<OffCPUTimeCollector>()),
       config_(std::move(config)),
-      is_multithreaded_(false) {
+      is_multithreaded_(false),
+      start_time_(std::chrono::steady_clock::now()) {
     
     configure_collectors();
     
-    // Initialize flamegraph generator
+    // Initialize flamegraph generator - will update actual runtime later
     std::string output_dir = create_output_directory();
-    flamegraph_gen_ = std::make_unique<FlamegraphGenerator>(output_dir, config_->frequency, config_->duration);
+    // Temporarily pass a placeholder value, will be updated when generating flamegraphs
+    flamegraph_gen_ = std::make_unique<FlamegraphGenerator>(output_dir, config_->frequency, 1.0);
 }
 
 std::string WallClockAnalyzer::create_output_directory() {
@@ -158,6 +161,12 @@ bool WallClockAnalyzer::start() {
     return true;
 }
 
+double WallClockAnalyzer::get_actual_runtime_seconds() const {
+    auto now = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time_);
+    return duration.count() / 1000.0;
+}
+
 void WallClockAnalyzer::generate_flamegraph_files() {
     // Get data from both collectors
     auto profile_data = profile_collector_->get_data();
@@ -175,6 +184,11 @@ void WallClockAnalyzer::generate_flamegraph_files() {
         std::cerr << "Invalid sampling data format" << std::endl;
         return;
     }
+    
+    // Recreate flamegraph generator with actual runtime
+    double actual_runtime = get_actual_runtime_seconds();
+    std::string output_dir = create_output_directory();
+    flamegraph_gen_ = std::make_unique<FlamegraphGenerator>(output_dir, config_->frequency, actual_runtime);
     
     // Generate flamegraphs using the new approach
     auto per_thread_data = get_per_thread_flamegraphs();
@@ -195,7 +209,7 @@ std::unique_ptr<FlameGraphView> WallClockAnalyzer::get_flamegraph() {
     auto per_thread_data = get_per_thread_flamegraphs();
     
     auto combined = std::make_unique<FlameGraphView>(get_name(), true);
-    combined->time_unit = "normalized_samples";
+    combined->time_unit = "microseconds";
     
     for (auto& [tid, flamegraph] : per_thread_data) {
         if (flamegraph && flamegraph->success) {
@@ -226,6 +240,8 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
     std::map<pid_t, std::unique_ptr<FlameGraphView>> thread_data;
     
     if (!profile_collector_ || !offcpu_collector_) {
+        std::cerr << "[DEBUG] Missing collectors: profile=" << (profile_collector_ ? "OK" : "NULL") 
+                  << " offcpu=" << (offcpu_collector_ ? "OK" : "NULL") << std::endl;
         return thread_data;
     }
     
@@ -234,12 +250,12 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
     auto offcpu_data = offcpu_collector_->get_data();
     
     if (!profile_data || !profile_data->success) {
-        printf("Profile collector failed to provide data\n");
+        std::cerr << "[DEBUG] Profile collector failed to provide data" << std::endl;
         return thread_data;
     }
     
     if (!offcpu_data || !offcpu_data->success) {
-        printf("OffCPU collector failed to provide data\n");
+        std::cerr << "[DEBUG] OffCPU collector failed to provide data" << std::endl;
         return thread_data;
     }
     
@@ -247,10 +263,15 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
     auto* offcpu_sampling = dynamic_cast<SamplingData*>(offcpu_data.get());
     
     if (!profile_sampling || !offcpu_sampling) {
+        std::cerr << "[DEBUG] Invalid sampling data format: profile=" << (profile_sampling ? "OK" : "NULL") 
+                  << " offcpu=" << (offcpu_sampling ? "OK" : "NULL") << std::endl;
         return thread_data;
     }
     
-    // Collect all unique thread IDs
+    std::cerr << "[DEBUG] Raw data counts: profile_entries=" << profile_sampling->entries.size() 
+              << " offcpu_entries=" << offcpu_sampling->entries.size() << std::endl;
+    
+    // Collect all unique thread IDs from both datasets
     std::set<__u32> all_tids;
     for (const auto& entry : profile_sampling->entries) {
         all_tids.insert(entry.key.pid);
@@ -259,14 +280,22 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
         all_tids.insert(entry.key.pid);
     }
     
-    // Create flamegraph for each thread with proper normalization
+    std::cerr << "[DEBUG] Found " << all_tids.size() << " unique thread IDs" << std::endl;
+    
+    // Normalization factor for on-CPU data (convert samples to microseconds)
+    double sample_to_us_factor = (1.0 / config_->frequency) * 1000000.0;
+    
+    // Create combined flamegraph for each thread
     for (__u32 tid : all_tids) {
         auto flamegraph = std::make_unique<FlameGraphView>(get_name() + "_thread_" + std::to_string(tid), true);
-        flamegraph->time_unit = "normalized_samples";
+        flamegraph->time_unit = "microseconds";
         
-        // Process on-CPU data for this thread
+        int oncpu_count = 0, offcpu_count = 0;
+        
+        // Add ALL on-CPU data for this thread (convert samples to microseconds)
         for (const auto& entry : profile_sampling->entries) {
             if (entry.key.pid == tid) {
+                oncpu_count++;
                 __u64* user_stack = nullptr;
                 int user_stack_size = 0;
                 __u64* kernel_stack = nullptr;
@@ -282,23 +311,24 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
                     kernel_stack_size = static_cast<int>(entry.kernel_stack.size());
                 }
                 
+                // Convert samples to microseconds
+                __u64 microseconds_value = static_cast<__u64>(std::max(1.0, entry.value * sample_to_us_factor));
+                
                 flamegraph->add_stack_trace_raw(
                     user_stack, user_stack_size,
                     kernel_stack, kernel_stack_size,
                     std::string(entry.key.comm),
                     entry.key.pid,
-                    entry.value,
+                    microseconds_value,
                     true  // is_oncpu
                 );
             }
         }
         
-        // Process off-CPU data with normalization for this thread
-        // Normalize using the same method as the Python script
-        double normalization_factor = (1.0 / config_->frequency) * 1000000.0;  // microseconds per sample
-        
+        // Add ALL off-CPU data for this thread (already in microseconds)
         for (const auto& entry : offcpu_sampling->entries) {
             if (entry.key.pid == tid) {
+                offcpu_count++;
                 __u64* user_stack = nullptr;
                 int user_stack_size = 0;
                 __u64* kernel_stack = nullptr;
@@ -314,22 +344,29 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
                     kernel_stack_size = static_cast<int>(entry.kernel_stack.size());
                 }
                 
-                // Normalize microseconds to equivalent samples for visualization
-                __u64 normalized_value = static_cast<__u64>(std::max(1.0, entry.value / normalization_factor));
+                // Off-CPU data is already in microseconds, use as-is
+                __u64 microseconds_value = std::max(static_cast<__u64>(1), entry.value);
                 
                 flamegraph->add_stack_trace_raw(
                     user_stack, user_stack_size,
                     kernel_stack, kernel_stack_size,
                     std::string(entry.key.comm),
                     entry.key.pid,
-                    normalized_value,
+                    microseconds_value,
                     false  // is_oncpu = false
                 );
             }
         }
         
         flamegraph->finalize();
-        thread_data[tid] = std::move(flamegraph);
+        std::cerr << "[DEBUG] Thread " << tid << ": oncpu_entries=" << oncpu_count 
+                  << " offcpu_entries=" << offcpu_count 
+                  << " final_flamegraph_entries=" << flamegraph->entries.size() << std::endl;
+        
+        // Only add threads that have some data
+        if (oncpu_count > 0 || offcpu_count > 0) {
+            thread_data[tid] = std::move(flamegraph);
+        }
     }
     
     return thread_data;

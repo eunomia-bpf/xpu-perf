@@ -8,3 +8,4 @@ FlameGraph
 res*.svg
 profile_profile*
 wallclock_profile*
+tools/tests/test_combined

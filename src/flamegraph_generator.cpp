@@ -8,12 +8,8 @@
 #include <iomanip>
 #include <sys/stat.h>
 
-FlamegraphGenerator::FlamegraphGenerator(const std::string& output_dir, int freq, int duration)
-    : output_dir_(output_dir), sampling_freq_(freq), duration_(duration), actual_wall_clock_time_(duration) {
-}
-
-void FlamegraphGenerator::set_actual_wall_clock_time(double actual_time_seconds) {
-    actual_wall_clock_time_ = actual_time_seconds;
+FlamegraphGenerator::FlamegraphGenerator(const std::string& output_dir, int freq, double actual_wall_clock_time)
+    : output_dir_(output_dir), sampling_freq_(freq), actual_wall_clock_time_(actual_wall_clock_time) {
 }
 
 bool FlamegraphGenerator::create_output_directory() {
@@ -26,17 +22,6 @@ bool FlamegraphGenerator::create_output_directory() {
     }
 }
 
-uint64_t FlamegraphGenerator::normalize_offcpu_time(uint64_t microseconds) {
-    if (sampling_freq_ <= 0) return microseconds;
-    
-    // Calculate microseconds per sample: (1.0 / freq) * 1,000,000
-    double us_per_sample = (1.0 / sampling_freq_) * 1000000.0;
-    
-    // Convert microseconds to equivalent samples
-    uint64_t normalized_value = static_cast<uint64_t>(std::max(1.0, microseconds / us_per_sample));
-    return normalized_value;
-}
-
 std::string FlamegraphGenerator::add_annotation(const std::string& stack, bool is_oncpu) {
     // Remove the first part (process name) and add annotation
     std::string clean_stack = stack;
@@ -45,7 +30,7 @@ std::string FlamegraphGenerator::add_annotation(const std::string& stack, bool i
         clean_stack = stack.substr(first_semicolon + 1);
     }
     
-    // Add annotation
+    // Add annotation like the Python script does
     return clean_stack + (is_oncpu ? "_[c]" : "_[o]");
 }
 
@@ -61,19 +46,20 @@ std::string FlamegraphGenerator::generate_folded_file(const std::vector<Flamegra
     ss << output_dir_ << "/" << filename_prefix << "_" << now << ".folded";
     std::string folded_file = ss.str();
     
-    // Combine and sort entries
+    // Combine and sort entries with proper normalization for visualization
     std::map<std::string, uint64_t> combined_stacks;
     
+    // Calculate normalization factor like the Python script
+    // avg_oncpu_sample_us = (1.0 / freq) * 1,000,000 microseconds per sample
+    double normalization_factor = (1.0 / sampling_freq_) * 1000000.0;
+    
+    std::cerr << "[DEBUG] Folded file normalization factor: " << normalization_factor << " us/sample" << std::endl;
+    
     for (const auto& entry : entries) {
-        std::string annotated_stack = add_annotation(entry.stack_trace, entry.is_oncpu);
+        std::string stack_trace = entry.stack_trace;
         uint64_t value = entry.value;
         
-        // Normalize off-CPU values
-        if (!entry.is_oncpu) {
-            value = normalize_offcpu_time(value);
-        }
-        
-        combined_stacks[annotated_stack] += value;
+        combined_stacks[stack_trace] += value;
     }
     
     // Sort by value (descending)
@@ -209,30 +195,38 @@ void FlamegraphGenerator::generate_analysis_file(const std::string& filename,
     
     std::string analysis_file = output_dir_ + "/" + filename + "_analysis.txt";
     
-    // Calculate statistics
-    uint64_t oncpu_samples = 0;
+    // Calculate statistics - both on-CPU and off-CPU are now in microseconds
+    uint64_t oncpu_us = 0;
     uint64_t offcpu_us = 0;
     size_t oncpu_count = 0;
     size_t offcpu_count = 0;
     
     for (const auto& entry : entries) {
         if (entry.is_oncpu) {
-            oncpu_samples += entry.value;
+            oncpu_us += entry.value;  // Now in microseconds, not samples
             oncpu_count++;
         } else {
-            offcpu_us += entry.value;
+            offcpu_us += entry.value;  // Already in microseconds
             offcpu_count++;
         }
     }
     
-    // Convert to wall clock times
-    double oncpu_time_sec = static_cast<double>(oncpu_samples) / sampling_freq_;
-    double offcpu_time_sec = static_cast<double>(offcpu_us) / 1000000.0;
-    double measured_time_sec = oncpu_time_sec + offcpu_time_sec;
+    std::cerr << "[DEBUG] generate_analysis_file (" << filename << "): entries=" << entries.size() 
+              << " oncpu_count=" << oncpu_count << " offcpu_count=" << offcpu_count 
+              << " oncpu_us=" << oncpu_us << " offcpu_us=" << offcpu_us << std::endl;
     
-    // Wall clock time should be the actual duration that was profiled
-    double wall_clock_time_sec = actual_wall_clock_time_;
-    double coverage_pct = (measured_time_sec / wall_clock_time_sec) * 100.0;
+    // Convert microseconds to seconds for both on-CPU and off-CPU
+    double oncpu_time_sec = static_cast<double>(oncpu_us) / 1000000.0;
+    double offcpu_time_sec = static_cast<double>(offcpu_us) / 1000000.0;
+    double total_measured_time_sec = oncpu_time_sec + offcpu_time_sec;
+    
+    // Use actual profiling duration for wall clock coverage calculation
+    double actual_duration_sec = actual_wall_clock_time_;
+    double wall_clock_coverage_pct = (total_measured_time_sec / actual_duration_sec) * 100.0;
+    
+    std::cerr << "[DEBUG] Time calculations: oncpu_time=" << oncpu_time_sec << "s offcpu_time=" << offcpu_time_sec 
+              << "s total_measured=" << total_measured_time_sec << "s actual_duration=" << actual_duration_sec 
+              << "s coverage=" << wall_clock_coverage_pct << "%" << std::endl;
     
     try {
         std::ofstream file(analysis_file);
@@ -242,16 +236,15 @@ void FlamegraphGenerator::generate_analysis_file(const std::string& filename,
         file << std::string(50, '=') << "\n\n";
         
         file << "Profiling Parameters:\n";
-        file << "Duration: " << duration_ << " seconds\n";
+        file << "Duration: " << actual_duration_sec << " seconds\n";
         file << "Sampling frequency: " << sampling_freq_ << " Hz\n\n";
         
         file << "Time Analysis:\n";
         file << std::string(40, '-') << "\n";
-        file << "On-CPU time: " << oncpu_time_sec << "s (" << oncpu_samples << " samples)\n";
+        file << "On-CPU time: " << oncpu_time_sec << "s (" << oncpu_us << " μs)\n";
         file << "Off-CPU time: " << offcpu_time_sec << "s (" << offcpu_us << " μs)\n";
-        file << "Total measured time: " << wall_clock_time_sec << "s (wall clock)\n";
-        file << "Active CPU time: " << measured_time_sec << "s (on-CPU + off-CPU)\n";
-        file << "Activity coverage: " << coverage_pct << "% of wall clock time\n\n";
+        file << "Total measured time: " << total_measured_time_sec << "s\n";
+        file << "Wall clock coverage: " << wall_clock_coverage_pct << "% of " << actual_duration_sec << "s profiling duration\n\n";
         
         file << "Stack Trace Summary:\n";
         file << std::string(40, '-') << "\n";
@@ -261,23 +254,21 @@ void FlamegraphGenerator::generate_analysis_file(const std::string& filename,
         
         file << "Coverage Assessment:\n";
         file << std::string(40, '-') << "\n";
-        if (coverage_pct < 10) {
-            file << "⚠️  Very low activity - process mostly idle\n";
-        } else if (coverage_pct < 50) {
-            file << "⚠️  Low activity - process partially idle\n";
-        } else if (coverage_pct > 150) {
-            file << "⚠️  High activity - possible measurement anomaly\n";
+        if (wall_clock_coverage_pct < 50) {
+            file << "⚠️  Low coverage - process mostly idle or data collection incomplete\n";
+        } else if (wall_clock_coverage_pct > 150) {
+            file << "⚠️  High coverage - possible overlap or measurement anomaly\n";
         } else {
-            file << "✓ Activity level appears reasonable for active process\n";
+            file << "✓ Coverage appears reasonable for active process\n";
         }
         
         file << "\nTime Verification Notes:\n";
         file << std::string(40, '-') << "\n";
-        file << "• On-CPU time = samples / sampling_frequency (" << sampling_freq_ << " Hz)\n";
+        file << "• On-CPU time = converted from samples using frequency (" << sampling_freq_ << " Hz) to microseconds, then to seconds\n";
         file << "• Off-CPU time = blocking_time_microseconds / 1,000,000\n";
-        file << "• Total measured time = wall clock time (actual profiling duration)\n";
-        file << "• Active CPU time = on-CPU + off-CPU time (time spent executing)\n";
-        file << "• Activity coverage shows what % of wall clock time was active\n";
+        file << "• Total measured time = on-CPU + off-CPU time\n";
+        file << "• Wall clock coverage shows what % of profiling period was active\n";
+        file << "• Coverage values should be close to 100% for CPU-bound processes\n";
         
         file.close();
         std::cout << "Analysis saved to: " << analysis_file << std::endl;
@@ -414,6 +405,8 @@ void FlamegraphGenerator::generate_multithread_flamegraphs(const std::map<pid_t,
 std::vector<FlamegraphEntry> FlamegraphGenerator::convert_flamegraph_to_entries(const FlameGraphView& flamegraph) {
     std::vector<FlamegraphEntry> entries;
     
+    int oncpu_count = 0, offcpu_count = 0;
+    
     for (const auto& entry : flamegraph.entries) {
         FlamegraphEntry fg_entry;
         
@@ -426,12 +419,22 @@ std::vector<FlamegraphEntry> FlamegraphGenerator::convert_flamegraph_to_entries(
             }
         }
         
-        fg_entry.stack_trace = stack_trace;
+        // Apply annotations like the Python script does
+        fg_entry.stack_trace = add_annotation(stack_trace, entry.is_oncpu);
         fg_entry.value = entry.sample_count;
         fg_entry.is_oncpu = entry.is_oncpu;
         
+        if (entry.is_oncpu) {
+            oncpu_count++;
+        } else {
+            offcpu_count++;
+        }
+        
         entries.push_back(fg_entry);
     }
+    
+    std::cerr << "[DEBUG] convert_flamegraph_to_entries: input=" << flamegraph.entries.size() 
+              << " output=" << entries.size() << " oncpu=" << oncpu_count << " offcpu=" << offcpu_count << std::endl;
     
     return entries;
 }

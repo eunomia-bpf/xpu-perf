@@ -27,14 +27,10 @@ class FlamegraphGenerator {
 private:
     std::string output_dir_;
     int sampling_freq_;
-    int duration_;
     double actual_wall_clock_time_;  // Actual runtime in seconds
     
 public:
-    FlamegraphGenerator(const std::string& output_dir, int freq, int duration);
-    
-    // Set the actual wall clock time that was measured
-    void set_actual_wall_clock_time(double actual_time_seconds);
+    FlamegraphGenerator(const std::string& output_dir, int freq, double actual_wall_clock_time);
     
     // Setup flamegraph tools (download if needed)
     bool setup_flamegraph_tools();
@@ -46,9 +42,6 @@ public:
     // Generate SVG from folded file
     std::string generate_svg_from_folded(const std::string& folded_file, 
                                        const std::string& title = "");
-    
-    // Normalize off-CPU time to equivalent samples
-    uint64_t normalize_offcpu_time(uint64_t microseconds);
     
     // Add annotations to stack traces
     std::string add_annotation(const std::string& stack, bool is_oncpu);

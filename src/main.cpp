@@ -53,8 +53,7 @@ void generate_flamegraph_for_analyzer(const std::string& analyzer_name,
     std::filesystem::create_directories(output_dir);
     
     // Create flamegraph generator
-    FlamegraphGenerator fg_gen(output_dir, args.frequency, args.duration);
-    fg_gen.set_actual_wall_clock_time(actual_runtime_seconds);
+    FlamegraphGenerator fg_gen(output_dir, args.frequency, actual_runtime_seconds);
     
     // Convert FlameGraphView entries to FlamegraphEntry format
     std::vector<FlamegraphEntry> entries;

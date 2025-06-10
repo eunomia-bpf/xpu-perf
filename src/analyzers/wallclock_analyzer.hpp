@@ -13,6 +13,7 @@
 #include <string>
 #include <cstring>
 #include <algorithm>
+#include <chrono>
 
 // Forward declarations
 class ProfileCollector;
@@ -28,6 +29,9 @@ private:
     // Thread analysis data
     std::vector<ThreadInfo> detected_threads_;
     bool is_multithreaded_;
+    
+    // Runtime tracking
+    std::chrono::steady_clock::time_point start_time_;
     
     // Helper methods
     std::map<pid_t, std::unique_ptr<FlameGraphView>> combine_and_resolve_data();
@@ -56,6 +60,7 @@ private:
     void configure_collectors();
     std::string get_thread_role(pid_t tid, const std::string& cmd);
     std::string create_output_directory();
+    double get_actual_runtime_seconds() const;
 };
 
 #endif /* __WALLCLOCK_ANALYZER_HPP */ 

@@ -57,24 +57,12 @@ void FlameGraphView::add_stack_trace_raw(__u64* user_stack, int user_stack_size,
     if (user_stack && user_stack_size > 0) {
         user_stack_symbols = symbolizer_->get_stack_trace_symbols(
             user_stack, user_stack_size, pid);
-        
-        // Add annotation only to the deepest (last) symbol to avoid duplicates
-        if (!user_stack_symbols.empty()) {
-            const std::string annotation = is_oncpu ? "_[c]" : "_[o]";
-            user_stack_symbols.back() += annotation;
-        }
     }
     
     // Resolve kernel stack symbols
     if (kernel_stack && kernel_stack_size > 0) {
         kernel_stack_symbols = symbolizer_->get_stack_trace_symbols(
             kernel_stack, kernel_stack_size, 0);  // kernel symbols use pid 0
-        
-        // Add annotation only to the deepest (last) symbol to avoid duplicates
-        if (!kernel_stack_symbols.empty()) {
-            const std::string annotation = is_oncpu ? "_[c]" : "_[o]";
-            kernel_stack_symbols.back() += annotation;
-        }
     }
     
     // Add to flamegraph
@@ -116,9 +104,9 @@ std::vector<std::string> FlameGraphView::build_folded_stack(const std::vector<st
     }
     
     // Add delimiter between user and kernel if both exist
-    if (include_delimiter && !user_stack.empty() && !kernel_stack.empty()) {
-        folded_stack.push_back("--");
-    }
+//    if (include_delimiter && !user_stack.empty() && !kernel_stack.empty()) {
+//        folded_stack.push_back("--");
+//    }
     
     // Add kernel stack (bottom to top for flamegraph)  
     if (!kernel_stack.empty()) {

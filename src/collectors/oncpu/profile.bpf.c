@@ -92,8 +92,8 @@ int do_perf_event(struct bpf_perf_event_data *ctx)
 	struct bpf_pidns_info ns = {};
 
 	id = bpf_get_current_pid_tgid();
-	pid = id >> 32;
-	tid = id;
+	pid = id >> 32;  // TGID (process group ID)
+	tid = id;        // TID (thread ID)
 
 	if (!include_idle && tid == 0)
 		return 0;
@@ -104,7 +104,8 @@ int do_perf_event(struct bpf_perf_event_data *ctx)
 	if (filter_by_tid && !bpf_map_lookup_elem(&tids, &tid))
 		return 0;
 
-	key.pid = pid;
+	key.pid = tid;   // Changed from 'pid' to 'tid' to match offcputime.bpf.c behavior
+	key.tgid = pid;  // Set TGID field to match offcputime.bpf.c structure
 	bpf_get_current_comm(&key.comm, sizeof(key.comm));
 
 	if (user_stacks_only)
