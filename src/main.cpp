@@ -48,6 +48,15 @@ int main(int argc, char **argv)
     // Parse arguments using the new parser
     ProfilerArgs args = ArgsParser::parse(argc, argv);
 
+    // Handle server subcommand differently
+    if (args.analyzer_type == "server") {
+        // Execute the server binary
+        std::cout << "Starting server mode..." << std::endl;
+        execl("./server/profiler_server", "profiler_server", nullptr);
+        std::cerr << "Failed to start server. Make sure server/profiler_server exists and is executable." << std::endl;
+        return 1;
+    }
+
     if (args.verbose) {
         std::cout << "Analyzer: " << args.analyzer_type << std::endl;
         

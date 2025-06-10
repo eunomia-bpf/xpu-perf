@@ -13,6 +13,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Add local third-party dependencies as subdirectories
 add_subdirectory(src/third_party/Catch2)
 add_subdirectory(src/third_party/argparse)
+add_subdirectory(src/third_party/json)
+
+# Include cpp-httplib as header-only library
+set(HTTPLIB_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/cpp-httplib)
 
 # Find required packages
 find_program(CLANG_EXECUTABLE NAMES clang REQUIRED)
@@ -212,6 +216,35 @@ target_link_libraries(profiler PRIVATE
     argparse
 )
 
+# Create the server executable
+add_executable(profiler_server
+    src/server/main.cpp
+    src/args_parser.cpp
+)
+
+# Set C++ standard for the server target
+set_target_properties(profiler_server PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+
+# Add include directories for the server
+target_include_directories(profiler_server PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${HTTPLIB_INCLUDE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/json/include
+    ${OUTPUT_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/libbpf/include/uapi
+    ${CMAKE_CURRENT_SOURCE_DIR}/vmlinux/${ARCH}
+)
+
+# Link the server executable with necessary libraries
+target_link_libraries(profiler_server PRIVATE 
+    profiler_lib
+    argparse
+    nlohmann_json::nlohmann_json
+)
+
 # Enable testing
 enable_testing()
 
@@ -257,6 +290,6 @@ add_custom_target(clean-all
 )
 
 # Create install target
-install(TARGETS profiler
+install(TARGETS profiler profiler_server
     RUNTIME DESTINATION bin
 ) 
