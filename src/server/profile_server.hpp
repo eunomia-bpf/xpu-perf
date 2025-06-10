@@ -1,21 +1,26 @@
 #ifndef PROFILE_SERVER_HPP
 #define PROFILE_SERVER_HPP
 
-#include <string>
+#include "config.hpp"
+#include "api_handler.hpp"
+#include "frontend_handler.hpp"
+#include "../third_party/cpp-httplib/httplib.h"
 #include <memory>
 
-// Forward declaration
-class ProfileServerImpl;
+namespace server {
 
 class ProfileServer {
 private:
-    std::string host;
-    int port;
+    ServerConfig config;
+    std::unique_ptr<httplib::Server> server;
     bool running;
-    std::unique_ptr<ProfileServerImpl> impl;
+    
+    // Handlers
+    std::unique_ptr<StatusHandler> status_handler;
+    std::unique_ptr<FrontendHandler> frontend_handler;
     
 public:
-    ProfileServer(const std::string& host = "0.0.0.0", int port = 8080);
+    explicit ProfileServer(const ServerConfig& config = ServerConfig{});
     ~ProfileServer();
     
     // Start the server
@@ -28,12 +33,11 @@ public:
     bool is_running() const { return running; }
     
 private:
-    // Setup HTTP routes
+    void setup_handlers();
     void setup_routes();
-    
-    // Route handlers
-    void handle_root(const std::string& request_path, std::string& response);
-    void handle_status(std::string& response);
+    void setup_middleware();
 };
+
+} // namespace server
 
 #endif // PROFILE_SERVER_HPP 

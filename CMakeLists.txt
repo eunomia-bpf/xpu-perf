@@ -14,6 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(src/third_party/Catch2)
 add_subdirectory(src/third_party/argparse)
 add_subdirectory(src/third_party/json)
+add_subdirectory(src/third_party/spdlog)
 
 # Include cpp-httplib as header-only library
 set(HTTPLIB_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/cpp-httplib)
@@ -203,6 +204,8 @@ add_executable(profiler
     src/main.cpp
     src/args_parser.cpp
     src/server/profile_server.cpp
+    src/server/api_handler.cpp
+    src/server/frontend_handler.cpp
 )
 
 # Set C++ standard for the target
@@ -216,6 +219,7 @@ target_include_directories(profiler PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${HTTPLIB_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/json/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/spdlog/include
     ${OUTPUT_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/libbpf/include/uapi
     ${CMAKE_CURRENT_SOURCE_DIR}/vmlinux/${ARCH}
@@ -226,6 +230,7 @@ target_link_libraries(profiler PRIVATE
     profiler_lib
     argparse
     nlohmann_json::nlohmann_json
+    spdlog::spdlog
 )
 
 # Enable testing

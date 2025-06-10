@@ -1,24 +1,33 @@
 # BPF Profiler Server
 
-A simple HTTP server component for the BPF profiler that serves files and provides basic status information.
+A focused HTTP server for the BPF profiler that serves frontend files and provides API endpoints.
+
+## Architecture
+
+The server is organized into separate handlers:
+
+- **API Handler** (`api_handler.hpp/cpp`) - Handles API endpoints like status
+- **Frontend Handler** (`frontend_handler.hpp/cpp`) - Serves static frontend files from a specific directory
+- **Config** (`config.hpp`) - Server configuration
+- **Profile Server** (`profile_server.hpp/cpp`) - Main server orchestration
 
 ## Features
 
-- Simple file browser at root endpoint (/)
-- Basic status API endpoint (/api/status)
-- Static file serving with proper MIME types
+- Serves frontend files from a dedicated `frontend/` directory
+- API endpoints for server status and future profiling endpoints
 - CORS support for web integration
+- Structured logging with spdlog
+- SPA (Single Page Application) support with fallback routing
 
 ## Endpoints
 
-### File Browser
-- `GET /` - HTML file browser showing current directory files
+### Frontend
+- `GET /` - Serves `frontend/index.html`
+- `GET /static/*` - Serves static files from `frontend/` directory
+- `GET /*` - SPA fallback - serves `index.html` for unmatched routes (except `/api/*`)
 
 ### API
 - `GET /api/status` - JSON status information
-
-### File Serving
-- `GET /files/{filename}` - Serve specific files from current directory
 
 ## Usage
 
@@ -29,30 +38,50 @@ make -j$(nproc)
 
 # Start the server (listens on 0.0.0.0:8080)
 ./profiler server
+
+# Start with debug logging
+./profiler server -v
+```
+
+### Frontend Setup
+Create a `frontend/` directory in your project root and place your frontend files there:
+```
+frontend/
+├── index.html
+├── static/
+│   ├── css/
+│   ├── js/
+│   └── images/
+└── ...
 ```
 
 ### Examples
-
-#### Access File Browser
-```bash
-curl http://localhost:8080/
-```
 
 #### Check Status
 ```bash
 curl http://localhost:8080/api/status
 ```
 
-#### Download a File
+#### Access Frontend
 ```bash
-curl http://localhost:8080/files/example.html
+# Main page
+curl http://localhost:8080/
+
+# Static file
+curl http://localhost:8080/static/css/main.css
 ```
 
 ## Configuration
 
-The server runs on `0.0.0.0:8080` by default and serves files from the current working directory.
+Default configuration:
+- Host: `0.0.0.0`
+- Port: `8080`
+- Frontend directory: `frontend`
+- Log level: `info` (or `debug` with `-v`)
+- CORS: enabled
 
 ## Dependencies
 
 - [cpp-httplib](https://github.com/yhirose/cpp-httplib) - HTTP server library
-- [nlohmann/json](https://github.com/nlohmann/json) - JSON processing 
+- [nlohmann/json](https://github.com/nlohmann/json) - JSON processing
+- [spdlog](https://github.com/gabime/spdlog) - Logging library 

@@ -21,6 +21,7 @@
 #include "collectors/offcpu/offcputime.hpp"
 #include "flamegraph_generator.hpp"
 #include "server/profile_server.hpp"
+#include "third_party/spdlog/include/spdlog/spdlog.h"
 
 static volatile bool running = true;
 
@@ -44,6 +45,10 @@ std::string create_output_filename(const std::string& analyzer_type, const Profi
 
 int main(int argc, char **argv)
 {
+    // Initialize logging first
+    spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+    spdlog::set_level(spdlog::level::info);
+    
     // Record start time for runtime calculation
     auto start_time = std::chrono::steady_clock::now();
     
@@ -52,22 +57,28 @@ int main(int argc, char **argv)
 
     // Handle server subcommand differently
     if (args.analyzer_type == "server") {
-        std::cout << "Starting server mode..." << std::endl;
+        spdlog::info("Starting server mode...");
         
-        ProfileServer server("0.0.0.0", 8080);
+        server::ServerConfig config;
+        config.host = "0.0.0.0";
+        config.port = 8080;
+        config.log_level = args.verbose ? "debug" : "info";
+        config.frontend_directory = "frontend";
+        
+        server::ProfileServer server(config);
         
         // Set up signal handler for graceful shutdown
         signal(SIGINT, [](int) {
-            std::cout << "\nShutting down server..." << std::endl;
+            spdlog::info("Shutting down server...");
             exit(0);
         });
         signal(SIGTERM, [](int) {
-            std::cout << "\nShutting down server..." << std::endl;
+            spdlog::info("Shutting down server...");
             exit(0);
         });
         
         if (!server.start()) {
-            std::cerr << "Failed to start server" << std::endl;
+            spdlog::error("Failed to start server");
             return 1;
         }
         
@@ -75,15 +86,15 @@ int main(int argc, char **argv)
     }
 
     if (args.verbose) {
-        std::cout << "Analyzer: " << args.analyzer_type << std::endl;
+        spdlog::info("Analyzer: {}", args.analyzer_type);
         
         if (!args.pids.empty()) {
-            std::cout << "PIDs: ";
+            std::string pid_list;
             for (size_t i = 0; i < args.pids.size(); ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << args.pids[i];
+                if (i > 0) pid_list += ", ";
+                pid_list += std::to_string(args.pids[i]);
             }
-            std::cout << std::endl;
+            spdlog::info("PIDs: {}", pid_list);
         }
     }
 
@@ -106,21 +117,19 @@ int main(int argc, char **argv)
     }
 
     if (!analyzer) {
-        std::cerr << "Failed to create analyzer" << std::endl;
+        spdlog::error("Failed to create analyzer");
         return 1;
     }
 
     // Start the analyzer
     if (!analyzer->start()) {
-        std::cerr << "Failed to start " << analyzer->get_name() << " analyzer" << std::endl;
+        spdlog::error("Failed to start {} analyzer", analyzer->get_name());
         return 1;
     }
 
-    std::cout << "Started " << analyzer->get_name();
-    if (args.duration < 99999999) {
-        std::cout << " for " << args.duration << "s";
-    }
-    std::cout << " (Press Ctrl+C to stop)" << std::endl;
+    spdlog::info("Started {}{} (Press Ctrl+C to stop)", 
+                analyzer->get_name(),
+                args.duration < 99999999 ? " for " + std::to_string(args.duration) + "s" : "");
     
     // Sleep for the specified duration or until interrupted
     int remaining = args.duration;
@@ -129,7 +138,7 @@ int main(int argc, char **argv)
         remaining--;
     }
 
-    std::cout << "\nStopping analyzer..." << std::endl;
+    spdlog::info("Stopping analyzer...");
 
     // Calculate actual runtime
     auto end_time = std::chrono::steady_clock::now();
@@ -144,25 +153,25 @@ int main(int argc, char **argv)
     if (analyzer->get_name() == "wallclock_analyzer") {
         WallClockAnalyzer* wallclock_analyzer = dynamic_cast<WallClockAnalyzer*>(analyzer.get());
         if (!wallclock_analyzer) {
-            std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
+            spdlog::error("Failed to get flamegraph from {}", analyzer->get_name());
             return 1;
         }
         flamegraph = fg_gen.get_flamegraph_for_wallclock(*wallclock_analyzer);
         if (!flamegraph) {
-            std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
+            spdlog::error("Failed to get flamegraph from {}", analyzer->get_name());
             return 1;
         }
         fg_gen.generate_flamegraph_files_for_wallclock(*wallclock_analyzer);
-        std::cout << "Flamegraphs generated in " << output_dir << std::endl;
+        spdlog::info("Flamegraphs generated in {}", output_dir);
     } else if (analyzer->get_name() == "profile_analyzer" || analyzer->get_name() == "offcputime_analyzer") {
         ProfileAnalyzer* profile_analyzer = dynamic_cast<ProfileAnalyzer*>(analyzer.get());
         if (!profile_analyzer) {
-            std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
+            spdlog::error("Failed to get flamegraph from {}", analyzer->get_name());
             return 1;
         }
         flamegraph = profile_analyzer->get_flamegraph();
         if (!flamegraph) {
-            std::cerr << "Failed to get flamegraph from " << analyzer->get_name() << std::endl;
+            spdlog::error("Failed to get flamegraph from {}", analyzer->get_name());
             return 1;
         }
         
@@ -175,8 +184,8 @@ int main(int argc, char **argv)
     }
     
     // Add runtime information to summary
-    std::cout << "\nRuntime Summary:" << std::endl;
-    std::cout << "Actual program runtime: " << std::fixed << std::setprecision(3) << actual_runtime_seconds << "s" << std::endl;
+    spdlog::info("Runtime Summary:");
+    spdlog::info("Actual program runtime: {:.3f}s", actual_runtime_seconds);
 
     
     return 0;
