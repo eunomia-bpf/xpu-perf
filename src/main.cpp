@@ -44,7 +44,6 @@ void generate_flamegraph_for_analyzer(const std::string& analyzer_name,
                                     const ProfilerArgs& args,
                                     double actual_runtime_seconds) {
     if (!flamegraph || !flamegraph->success || flamegraph->entries.empty()) {
-        std::cout << "No data available for flamegraph generation (analyzer: " << analyzer_name << ")" << std::endl;
         return;
     }
     
@@ -82,7 +81,6 @@ void generate_flamegraph_for_analyzer(const std::string& analyzer_name,
     }
     
     if (entries.empty()) {
-        std::cout << "No flamegraph entries to process" << std::endl;
         return;
     }
     
@@ -99,26 +97,10 @@ void generate_flamegraph_for_analyzer(const std::string& analyzer_name,
         std::string svg_file = fg_gen.generate_svg_from_folded(folded_file, title);
         fg_gen.generate_analysis_file(analyzer_name + "_profile", entries, "Single-Thread");
         
-        std::cout << "\n" << std::string(60, '=') << std::endl;
-        std::cout << "FLAMEGRAPH FILES GENERATED" << std::endl;
-        std::cout << std::string(60, '=') << std::endl;
         std::cout << "📊 Folded data: " << folded_file << std::endl;
         if (!svg_file.empty()) {
             std::cout << "🔥 Flamegraph:  " << svg_file << std::endl;
-            std::cout << "   Open " << svg_file << " in a web browser to view the interactive flamegraph" << std::endl;
         }
-        
-        if (analyzer_name == "profile") {
-            std::cout << "\n📝 Interpretation guide:" << std::endl;
-            std::cout << "   • Red frames show CPU-intensive code paths" << std::endl;
-            std::cout << "   • Wider sections represent more time spent in those functions" << std::endl;
-        } else if (analyzer_name == "offcputime") {
-            std::cout << "\n📝 Interpretation guide:" << std::endl;
-            std::cout << "   • Blue frames show blocking/waiting operations" << std::endl;
-            std::cout << "   • Wider sections represent longer blocking times" << std::endl;
-        }
-    } else {
-        std::cout << "Failed to generate flamegraph files" << std::endl;
     }
 }
 
@@ -131,23 +113,13 @@ int main(int argc, char **argv)
     ProfilerArgs args = ArgsParser::parse(argc, argv);
 
     if (args.verbose) {
-        std::cout << "Selected analyzer: " << args.analyzer_type << std::endl;
-        std::cout << "Duration: " << (args.duration < 99999999 ? std::to_string(args.duration) + " seconds" : "until interrupted") << std::endl;
+        std::cout << "Analyzer: " << args.analyzer_type << std::endl;
         
         if (!args.pids.empty()) {
-            std::cout << "Target PIDs: ";
+            std::cout << "PIDs: ";
             for (size_t i = 0; i < args.pids.size(); ++i) {
                 if (i > 0) std::cout << ", ";
                 std::cout << args.pids[i];
-            }
-            std::cout << std::endl;
-        }
-        
-        if (!args.tids.empty()) {
-            std::cout << "Target TIDs: ";
-            for (size_t i = 0; i < args.tids.size(); ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << args.tids[i];
             }
             std::cout << std::endl;
         }
@@ -182,16 +154,12 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    std::cout << "Started " << analyzer->get_name() << " analyzer";
+    std::cout << "Started " << analyzer->get_name();
     if (args.duration < 99999999) {
-        std::cout << " for " << args.duration << " seconds";
+        std::cout << " for " << args.duration << "s";
     }
     std::cout << " (Press Ctrl+C to stop)" << std::endl;
     
-    if (args.verbose) {
-        std::cout << "Collecting data..." << std::endl;
-    }
-
     // Sleep for the specified duration or until interrupted
     int remaining = args.duration;
     while (running && remaining > 0) {
@@ -218,29 +186,18 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // Print summary with runtime information
-    std::cout << "\nFlameGraph data:" << std::endl;
-    std::cout << flamegraph->to_summary() << std::endl;
-    
     // Add runtime information to summary
     std::cout << "\nRuntime Summary:" << std::endl;
     std::cout << "Actual program runtime: " << std::fixed << std::setprecision(3) << actual_runtime_seconds << "s" << std::endl;
-    std::cout << "Requested duration: " << args.duration << "s" << std::endl;
-    std::cout << "Data collection efficiency: " << std::fixed << std::setprecision(1) 
-              << (actual_runtime_seconds / args.duration * 100.0) << "%" << std::endl;
     
     // Check if we have any data before showing detailed output
     bool has_data = !flamegraph->entries.empty();
     
     if (!has_data) {
-        std::cout << "\nNo samples collected. This could be due to:" << std::endl;
-        std::cout << "- Process not active during profiling period" << std::endl;
-        std::cout << "- Insufficient permissions (try running with sudo)" << std::endl;
-        std::cout << "- Process ID not found or invalid" << std::endl;
+        std::cout << "\nNo samples collected." << std::endl;
         if (!args.pids.empty()) {
-            std::cout << "- Verify PID " << args.pids[0] << " is still running" << std::endl;
+            std::cout << "Verify PID " << args.pids[0] << " is still running" << std::endl;
         }
-        std::cout << "- Sampling frequency too low (" << args.frequency << " Hz)" << std::endl;
     } else {
         // Generate flamegraph files for single analyzers
         if (analyzer->get_name() == "profile_analyzer") {

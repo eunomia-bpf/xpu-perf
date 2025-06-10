@@ -81,10 +81,11 @@ private:
     bool running;
     int nr_cpus;
     ProfileConfig config;
+    std::string libbpf_output_buffer_;  // Buffer to capture libbpf debug output
     
 public:
     ProfileCollector();
-    ~ProfileCollector() = default;
+    ~ProfileCollector();  // Custom destructor to clean up registry
     
     std::string get_name() const override;
     bool start() override;
@@ -93,6 +94,12 @@ public:
     // Config management
     ProfileConfig& get_config() { return config; }
     const ProfileConfig& get_config() const { return config; }
+    
+    // Get captured libbpf output
+    const std::string& get_libbpf_output() const { return libbpf_output_buffer_; }
+    
+    // Internal method to append libbpf output (used by print callback)
+    void append_libbpf_output(const std::string& output) { libbpf_output_buffer_ += output; }
     
 private:
     int open_and_attach_perf_event(struct bpf_program *prog);

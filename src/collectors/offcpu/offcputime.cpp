@@ -27,10 +27,26 @@ extern "C" {
 #include "offcputime.hpp"
 #include "collectors/utils.hpp"
 #include <sstream>
+#include <unordered_map>
+#include <thread>
+
+// Registry to map thread IDs to collector instances for libbpf output capture
+static std::unordered_map<std::thread::id, OffCPUTimeCollector*> collector_registry;
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
-	return vfprintf(stderr, format, args);
+	// Find the collector for the current thread
+	auto thread_id = std::this_thread::get_id();
+	auto it = collector_registry.find(thread_id);
+	if (it != collector_registry.end() && it->second) {
+		// Capture all libbpf output into the collector's buffer
+		char buffer[4096];
+		int len = vsnprintf(buffer, sizeof(buffer), format, args);
+		if (len > 0) {
+			it->second->append_libbpf_output(std::string(buffer, std::min(len, (int)sizeof(buffer)-1)));
+		}
+	}
+	return 0; // Don't print to stderr
 }
 
 // Custom deleter implementations
@@ -59,6 +75,12 @@ static bool probe_tp_btf(const char *name)
 // OffCPUTimeCollector implementation
 OffCPUTimeCollector::OffCPUTimeCollector() : obj(nullptr), running(false) {}
 
+OffCPUTimeCollector::~OffCPUTimeCollector() {
+    // Clean up registry entry if it exists
+    auto thread_id = std::this_thread::get_id();
+    collector_registry.erase(thread_id);
+}
+
 std::string OffCPUTimeCollector::get_name() const {
     return "offcputime";
 }
@@ -67,6 +89,10 @@ bool OffCPUTimeCollector::start() {
     if (running) {
         return true;
     }
+    
+    // Set current collector for libbpf output capture
+    collector_registry[std::this_thread::get_id()] = this;
+    libbpf_output_buffer_.clear();  // Clear any previous output
     
     int err, i;
     __u8 val = 0;
@@ -135,9 +161,12 @@ bool OffCPUTimeCollector::start() {
     }
 
     running = true;
+    // Clear the current collector pointer since we're done with libbpf initialization
+    collector_registry.erase(std::this_thread::get_id());
     return true;
 
 cleanup:
+    collector_registry.erase(std::this_thread::get_id());  // Clear pointer on failure
     obj.reset();
     return false;
 }

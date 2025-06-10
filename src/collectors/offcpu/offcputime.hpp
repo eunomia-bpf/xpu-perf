@@ -73,10 +73,11 @@ private:
     std::unique_ptr<struct offcputime_bpf, OffCPUBPFDeleter> obj;
     bool running;
     OffCPUTimeConfig config;
+    std::string libbpf_output_buffer_;  // Buffer to capture libbpf debug output
     
 public:
     OffCPUTimeCollector();
-    ~OffCPUTimeCollector() = default;
+    ~OffCPUTimeCollector();  // Custom destructor to clean up registry
     
     std::string get_name() const override;
     bool start() override;
@@ -85,6 +86,12 @@ public:
     // Config management
     OffCPUTimeConfig& get_config() { return config; }
     const OffCPUTimeConfig& get_config() const { return config; }
+    
+    // Get captured libbpf output
+    const std::string& get_libbpf_output() const { return libbpf_output_buffer_; }
+    
+    // Internal method to append libbpf output (used by print callback)
+    void append_libbpf_output(const std::string& output) { libbpf_output_buffer_ += output; }
     
 private:
     bool probe_tp_btf(const char *name);

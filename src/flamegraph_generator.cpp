@@ -53,8 +53,6 @@ std::string FlamegraphGenerator::generate_folded_file(const std::vector<Flamegra
     // avg_oncpu_sample_us = (1.0 / freq) * 1,000,000 microseconds per sample
     double normalization_factor = (1.0 / sampling_freq_) * 1000000.0;
     
-    std::cerr << "[DEBUG] Folded file normalization factor: " << normalization_factor << " us/sample" << std::endl;
-    
     for (const auto& entry : entries) {
         std::string stack_trace = entry.stack_trace;
         uint64_t value = entry.value;
@@ -80,7 +78,6 @@ std::string FlamegraphGenerator::generate_folded_file(const std::vector<Flamegra
         }
         
         file.close();
-        std::cout << "Folded data written to: " << folded_file << std::endl;
         return folded_file;
         
     } catch (const std::exception& e) {
@@ -97,7 +94,6 @@ bool FlamegraphGenerator::setup_flamegraph_tools() {
         return true;
     }
     
-    std::cout << "FlameGraph tools not found, downloading..." << std::endl;
     return download_flamegraph_tools();
 }
 
@@ -113,7 +109,6 @@ bool FlamegraphGenerator::download_flamegraph_tools() {
     if (result == 0) {
         // Make flamegraph.pl executable
         chmod("FlameGraph/flamegraph.pl", 0755);
-        std::cout << "FlameGraph tools downloaded successfully" << std::endl;
         return true;
     } else {
         std::cerr << "Failed to download FlameGraph tools" << std::endl;
@@ -144,8 +139,6 @@ std::string FlamegraphGenerator::generate_svg_from_folded(const std::string& fol
     cmd << " --width 1200";  // Set a reasonable width
     cmd << " " << folded_file << " > " << svg_file << " 2>&1";
     
-    std::cout << "Running flamegraph command: " << cmd.str() << std::endl;
-    
     int result = system(cmd.str().c_str());
     
     if (result == 0 && std::filesystem::exists(svg_file)) {
@@ -163,7 +156,6 @@ std::string FlamegraphGenerator::generate_svg_from_folded(const std::string& fol
             check_file.close();
             
             if (has_content) {
-                std::cout << "SVG flamegraph generated: " << svg_file << std::endl;
                 return svg_file;
             } else {
                 std::cerr << "SVG file was created but appears empty or invalid" << std::endl;
@@ -211,10 +203,6 @@ void FlamegraphGenerator::generate_analysis_file(const std::string& filename,
         }
     }
     
-    std::cerr << "[DEBUG] generate_analysis_file (" << filename << "): entries=" << entries.size() 
-              << " oncpu_count=" << oncpu_count << " offcpu_count=" << offcpu_count 
-              << " oncpu_us=" << oncpu_us << " offcpu_us=" << offcpu_us << std::endl;
-    
     // Convert microseconds to seconds for both on-CPU and off-CPU
     double oncpu_time_sec = static_cast<double>(oncpu_us) / 1000000.0;
     double offcpu_time_sec = static_cast<double>(offcpu_us) / 1000000.0;
@@ -223,10 +211,6 @@ void FlamegraphGenerator::generate_analysis_file(const std::string& filename,
     // Use actual profiling duration for wall clock coverage calculation
     double actual_duration_sec = actual_wall_clock_time_;
     double wall_clock_coverage_pct = (total_measured_time_sec / actual_duration_sec) * 100.0;
-    
-    std::cerr << "[DEBUG] Time calculations: oncpu_time=" << oncpu_time_sec << "s offcpu_time=" << offcpu_time_sec 
-              << "s total_measured=" << total_measured_time_sec << "s actual_duration=" << actual_duration_sec 
-              << "s coverage=" << wall_clock_coverage_pct << "%" << std::endl;
     
     try {
         std::ofstream file(analysis_file);
@@ -271,7 +255,6 @@ void FlamegraphGenerator::generate_analysis_file(const std::string& filename,
         file << "• Coverage values should be close to 100% for CPU-bound processes\n";
         
         file.close();
-        std::cout << "Analysis saved to: " << analysis_file << std::endl;
         
     } catch (const std::exception& e) {
         std::cerr << "Error writing analysis file: " << e.what() << std::endl;
@@ -307,20 +290,10 @@ void FlamegraphGenerator::generate_single_flamegraph(const std::map<pid_t, std::
         std::string svg_file = generate_svg_from_folded(folded_file, title);
         generate_analysis_file(prefix, all_entries, "Process-Level");
         
-        std::cout << "\n" << std::string(60, '=') << std::endl;
-        std::cout << "PROCESS PROFILING COMPLETE" << std::endl;
-        std::cout << std::string(60, '=') << std::endl;
         std::cout << "📊 Folded data: " << folded_file << std::endl;
         if (!svg_file.empty()) {
             std::cout << "🔥 Flamegraph:  " << svg_file << std::endl;
-            std::cout << "   Open " << svg_file << " in a web browser to view the interactive flamegraph" << std::endl;
         }
-        
-        std::cout << "\n📝 Interpretation guide:" << std::endl;
-        std::cout << "   • Red frames show CPU-intensive code paths (on-CPU) with actual function names" << std::endl;
-        std::cout << "   • Blue frames show blocking/waiting operations (off-CPU) with actual function names" << std::endl;
-        std::cout << "   • Wider sections represent more time spent in those functions" << std::endl;
-        std::cout << "   • Values are normalized to make on-CPU and off-CPU time comparable" << std::endl;
     }
 }
 
@@ -334,7 +307,7 @@ void FlamegraphGenerator::generate_multithread_flamegraphs(const std::map<pid_t,
     std::cout << "\n" << std::string(60, '=') << std::endl;
     std::cout << "MULTI-THREAD PROFILING COMPLETE" << std::endl;
     std::cout << std::string(60, '=') << std::endl;
-    std::cout << "Generating flamegraphs for " << per_thread_data.size() << " threads..." << std::endl;
+    std::cout << "Generating flamegraphs for " << per_thread_data.size() << " threads" << std::endl;
     
     // Generate flamegraph for each thread
     for (const auto& [tid, flamegraph] : per_thread_data) {
@@ -432,9 +405,6 @@ std::vector<FlamegraphEntry> FlamegraphGenerator::convert_flamegraph_to_entries(
         
         entries.push_back(fg_entry);
     }
-    
-    std::cerr << "[DEBUG] convert_flamegraph_to_entries: input=" << flamegraph.entries.size() 
-              << " output=" << entries.size() << " oncpu=" << oncpu_count << " offcpu=" << offcpu_count << std::endl;
     
     return entries;
 }

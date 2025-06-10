@@ -30,6 +30,8 @@ extern "C" {
 #include "profile.hpp"
 #include "collectors/utils.hpp"
 #include <algorithm>
+#include <unordered_map>
+#include <thread>
 
 #define SYM_INFO_LEN			2048
 
@@ -69,14 +71,34 @@ void BPFLinkDeleter::operator()(struct bpf_link* link) const {
     }
 }
 
+// Registry to map thread IDs to collector instances for libbpf output capture
+static std::unordered_map<std::thread::id, ProfileCollector*> profile_collector_registry;
+
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
-	return vfprintf(stderr, format, args);
+    // Find the collector for the current thread
+    auto thread_id = std::this_thread::get_id();
+    auto it = profile_collector_registry.find(thread_id);
+    if (it != profile_collector_registry.end() && it->second) {
+        // Capture all libbpf output into the collector's buffer
+        char buffer[4096];
+        int len = vsnprintf(buffer, sizeof(buffer), format, args);
+        if (len > 0) {
+            it->second->append_libbpf_output(std::string(buffer, std::min(len, (int)sizeof(buffer)-1)));
+        }
+    }
+    return 0; // Don't print to stderr
 }
 
 // ProfileCollector implementation
 ProfileCollector::ProfileCollector() : obj(nullptr), running(false) {
     nr_cpus = 0;
+}
+
+ProfileCollector::~ProfileCollector() {
+    // Clean up registry entry if it exists
+    auto thread_id = std::this_thread::get_id();
+    profile_collector_registry.erase(thread_id);
 }
 
 std::string ProfileCollector::get_name() const {
@@ -87,6 +109,11 @@ bool ProfileCollector::start() {
     if (running) {
         return true;
     }
+    
+    // Set current collector for libbpf output capture
+    auto thread_id = std::this_thread::get_id();
+    profile_collector_registry[thread_id] = this;
+    libbpf_output_buffer_.clear();  // Clear any previous output
     
     int err, i;
     __u8 val = 0;
@@ -154,9 +181,12 @@ bool ProfileCollector::start() {
         goto cleanup;
 
     running = true;
+    // Clear the current collector pointer since we're done with libbpf initialization
+    profile_collector_registry.erase(thread_id);
     return true;
 
 cleanup:
+    profile_collector_registry.erase(thread_id);  // Clear pointer on failure
     obj.reset();
     return false;
 }

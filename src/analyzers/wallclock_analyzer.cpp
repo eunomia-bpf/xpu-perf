@@ -123,7 +123,7 @@ bool WallClockAnalyzer::discover_threads() {
     is_multithreaded_ = detected_threads_.size() > 1;
     
     if (is_multithreaded_) {
-        std::cout << "Multi-threaded application detected (" << detected_threads_.size() << " threads)" << std::endl;
+        std::cout << "Detected " << detected_threads_.size() << " threads" << std::endl;
     }
     
     return is_multithreaded_;
@@ -240,8 +240,6 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
     std::map<pid_t, std::unique_ptr<FlameGraphView>> thread_data;
     
     if (!profile_collector_ || !offcpu_collector_) {
-        std::cerr << "[DEBUG] Missing collectors: profile=" << (profile_collector_ ? "OK" : "NULL") 
-                  << " offcpu=" << (offcpu_collector_ ? "OK" : "NULL") << std::endl;
         return thread_data;
     }
     
@@ -250,12 +248,10 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
     auto offcpu_data = offcpu_collector_->get_data();
     
     if (!profile_data || !profile_data->success) {
-        std::cerr << "[DEBUG] Profile collector failed to provide data" << std::endl;
         return thread_data;
     }
     
     if (!offcpu_data || !offcpu_data->success) {
-        std::cerr << "[DEBUG] OffCPU collector failed to provide data" << std::endl;
         return thread_data;
     }
     
@@ -263,13 +259,9 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
     auto* offcpu_sampling = dynamic_cast<SamplingData*>(offcpu_data.get());
     
     if (!profile_sampling || !offcpu_sampling) {
-        std::cerr << "[DEBUG] Invalid sampling data format: profile=" << (profile_sampling ? "OK" : "NULL") 
-                  << " offcpu=" << (offcpu_sampling ? "OK" : "NULL") << std::endl;
+        std::cerr << "Invalid sampling data format" << std::endl;
         return thread_data;
     }
-    
-    std::cerr << "[DEBUG] Raw data counts: profile_entries=" << profile_sampling->entries.size() 
-              << " offcpu_entries=" << offcpu_sampling->entries.size() << std::endl;
     
     // Collect all unique thread IDs from both datasets
     std::set<__u32> all_tids;
@@ -279,8 +271,6 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
     for (const auto& entry : offcpu_sampling->entries) {
         all_tids.insert(entry.key.pid);
     }
-    
-    std::cerr << "[DEBUG] Found " << all_tids.size() << " unique thread IDs" << std::endl;
     
     // Normalization factor for on-CPU data (convert samples to microseconds)
     double sample_to_us_factor = (1.0 / config_->frequency) * 1000000.0;
@@ -359,9 +349,6 @@ std::map<pid_t, std::unique_ptr<FlameGraphView>> WallClockAnalyzer::combine_and_
         }
         
         flamegraph->finalize();
-        std::cerr << "[DEBUG] Thread " << tid << ": oncpu_entries=" << oncpu_count 
-                  << " offcpu_entries=" << offcpu_count 
-                  << " final_flamegraph_entries=" << flamegraph->entries.size() << std::endl;
         
         // Only add threads that have some data
         if (oncpu_count > 0 || offcpu_count > 0) {
