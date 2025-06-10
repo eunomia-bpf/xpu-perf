@@ -4,11 +4,15 @@
 #include <string>
 #include <memory>
 
+// Forward declaration
+class ProfileServerImpl;
+
 class ProfileServer {
 private:
     std::string host;
     int port;
     bool running;
+    std::unique_ptr<ProfileServerImpl> impl;
     
 public:
     ProfileServer(const std::string& host = "0.0.0.0", int port = 8080);

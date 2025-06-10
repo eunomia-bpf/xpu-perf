@@ -25,12 +25,6 @@ public:
     bool start() {
         if (running) return false;
         
-        std::cout << "Starting BPF Profiler Server on " << host << ":" << port << std::endl;
-        std::cout << "Available endpoints:" << std::endl;
-        std::cout << "  GET  /           - List files in current directory" << std::endl;
-        std::cout << "  GET  /api/status - Server status" << std::endl;
-        std::cout << std::endl;
-        
         running = true;
         return server.listen(host.c_str(), port);
     }
@@ -171,22 +165,41 @@ std::time_t ProfileServerImpl::start_time = std::time(nullptr);
 
 // ProfileServer public interface implementation
 ProfileServer::ProfileServer(const std::string& host, int port) 
-    : host(host), port(port), running(false) {}
+    : host(host), port(port), running(false), impl(nullptr) {}
 
 ProfileServer::~ProfileServer() {
     stop();
 }
 
 bool ProfileServer::start() {
-    auto impl = std::make_unique<ProfileServerImpl>(host, port);
+    if (running || impl) {
+        return false;  // Already running
+    }
+    
+    impl = std::make_unique<ProfileServerImpl>(host, port);
+    
+    std::cout << "Starting BPF Profiler Server on " << host << ":" << port << std::endl;
+    std::cout << "Available endpoints:" << std::endl;
+    std::cout << "  GET  /           - List files in current directory" << std::endl;
+    std::cout << "  GET  /api/status - Server status" << std::endl;
+    std::cout << std::endl;
+    
+    running = true;
+    
+    // server.listen() is blocking, so this will block until server stops
     bool result = impl->start();
-    running = result;
+    
+    // When we get here, server has stopped
+    running = false;
+    impl.reset();
+    
     return result;
 }
 
 void ProfileServer::stop() {
-    if (running) {
+    if (running && impl) {
         running = false;
-        // Server will be stopped when impl goes out of scope
+        impl->stop();
+        impl.reset();
     }
 } 
