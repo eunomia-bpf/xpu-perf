@@ -75,10 +75,6 @@ inline std::unique_ptr<FlameGraphView> ProfileAnalyzer::get_flamegraph() {
     }
     
     auto flamegraph = FlameGraphView::sampling_data_to_flamegraph(*sampling_data, get_name(), true);
-    // normalize the flamegraph counters from frequency to us
-    for (auto& node : flamegraph->entries) {
-        node.sample_count *= 1000000.0 / config_->frequency;
-    }
     return flamegraph;
 }
 

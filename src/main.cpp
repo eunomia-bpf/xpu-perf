@@ -170,6 +170,13 @@ int main(int argc, char **argv)
             return 1;
         }
         
+        if (analyzer->get_name() == "profile_analyzer") {
+        // normalize the flamegraph counters from frequency to us
+            for (auto& node : flamegraph->entries) {
+                node.sample_count *= 1000000.0 / args.frequency;
+            }
+        }
+
         // Create a map structure for the generate_single_flamegraph method
         std::map<pid_t, std::unique_ptr<FlameGraphView>> per_thread_data;
         pid_t tid = args.pids.empty() ? 0 : args.pids[0];
