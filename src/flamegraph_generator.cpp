@@ -244,7 +244,7 @@ void FlamegraphGenerator::generate_analysis_file(const std::string& filename,
         file << "On-CPU time: " << oncpu_time_sec << "s (" << oncpu_us << " μs)\n";
         file << "Off-CPU time: " << offcpu_time_sec << "s (" << offcpu_us << " μs)\n";
         file << "Total measured time: " << total_measured_time_sec << "s\n";
-        file << "Wall clock coverage: " << wall_clock_coverage_pct << "% of " << actual_duration_sec << "s profiling duration\n\n";
+        file << "Wall clock coverage: " << wall_clock_coverage_pct << "% of " << actual_duration_sec << "s actual process runtime\n\n";
         
         file << "Stack Trace Summary:\n";
         file << std::string(40, '-') << "\n";
@@ -267,7 +267,7 @@ void FlamegraphGenerator::generate_analysis_file(const std::string& filename,
         file << "• On-CPU time = converted from samples using frequency (" << sampling_freq_ << " Hz) to microseconds, then to seconds\n";
         file << "• Off-CPU time = blocking_time_microseconds / 1,000,000\n";
         file << "• Total measured time = on-CPU + off-CPU time\n";
-        file << "• Wall clock coverage shows what % of profiling period was active\n";
+        file << "• Wall clock coverage shows what % of actual process runtime was measured\n";
         file << "• Coverage values should be close to 100% for CPU-bound processes\n";
         
         file.close();
