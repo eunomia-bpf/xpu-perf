@@ -19,6 +19,7 @@
 #include "collectors/oncpu/profile.hpp"
 #include "collectors/offcpu/offcputime.hpp"
 #include "flamegraph_generator.hpp"
+#include "profile_server.hpp"
 
 static volatile bool running = true;
 
@@ -50,11 +51,26 @@ int main(int argc, char **argv)
 
     // Handle server subcommand differently
     if (args.analyzer_type == "server") {
-        // Execute the server binary
         std::cout << "Starting server mode..." << std::endl;
-        execl("./server/profiler_server", "profiler_server", nullptr);
-        std::cerr << "Failed to start server. Make sure server/profiler_server exists and is executable." << std::endl;
-        return 1;
+        
+        ProfileServer server("0.0.0.0", 8080);
+        
+        // Set up signal handler for graceful shutdown
+        signal(SIGINT, [](int) {
+            std::cout << "\nShutting down server..." << std::endl;
+            exit(0);
+        });
+        signal(SIGTERM, [](int) {
+            std::cout << "\nShutting down server..." << std::endl;
+            exit(0);
+        });
+        
+        if (!server.start()) {
+            std::cerr << "Failed to start server" << std::endl;
+            return 1;
+        }
+        
+        return 0;
     }
 
     if (args.verbose) {

@@ -1,29 +1,24 @@
 # BPF Profiler Server
 
-This server component provides an HTTP API interface for the BPF profiler, allowing remote control and access to profiling results.
+A simple HTTP server component for the BPF profiler that serves files and provides basic status information.
 
 ## Features
 
-- Start/stop profiling via HTTP API
-- Support for all analyzer types (profile, offcputime, wallclock)
-- Real-time status monitoring
-- Result file serving and listing
-- JSON API for easy integration
+- Simple file browser at root endpoint (/)
+- Basic status API endpoint (/api/status)
+- Static file serving with proper MIME types
+- CORS support for web integration
 
 ## Endpoints
 
-### Server Info
-- `GET /` - Server information and status
-- `GET /health` - Health check
+### File Browser
+- `GET /` - HTML file browser showing current directory files
 
-### Profiling Control
-- `POST /profile/start` - Start profiling session
-- `POST /profile/stop` - Stop current profiling session
-- `GET /profile/status` - Get current profiling status
+### API
+- `GET /api/status` - JSON status information
 
-### Results
-- `GET /results` - List all available result directories
-- `GET /results/{dir}/{file}` - Serve specific result file (HTML, SVG, JSON, etc.)
+### File Serving
+- `GET /files/{filename}` - Serve specific files from current directory
 
 ## Usage
 
@@ -36,46 +31,28 @@ make -j$(nproc)
 ./profiler server
 ```
 
-### API Examples
+### Examples
 
-#### Start Profiling
+#### Access File Browser
 ```bash
-curl -X POST http://localhost:8080/profile/start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "analyzer": "profile",
-    "duration": 30,
-    "frequency": 49,
-    "pids": [1234, 5678]
-  }'
+curl http://localhost:8080/
 ```
 
 #### Check Status
 ```bash
-curl http://localhost:8080/profile/status
+curl http://localhost:8080/api/status
 ```
 
-#### Stop Profiling
+#### Download a File
 ```bash
-curl -X POST http://localhost:8080/profile/stop
-```
-
-#### List Results
-```bash
-curl http://localhost:8080/results
-```
-
-#### Get Flamegraph
-```bash
-curl http://localhost:8080/results/profile_profile_1234567890/flamegraph.html
+curl http://localhost:8080/files/example.html
 ```
 
 ## Configuration
 
-The server runs on `0.0.0.0:8080` by default. All profiling output is saved to the current working directory.
+The server runs on `0.0.0.0:8080` by default and serves files from the current working directory.
 
 ## Dependencies
 
 - [cpp-httplib](https://github.com/yhirose/cpp-httplib) - HTTP server library
-- [nlohmann/json](https://github.com/nlohmann/json) - JSON processing
-- Same BPF profiler dependencies as the main application 
+- [nlohmann/json](https://github.com/nlohmann/json) - JSON processing 

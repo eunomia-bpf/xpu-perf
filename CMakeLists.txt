@@ -202,6 +202,7 @@ target_link_libraries(profiler_lib PUBLIC
 add_executable(profiler
     src/main.cpp
     src/args_parser.cpp
+    src/profile_server.cpp
 )
 
 # Set C++ standard for the target
@@ -210,26 +211,8 @@ set_target_properties(profiler PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 
-# Link the main executable with the library
-target_link_libraries(profiler PRIVATE 
-    profiler_lib
-    argparse
-)
-
-# Create the server executable
-add_executable(profiler_server
-    src/server/main.cpp
-    src/args_parser.cpp
-)
-
-# Set C++ standard for the server target
-set_target_properties(profiler_server PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-)
-
-# Add include directories for the server
-target_include_directories(profiler_server PRIVATE
+# Add include directories for the main executable
+target_include_directories(profiler PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${HTTPLIB_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/json/include
@@ -238,8 +221,8 @@ target_include_directories(profiler_server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/vmlinux/${ARCH}
 )
 
-# Link the server executable with necessary libraries
-target_link_libraries(profiler_server PRIVATE 
+# Link the main executable with the library
+target_link_libraries(profiler PRIVATE 
     profiler_lib
     argparse
     nlohmann_json::nlohmann_json
@@ -290,6 +273,6 @@ add_custom_target(clean-all
 )
 
 # Create install target
-install(TARGETS profiler profiler_server
+install(TARGETS profiler
     RUNTIME DESTINATION bin
 ) 
