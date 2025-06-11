@@ -49,7 +49,7 @@ interface AnalyzerActions {
   
   // Getters
   getAvailableAnalyzers: () => AnalyzerConfig[];
-  getAvailableViews: (analyzerId?: string) => ViewConfig[];
+  getAvailableViews: () => ViewConfig[];
   getInstancesByAnalyzer: (analyzerId: string) => AnalyzerInstance[];
   getCurrentInstance: () => AnalyzerInstance | null;
   getCurrentAnalyzer: () => AnalyzerConfig | null;
@@ -250,15 +250,7 @@ export const useAnalyzerStore = create<AnalyzerState & AnalyzerActions>()(
       // Getters
       getAvailableAnalyzers: () => Object.values(get().registry.analyzers),
 
-      getAvailableViews: (analyzerId?: string) => {
-        const views = Object.values(get().registry.views);
-        if (!analyzerId) return views;
-
-        const analyzer = get().registry.analyzers[analyzerId];
-        if (!analyzer) return views;
-
-        return views.filter(view => analyzer.supportedViews.includes(view.id));
-      },
+      getAvailableViews: () => Object.values(get().registry.views),
 
       getInstancesByAnalyzer: (analyzerId: string) =>
         Object.values(get().instances).filter(instance => instance.analyzerId === analyzerId),

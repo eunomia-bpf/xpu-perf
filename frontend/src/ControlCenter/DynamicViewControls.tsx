@@ -1,29 +1,40 @@
 import React from 'react';
 import { useAnalyzerStore } from '@/DataManager/DataStore/analyzerStore';
+import { useDataSourceStore } from '@/DataManager/DataStore/dataSourceStore';
 
 export const DynamicViewControls: React.FC = () => {
   const {
-    selectedAnalyzerId,
     selectedViewId,
     getAvailableViews,
     selectView
   } = useAnalyzerStore();
 
-  const availableViews = getAvailableViews(selectedAnalyzerId || undefined);
+  const { currentDataContext } = useDataSourceStore();
 
-  // Filter views based on current analyzer's supported views
-  const filteredViews = selectedAnalyzerId 
-    ? availableViews.filter(view => {
-        const analyzer = useAnalyzerStore.getState().registry.analyzers[selectedAnalyzerId];
-        return analyzer?.supportedViews.includes(view.id);
-      })
-    : availableViews;
+  const availableViews = getAvailableViews();
+
+  // Filter views based on current data format compatibility
+  const compatibleViews = availableViews.filter(view => {
+    const viewRequirements = view.dataRequirements;
+    const currentData = currentDataContext;
+
+    // Check format compatibility
+    if (viewRequirements.format === 'any') return true;
+    if (viewRequirements.format === currentData.format) return true;
+    
+    // Check if required fields are available
+    const hasRequiredFields = viewRequirements.requiredFields.every(field =>
+      currentData.fields.includes(field)
+    );
+    
+    return hasRequiredFields;
+  });
 
   return (
     <div className="bg-gray-700 rounded p-3 space-y-3">
       {/* View Type Selector */}
       <div className="space-y-2">
-        {filteredViews.map(view => (
+        {compatibleViews.map(view => (
           <label key={view.id} className="flex items-center space-x-2 cursor-pointer group">
             <input 
               type="radio" 
@@ -43,11 +54,16 @@ export const DynamicViewControls: React.FC = () => {
         ))}
       </div>
       
-      {filteredViews.length === 0 && (
+      {compatibleViews.length === 0 && (
         <div className="text-xs text-gray-400 italic">
-          No views available for selected analyzer
+          No compatible views for current data format ({currentDataContext.format})
         </div>
       )}
+      
+      <div className="text-xs text-gray-500 border-t border-gray-600 pt-2">
+        <div>Current data format: {currentDataContext.format}</div>
+        <div>Available fields: {currentDataContext.fields.join(', ') || 'none'}</div>
+      </div>
     </div>
   );
 }; 

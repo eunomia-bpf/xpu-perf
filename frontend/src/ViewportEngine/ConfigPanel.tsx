@@ -105,26 +105,6 @@ const ConfigField: React.FC<ConfigFieldProps> = ({
         <label className="text-xs text-gray-300">{label}:</label>
       )}
       {renderInput()}
-      
-      <style jsx>{`
-        .slider::-webkit-slider-thumb {
-          appearance: none;
-          width: 12px;
-          height: 12px;
-          border-radius: 50%;
-          background: #3b82f6;
-          cursor: pointer;
-        }
-        
-        .slider::-moz-range-thumb {
-          width: 12px;
-          height: 12px;
-          border-radius: 50%;
-          background: #3b82f6;
-          cursor: pointer;
-          border: none;
-        }
-      `}</style>
     </div>
   );
 };

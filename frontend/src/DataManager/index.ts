@@ -27,4 +27,7 @@ export { useConfigStore } from './DataStore/configStore';
 export { useInteractionStore } from './DataStore/interactionStore';
 
 // Export new dynamic analyzer store
-export { useAnalyzerStore } from './DataStore/analyzerStore'; 
+export { useAnalyzerStore } from './DataStore/analyzerStore';
+
+// Export new data source store
+export { useDataSourceStore } from './DataStore/dataSourceStore'; 

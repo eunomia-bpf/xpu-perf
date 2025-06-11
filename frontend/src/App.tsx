@@ -1,17 +1,25 @@
 import { useEffect } from 'react';
 import { AppShell, ViewProvider } from '@/LayoutManager';
 import { DynamicAnalyzer } from '@/AnalyzerEngine';
-import { ViewSelector } from '@/ControlCenter';
+import { DataSourceSelector, ViewSelector } from '@/ControlCenter';
 import { ViewportManager } from '@/ViewportEngine';
-import { useFlameGraphStore } from '@/DataManager';
+import { useFlameGraphStore, useDataSourceStore } from '@/DataManager';
 
 function App() {
-  const { loadSampleData, isLoading, error } = useFlameGraphStore();
+  const { loadSampleData, isLoading, error, data } = useFlameGraphStore();
+  const { setCurrentDataDirect } = useDataSourceStore();
 
-  // Load sample data on app startup
+  // Load sample data on app startup and set it as current data
   useEffect(() => {
     loadSampleData();
   }, [loadSampleData]);
+
+  // Set sample data as current data context when available
+  useEffect(() => {
+    if (Object.keys(data).length > 0) {
+      setCurrentDataDirect(data, 'sample', ['key', 'value']);
+    }
+  }, [data, setCurrentDataDirect]);
 
   return (
     <ViewProvider>
@@ -19,6 +27,7 @@ function App() {
         sidebar={
           <div className="space-y-0">
             <DynamicAnalyzer />
+            <DataSourceSelector />
             <ViewSelector />
           </div>
         }
@@ -46,7 +55,7 @@ function App() {
           </div>
         )}
 
-        {/* Main viewport with MVP design */}
+        {/* Main viewport with data-focused design */}
         <ViewportManager />
       </AppShell>
     </ViewProvider>

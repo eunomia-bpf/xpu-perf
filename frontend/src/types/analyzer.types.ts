@@ -11,8 +11,9 @@ export interface AnalyzerConfig {
   configSchema: ConfigField[];
   defaultConfig: Record<string, any>;
   
-  // Supported views
-  supportedViews: string[];
+  // Data output format - used by views to determine compatibility
+  outputFormat: string;
+  outputFields: string[];
   
   // Component paths for dynamic loading
   controlComponent?: string;
@@ -113,7 +114,8 @@ export const BUILT_IN_ANALYZERS: AnalyzerConfig[] = [
       frequency: 99,
       target: ''
     },
-    supportedViews: ['3d-flame', 'data-table', 'flame-chart']
+    outputFormat: 'flamegraph',
+    outputFields: ['stack', 'value', 'count']
   },
   {
     id: 'wallclock',
@@ -163,7 +165,8 @@ export const BUILT_IN_ANALYZERS: AnalyzerConfig[] = [
       includeOffCpu: true,
       target: ''
     },
-    supportedViews: ['3d-flame', 'data-table', 'timeline']
+    outputFormat: 'timeline',
+    outputFields: ['timestamp', 'stack', 'value', 'type']
   },
   {
     id: 'offcpu',
@@ -204,7 +207,8 @@ export const BUILT_IN_ANALYZERS: AnalyzerConfig[] = [
       minBlockTime: 1000,
       target: ''
     },
-    supportedViews: ['3d-flame', 'data-table']
+    outputFormat: 'flamegraph',
+    outputFields: ['stack', 'value', 'duration']
   }
 ];
 
@@ -217,33 +221,6 @@ export const BUILT_IN_VIEWS: ViewConfig[] = [
     description: 'Interactive 3D visualization of stack traces',
     icon: '🎯',
     configSchema: [
-      {
-        key: 'zSpacing',
-        label: 'Z-Spacing',
-        type: 'range',
-        description: 'Spacing between stack levels',
-        defaultValue: 25,
-        validation: { min: 10, max: 50 },
-        group: 'visualization'
-      },
-      {
-        key: 'minCount',
-        label: 'Min Count',
-        type: 'range',
-        description: 'Minimum sample count to display',
-        defaultValue: 10,
-        validation: { min: 1, max: 100 },
-        group: 'filtering'
-      },
-      {
-        key: 'maxDepth',
-        label: 'Max Depth',
-        type: 'range', 
-        description: 'Maximum stack depth to display',
-        defaultValue: 8,
-        validation: { min: 1, max: 20 },
-        group: 'filtering'
-      },
       {
         key: 'colorScheme',
         label: 'Color Scheme',
@@ -261,9 +238,6 @@ export const BUILT_IN_VIEWS: ViewConfig[] = [
       }
     ],
     defaultConfig: {
-      zSpacing: 25,
-      minCount: 10, 
-      maxDepth: 8,
       colorScheme: 'hot-cold'
     },
     component: 'FlameGraph3DView',
@@ -275,51 +249,45 @@ export const BUILT_IN_VIEWS: ViewConfig[] = [
   {
     id: 'data-table',
     name: 'data-table',
-    displayName: 'Data Table',
-    description: 'Tabular view of profiling data',
+    displayName: 'Data View',
+    description: 'Simple text view of profiling data',
     icon: '📊',
-    configSchema: [
-      {
-        key: 'maxRows',
-        label: 'Max Rows',
-        type: 'select',
-        description: 'Maximum rows to display',
-        defaultValue: 100,
-        validation: {
-          options: [
-            { value: 50, label: 'Top 50' },
-            { value: 100, label: 'Top 100' },
-            { value: 500, label: 'Top 500' },
-            { value: 1000, label: 'All' }
-          ]
-        },
-        group: 'display'
-      },
-      {
-        key: 'sortBy',
-        label: 'Sort By',
-        type: 'select',
-        description: 'Default sorting column',
-        defaultValue: 'totalTime',
-        validation: {
-          options: [
-            { value: 'totalTime', label: 'Total Time' },
-            { value: 'selfTime', label: 'Self Time' },
-            { value: 'callCount', label: 'Call Count' },
-            { value: 'name', label: 'Function Name' }
-          ]
-        },
-        group: 'display'
-      }
-    ],
-    defaultConfig: {
-      maxRows: 100,
-      sortBy: 'totalTime'
-    },
+    configSchema: [],
+    defaultConfig: {},
     component: 'DataTableView',
     dataRequirements: {
-      format: 'table',
-      requiredFields: ['name', 'value']
+      format: 'any',
+      requiredFields: []
     }
   }
-]; 
+];
+
+// Data Source Management Types
+export interface DataSource {
+  id: string;
+  name: string;
+  type: 'analyzer-instance' | 'file' | 'api';
+  format: string;
+  fields: string[];
+  data: any;
+  lastUpdated: Date;
+  metadata?: Record<string, any>;
+}
+
+export interface DataSelection {
+  id: string;
+  name: string;
+  sources: string[]; // Array of data source IDs
+  combinationMode: 'merge' | 'append' | 'override';
+  filters?: Record<string, any>;
+  resultFormat: string;
+  resultFields: string[];
+}
+
+export interface CurrentDataContext {
+  selection: DataSelection | null;
+  resolvedData: any;
+  format: string;
+  fields: string[];
+  sources: DataSource[];
+} 
