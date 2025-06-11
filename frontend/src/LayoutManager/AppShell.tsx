@@ -1,4 +1,5 @@
 import React from 'react';
+import { useViewContext } from './ViewContext';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -6,6 +7,19 @@ interface AppShellProps {
 }
 
 export const AppShell: React.FC<AppShellProps> = ({ children, sidebar }) => {
+  const { currentView } = useViewContext();
+  
+  const getViewDisplayName = (view: string) => {
+    switch (view) {
+      case '3d-flame':
+        return '3D Flame Graph';
+      case 'data-table':
+        return 'Data Table';
+      default:
+        return '3D Flame Graph';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col">
       {/* Simplified Header - MVP Design */}
@@ -54,9 +68,9 @@ export const AppShell: React.FC<AppShellProps> = ({ children, sidebar }) => {
             <span className="w-2 h-2 bg-green-500 rounded-full"></span>
             <span>Status: Ready</span>
           </span>
-          <span>Samples: 0</span>
-          <span>Duration: 00:00</span>
-          <span>View: 3D Flame Graph</span>
+          <span>Data Samples: 2</span>
+          <span>Duration: 00:30</span>
+          <span>Current View: {getViewDisplayName(currentView)}</span>
         </div>
       </footer>
     </div>

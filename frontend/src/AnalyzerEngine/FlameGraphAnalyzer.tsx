@@ -1,5 +1,5 @@
 import React from 'react';
-import { AnalyzerControls, ViewControls, DataControls } from '@/ControlCenter';
+import { AnalyzerControls, ViewControls } from '@/ControlCenter';
 
 export const FlameGraphAnalyzer: React.FC = () => {
   return (
@@ -14,12 +14,6 @@ export const FlameGraphAnalyzer: React.FC = () => {
       <div>
         <h3 className="text-lg font-semibold mb-4 text-white">View Type</h3>
         <ViewControls />
-      </div>
-
-      {/* Dynamic View Controls - MVP */}
-      <div>
-        <h3 className="text-lg font-semibold mb-4 text-white">3D Controls</h3>
-        <DataControls />
       </div>
     </div>
   );

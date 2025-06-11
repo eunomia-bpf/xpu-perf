@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { FlameGraph3DView } from '@/ViewportEngine/FlameGraph3DView';
 import { DataTableView } from '@/ViewportEngine/DataTableView';
-
-type ViewType = '3d-flame' | 'data-table';
+import { useViewContext } from './ViewContext';
 
 export const SingleViewLayout: React.FC = () => {
-  const [currentView, setCurrentView] = useState<ViewType>('3d-flame');
+  const { currentView, setCurrentView } = useViewContext();
 
   const renderCurrentView = () => {
     switch (currentView) {
@@ -20,13 +19,8 @@ export const SingleViewLayout: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Main Viewport - Single View Display */}
-      <div className="flex-1 overflow-hidden">
-        {renderCurrentView()}
-      </div>
-
-      {/* View-Specific Controls Panel */}
-      <div className="bg-gray-800 border-t border-gray-700 p-4">
+      {/* View Selector Header */}
+      <div className="bg-gray-800 border-b border-gray-700 p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <span className="text-sm text-gray-400">Current View:</span>
@@ -53,24 +47,12 @@ export const SingleViewLayout: React.FC = () => {
               </button>
             </div>
           </div>
-
-          {/* View-Specific Control Hints */}
-          <div className="text-sm text-gray-400">
-            {currentView === '3d-flame' && (
-              <span>Mouse: Rotate • Scroll: Zoom • Click: Select</span>
-            )}
-            {currentView === 'data-table' && (
-              <span>Click headers to sort • Use search to filter</span>
-            )}
-          </div>
         </div>
+      </div>
 
-        {/* Selection Info Panel */}
-        <div className="mt-3 p-3 bg-gray-700 rounded text-sm">
-          <span className="text-gray-300">
-            Selection Info: Click on a function block to see details here
-          </span>
-        </div>
+      {/* Main Viewport - Full Height */}
+      <div className="flex-1 overflow-hidden">
+        {renderCurrentView()}
       </div>
     </div>
   );
