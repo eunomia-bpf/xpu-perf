@@ -64,85 +64,85 @@ export const DataSourceSelector: React.FC = () => {
   };
 
   return (
-    <div className="bg-gray-700 rounded p-3 space-y-4">
+    <div className="profiler-panel p-4 space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-white">Data Sources</h3>
+        <h3 className="text-sm font-medium text-gray-800">Data Sources</h3>
         <button
           onClick={() => setIsCreatingSelection(true)}
           disabled={allDataSources.length === 0}
-          className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-500 text-white rounded transition-colors"
+          className="profiler-button text-xs px-2 py-1"
         >
           + Select Data
         </button>
       </div>
 
       {/* Current Data Context */}
-      <div className="bg-gray-800 rounded p-2 text-xs">
-        <div className="text-gray-300 mb-1">Current Data:</div>
+      <div className="bg-gray-50 rounded-lg p-3 text-sm border border-gray-200">
+        <div className="text-gray-700 font-medium mb-1">Current Data:</div>
         {currentDataContext.selection ? (
-          <div>
-            <div className="text-white font-medium">{currentDataContext.selection.name}</div>
-            <div className="text-gray-400">Format: {currentDataContext.format}</div>
-            <div className="text-gray-400">{currentDataContext.sources.length} sources</div>
+          <div className="space-y-1">
+            <div className="text-gray-800 font-medium">{currentDataContext.selection.name}</div>
+            <div className="text-gray-600">Format: {currentDataContext.format}</div>
+            <div className="text-gray-600">{currentDataContext.sources.length} sources</div>
           </div>
         ) : (
-          <div className="text-gray-400 italic">No data selected</div>
+          <div className="text-gray-500 italic">No data selected</div>
         )}
       </div>
 
       {/* Existing Data Selections */}
       <div>
-        <label className="block text-xs text-gray-300 mb-2">Available Data Selections</label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Available Data Selections</label>
         <div className="space-y-1">
           {availableSelections.map(selection => (
-            <div key={selection.id} className="flex items-center justify-between bg-gray-800 rounded px-2 py-1">
+            <div key={selection.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
               <button
                 onClick={() => setCurrentDataSelection(selection.id)}
-                className={`flex-1 text-left text-xs ${
+                className={`flex-1 text-left text-sm transition-colors ${
                   currentDataContext.selection?.id === selection.id 
-                    ? 'text-blue-400 font-medium' 
-                    : 'text-white hover:text-gray-300'
+                    ? 'text-blue-600 font-medium' 
+                    : 'text-gray-700 hover:text-gray-900'
                 }`}
               >
                 {selection.name} ({selection.sources.length} sources)
               </button>
               <button
                 onClick={() => removeDataSelection(selection.id)}
-                className="text-xs text-red-400 hover:text-red-300 ml-2"
+                className="text-sm text-red-600 hover:text-red-800 ml-2 font-medium"
               >
                 ×
               </button>
             </div>
           ))}
           {availableSelections.length === 0 && (
-            <div className="text-xs text-gray-500 italic">No data selections created</div>
+            <div className="text-sm text-gray-500 italic py-2">No data selections created</div>
           )}
         </div>
       </div>
 
       {/* Create New Selection Modal */}
       {isCreatingSelection && (
-        <div className="bg-gray-800 rounded p-3 border border-gray-600">
-          <h4 className="text-sm font-medium text-white mb-3">Create Data Selection</h4>
+        <div className="bg-white rounded-lg p-4 border border-gray-300 shadow-sm">
+          <h4 className="text-sm font-medium text-gray-800 mb-3">Create Data Selection</h4>
           
           <div className="space-y-3">
             <div>
-              <label className="block text-xs text-gray-300 mb-1">Selection Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Selection Name</label>
               <input
                 type="text"
                 value={newSelectionName}
                 onChange={(e) => setNewSelectionName(e.target.value)}
                 placeholder="e.g., Combined Flame Data"
-                className="w-full bg-gray-600 text-white rounded px-2 py-1 text-xs border border-gray-500 focus:border-blue-400 focus:outline-none"
+                className="profiler-input w-full"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-gray-300 mb-1">Combination Mode</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Combination Mode</label>
               <select
                 value={combinationMode}
                 onChange={(e) => setCombinationMode(e.target.value as any)}
-                className="w-full bg-gray-600 text-white rounded px-2 py-1 text-xs border border-gray-500 focus:border-blue-400 focus:outline-none"
+                className="profiler-select w-full"
               >
                 <option value="merge">Merge (combine objects)</option>
                 <option value="append">Append (join arrays)</option>
@@ -151,33 +151,33 @@ export const DataSourceSelector: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-300 mb-2">Select Data Sources</label>
-              <div className="space-y-1 max-h-32 overflow-y-auto">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Select Data Sources</label>
+              <div className="space-y-2 max-h-32 overflow-y-auto">
                 {allDataSources.map(source => (
-                  <label key={source.id} className="flex items-center space-x-2 cursor-pointer">
+                  <label key={source.id} className="flex items-start space-x-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={selectedSources.includes(source.id)}
                       onChange={() => toggleSourceSelection(source.id)}
-                      className="w-3 h-3 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500 focus:ring-1"
+                      className="mt-0.5 w-4 h-4 text-blue-600 bg-white border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
                     />
-                    <div className="flex-1 text-xs">
-                      <div className="text-white">{source.name}</div>
-                      <div className="text-gray-400">{source.format} • {source.fields.join(', ')}</div>
+                    <div className="flex-1 text-sm">
+                      <div className="text-gray-800 font-medium">{source.name}</div>
+                      <div className="text-gray-500">{source.format} • {source.fields.join(', ')}</div>
                     </div>
                   </label>
                 ))}
                 {allDataSources.length === 0 && (
-                  <div className="text-xs text-gray-500 italic">No data sources available</div>
+                  <div className="text-sm text-gray-500 italic">No data sources available</div>
                 )}
               </div>
             </div>
 
-            <div className="flex space-x-2">
+            <div className="flex space-x-2 pt-2">
               <button
                 onClick={handleCreateSelection}
                 disabled={!newSelectionName.trim() || selectedSources.length === 0}
-                className="text-xs px-3 py-1 bg-green-600 hover:bg-green-500 disabled:bg-gray-500 text-white rounded transition-colors"
+                className="profiler-button text-sm px-3 py-1.5 bg-green-600 hover:bg-green-700"
               >
                 Create
               </button>
@@ -187,7 +187,7 @@ export const DataSourceSelector: React.FC = () => {
                   setNewSelectionName('');
                   setSelectedSources([]);
                 }}
-                className="text-xs px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors"
+                className="text-sm px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md transition-colors"
               >
                 Cancel
               </button>

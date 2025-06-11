@@ -3,10 +3,13 @@ import { DynamicAnalyzerControls } from '@/ControlCenter/DynamicAnalyzerControls
 
 export const DynamicAnalyzer: React.FC = () => {
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-4">
       {/* Dynamic Analyzer Control */}
       <div>
-        <h3 className="text-sm font-medium mb-2 text-white">Analyzer</h3>
+        <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center space-x-2">
+          <span>🔬</span>
+          <span>Analyzer</span>
+        </h3>
         <DynamicAnalyzerControls />
       </div>
     </div>
