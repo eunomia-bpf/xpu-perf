@@ -1,11 +1,9 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: './',
   resolve: {
     alias: {
       '@': '/src',
@@ -17,21 +15,9 @@ export default defineConfig({
       '@/types': '/src/types'
     }
   },
-  server: {
-    port: 3000,
-    host: true
-  },
-  build: {
-    outDir: 'dist',
-    sourcemap: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'three': ['three', '@react-three/fiber', '@react-three/drei'],
-          'utils': ['zustand', 'uuid']
-        }
-      }
-    }
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['src/test/setup.ts'],
+    globals: true
   }
-})
+}) 

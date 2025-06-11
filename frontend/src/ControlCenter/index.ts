@@ -1,6 +1,5 @@
 // Legacy MVP ControlCenter exports for backward compatibility
 export { AnalyzerControls } from './AnalyzerControls';
-export { ViewControls } from './ViewControls';
 
 // New dynamic control components
 export { DynamicAnalyzerControls } from './DynamicAnalyzerControls';

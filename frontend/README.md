@@ -1,184 +1,149 @@
-# Zero-Instrument Profiler Frontend
+# 🔥 Zero-Instrument Profiler Frontend
 
-## 🏗️ Architecture Overview
+A **data-focused, completely decoupled** profiler frontend built with React, TypeScript, and Three.js.
 
-This frontend is built with a **modular, MVP-first architecture** that prioritizes maintainability, extensibility, and clean separation of concerns.
+## 🎯 **Key Features**
 
-### Core Technologies
-- **React 19** + **TypeScript** + **Vite**
-- **Three.js** + **@react-three/fiber** for 3D visualization
-- **Zustand** for state management
-- **Tailwind CSS** for styling
-- **Vitest** for testing
+### ✅ **Complete Decoupling**
+- **Views** are independent of **analyzers** - they only understand data formats
+- **Data Sources** can be combined from multiple analyzer instances
+- **Format-driven compatibility** determines which views can display data
 
-## 📁 Project Structure
+### ✅ **Dynamic Configuration**
+- **Schema-driven UIs** for both analyzers and views
+- **Multiple analyzer instances** can run simultaneously
+- **Flexible data combination** with merge/append/override modes
 
-```
-frontend/src/
-├── components/
-│   ├── analyzers/           # Analyzer control components
-│   │   ├── AnalyzerControlPanel.tsx
-│   │   └── index.ts
-│   ├── views/              # Self-contained view components
-│   │   ├── FlameGraph3DView.tsx    # 3D visualization with integrated controls
-│   │   ├── FlameGraph2DView.tsx    # 2D flame graph placeholder
-│   │   ├── DataTableView.tsx       # Data table with real data
-│   │   ├── LineChartView.tsx       # Chart visualization placeholder
-│   │   ├── ViewportContainer.tsx   # View switcher
-│   │   └── index.ts
-│   ├── FlameGraph3D/       # Core 3D rendering components
-│   │   ├── FlameGraphContent.tsx
-│   │   ├── FlameBlocks.tsx
-│   │   ├── LightingSystem.tsx
-│   │   ├── ThreadLabel.tsx
-│   │   └── index.ts
-│   ├── Layout/             # Layout and shell components
-│   │   ├── AppLayout.tsx
-│   │   ├── NavigationHeader.tsx
-│   │   ├── StatusBar.tsx
-│   │   ├── Sidebar.tsx
-│   │   ├── MainViewport.tsx
-│   │   └── index.ts
-│   ├── UI/                 # Shared UI components
-│   │   ├── shared/
-│   │   │   ├── LoadingSpinner.tsx
-│   │   │   ├── ErrorDisplay.tsx
-│   │   │   └── index.ts
-│   │   └── index.ts
-│   └── index.ts            # Main component barrel export
-├── stores/                 # Modular Zustand stores
-│   ├── core/
-│   │   ├── dataStore.ts    # Data and loading state
-│   │   └── configStore.ts  # Configuration state
-│   ├── ui/
-│   │   └── interactionStore.ts  # UI interaction state
-│   └── index.ts            # Store composition
-├── types/                  # TypeScript type definitions
-│   └── flame.types.ts
-├── utils/                  # Utility functions
-│   ├── flameDataLoader.ts
-│   ├── colorSchemes.ts
-│   └── __tests__/
-└── App.tsx                 # Main application component
-```
+### ✅ **Modern Architecture**
+- **TypeScript** with strict typing throughout
+- **Zustand** for state management with proper separation of concerns
+- **Modular design** with clear boundaries between layers
 
-## 🎯 Key Architectural Principles
+## 🚀 **Quick Start**
 
-### 1. **Self-Contained Views**
-Each view component includes:
-- Main visualization logic
-- Integrated, collapsible controls panel
-- View-specific state management
-- Export functionality
-
-**Example**: `FlameGraph3DView` contains both the 3D canvas AND its control panel.
-
-### 2. **Modular State Management**
-```typescript
-// Separated concerns in stores
-const dataStore = useDataStore();      // Data loading, processing
-const configStore = useConfigStore();  // Configuration settings  
-const uiStore = useInteractionStore(); // UI interactions
-
-// Backward compatible composite
-const store = useFlameGraphStore();    // Combines all stores
-```
-
-### 3. **Clean Component Separation**
-- **Analyzers**: Control data collection
-- **Views**: Display and interact with data
-- **Layout**: Application shell and navigation
-- **FlameGraph3D**: Core 3D rendering logic
-- **UI**: Shared components
-
-### 4. **Progressive Enhancement Ready**
-The architecture supports easy addition of:
-- New analyzer types (plugin system ready)
-- New view types (registry pattern)
-- Multi-viewport layouts
-- Session management
-
-## 🚀 Development Workflow
-
-### Running the Application
 ```bash
+# Install dependencies
 npm install
+
+# Start development server
 npm run dev
-```
 
-### Testing
-```bash
-npm run test
-```
-
-### Building
-```bash
+# Build for production
 npm run build
+
+# Run tests
+npm test
 ```
 
-## 🎨 UI/UX Features
-
-### Current Features
-- **Simplified Header**: Clean "menu" with action buttons
-- **Analyzer Control Panel**: Start/stop, status, basic config
-- **View Switching**: Radio buttons for 4 view types
-- **Self-Contained Views**: Each view manages its own controls
-- **Responsive Design**: Works on different screen sizes
-
-### View Types
-1. **3D Flame Graph**: Interactive 3D visualization with hover info
-2. **2D Flame Graph**: Traditional horizontal flame graph (placeholder)
-3. **Data Table**: Searchable, sortable table with real data
-4. **Line Chart**: Time-series visualization (placeholder)
-
-## 📊 Data Flow
+## 🏗️ **Architecture Overview**
 
 ```
-Data Loading → Processing → Store → View → User Interaction
-     ↓            ↓          ↓      ↓         ↓
-flameDataLoader → dataStore → React → Canvas → Controls
+🎨 Presentation Layer
+├── AnalyzerEngine     # Analyzer instance management
+├── ControlCenter      # Control components (NEW: DataSourceSelector)
+├── ViewportEngine     # View components (simplified & decoupled)
+└── LayoutManager      # App shell and layout
+
+📊 Data Management Layer  
+├── DataSourceStore    # NEW: Central data source management
+├── AnalyzerStore      # Analyzer configs and instances
+└── Legacy Stores      # Backward compatibility
+
+🔧 Configuration Layer
+├── analyzer.types.ts  # Core type definitions
+└── flame.types.ts     # Legacy flame graph types
 ```
 
-## 🔧 Extension Points
+## 📊 **Data Flow**
 
-### Adding a New View Type
-1. Create new view component in `src/components/views/`
-2. Add to `ViewType` union in `ViewportContainer.tsx`
-3. Add radio button option in `AnalyzerControlPanel.tsx`
-4. Export from `src/components/views/index.ts`
+1. **Analyzer Instances** → Produce data with specific formats
+2. **DataSourceStore** → Manages and combines data sources  
+3. **Views** → Check format compatibility and render data
+4. **User** → Selects data sources and compatible views
 
-### Adding a New Analyzer
-1. Create analyzer component in `src/components/analyzers/`
-2. Extend store if needed
-3. Add to analyzer selection UI
+## 🔄 **Usage Workflow**
 
-## 🏆 Benefits of This Architecture
+1. **Create analyzer instances** with custom configurations
+2. **Run analyzers** to generate profiling data
+3. **Select data sources** - combine multiple analyzer outputs
+4. **Choose compatible views** based on data format
+5. **Visualize data** with format-appropriate rendering
 
-### ✅ **Maintainability**
-- Clear separation of concerns
-- Modular components that can be developed independently
-- Consistent patterns throughout codebase
+## 📁 **Key Components**
 
-### ✅ **Extensibility**
-- Easy to add new view types
-- Plugin-ready analyzer system
-- Scalable state management
+### **NEW: Data-Focused Components**
+- `DataSourceSelector` - Select and combine multiple data sources
+- `DynamicViewControls` - Format-based view compatibility checking  
+- `DataSourceStore` - Central data source management
 
-### ✅ **Performance**
-- Lazy loading of heavy components
-- Optimized re-renders with Zustand
-- Efficient 3D rendering with Three.js
+### **Enhanced Components**
+- `DynamicAnalyzer` - Manage multiple analyzer instances
+- `FlameGraph3DView` - Simplified 3D visualization  
+- `DataTableView` - Universal text-based data display
 
-### ✅ **Developer Experience**
-- TypeScript for type safety
-- Comprehensive testing setup
-- Hot module replacement with Vite
-- Clear import paths with barrel exports
+## 🎛️ **Available Analyzers**
 
-### ✅ **User Experience**
-- Self-contained views reduce cognitive load
-- Smooth transitions between view types
-- Responsive, professional interface
-- Progressive disclosure of complex features
+- **🔥 Flame Graph Profiler**: CPU profiling with stack trace sampling
+- **⏰ Wall Clock Analyzer**: Combined on-CPU and off-CPU profiling  
+- **💤 Off-CPU Time Analyzer**: Analyze time spent off-CPU (blocking)
 
-This architecture successfully balances **immediate usability** (MVP) with **future extensibility** (enterprise features), making it perfect for both rapid prototyping and long-term development.
+## 🖼️ **Available Views**
+
+- **🎯 3D Flame Graph**: Interactive 3D visualization (optimized for flamegraph format)
+- **📊 Data View**: Universal text display (works with any format)
+
+## 🔧 **Configuration**
+
+All components use **schema-driven configuration**:
+
+```typescript
+// Analyzer configuration
+{
+  duration: 30,        // seconds
+  frequency: 99,       // Hz  
+  target: "process",   // process name or PID
+}
+
+// View configuration  
+{
+  colorScheme: "hot-cold"  // visualization style
+}
+```
+
+## 📚 **Documentation**
+
+- **[Architecture Guide](./docs/ARCHITECTURE.md)** - Detailed technical architecture
+- **[User Guide](./docs/USER_GUIDE.md)** - How to use the data-focused interface
+
+## 🧪 **Testing**
+
+```bash
+# Run tests
+npm test
+
+# Run tests with UI
+npm run test:ui
+
+# Generate coverage
+npm run coverage
+```
+
+## 🏆 **Benefits of This Design**
+
+- **🔄 Extensible**: Add new analyzers/views without coupling
+- **🧩 Modular**: Clear separation of concerns  
+- **🎯 Flexible**: Combine data from multiple sources
+- **🛡️ Type-Safe**: Full TypeScript coverage
+- **👤 User-Friendly**: Data-focused workflow
+
+## 🔮 **Roadmap**
+
+- [ ] File upload data sources
+- [ ] API-based data streaming  
+- [ ] Additional view types (timeline, statistics)
+- [ ] Advanced data filtering and transformation
+- [ ] Export and sharing capabilities
+
+---
+
+**Built with ❤️ using a completely decoupled, data-first architecture!**
