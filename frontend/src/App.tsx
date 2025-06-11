@@ -1,9 +1,8 @@
 import { useEffect } from 'react';
-import { AppLayout } from '@/components/Layout';
-import { AnalyzerControlPanel } from '@/components/analyzers';
-import { ViewportContainer } from '@/components/views';
-import { LoadingSpinner, ErrorDisplay } from '@/components/UI/shared';
-import { useFlameGraphStore } from '@/stores';
+import { AppShell } from '@/LayoutManager';
+import { FlameGraphAnalyzer } from '@/AnalyzerEngine';
+import { ViewportManager } from '@/ViewportEngine';
+import { useFlameGraphStore } from '@/DataManager';
 
 function App() {
   const { loadSampleData, isLoading, error } = useFlameGraphStore();
@@ -14,16 +13,33 @@ function App() {
   }, [loadSampleData]);
 
   return (
-    <AppLayout sidebar={<AnalyzerControlPanel />}>
-      {/* Loading indicator */}
-      {isLoading && <LoadingSpinner message="Loading profiler data..." />}
-
+    <AppShell sidebar={<FlameGraphAnalyzer />}>
       {/* Error display */}
-      {error && <ErrorDisplay error={error} />}
+      {error && (
+        <div className="fixed top-4 right-4 bg-red-600 text-white p-4 rounded-lg shadow-lg z-50 max-w-md">
+          <div className="flex items-start space-x-3">
+            <span className="text-xl">⚠️</span>
+            <div className="flex-1">
+              <h4 className="font-semibold mb-1">Error</h4>
+              <p className="text-sm">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Main viewport with self-contained views */}
-      <ViewportContainer />
-    </AppLayout>
+      {/* Loading indicator */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 flex flex-col items-center space-y-4">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            <span className="text-white text-lg">Loading profiler data...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Main viewport with MVP design */}
+      <ViewportManager />
+    </AppShell>
   );
 }
 

@@ -4,7 +4,7 @@ import { DataTableView } from '@/ViewportEngine/DataTableView';
 
 type ViewType = '3d-flame' | 'data-table';
 
-export const ViewportContainer: React.FC = () => {
+export const SingleViewLayout: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('3d-flame');
 
   const renderCurrentView = () => {

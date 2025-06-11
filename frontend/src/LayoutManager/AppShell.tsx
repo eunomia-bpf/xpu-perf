@@ -1,11 +1,11 @@
 import React from 'react';
 
-interface AppLayoutProps {
+interface AppShellProps {
   children: React.ReactNode;
   sidebar: React.ReactNode;
 }
 
-export const AppLayout: React.FC<AppLayoutProps> = ({ children, sidebar }) => {
+export const AppShell: React.FC<AppShellProps> = ({ children, sidebar }) => {
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col">
       {/* Simplified Header - MVP Design */}

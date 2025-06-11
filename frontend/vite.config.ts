@@ -9,11 +9,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': '/src',
-      '@/components': '/src/components',
-      '@/hooks': '/src/hooks',
-      '@/utils': '/src/utils',
-      '@/types': '/src/types',
-      '@/stores': '/src/stores'
+      '@/AnalyzerEngine': '/src/AnalyzerEngine',
+      '@/ViewportEngine': '/src/ViewportEngine',
+      '@/ControlCenter': '/src/ControlCenter',
+      '@/DataManager': '/src/DataManager',
+      '@/LayoutManager': '/src/LayoutManager',
+      '@/types': '/src/types'
     }
   },
   server: {

@@ -1,3 +1,4 @@
 // MVP ViewportEngine exports
 export { FlameGraph3DView } from './FlameGraph3DView';
-export { DataTableView } from './DataTableView'; 
+export { DataTableView } from './DataTableView';
+export { ViewportManager } from './ViewportManager'; 
