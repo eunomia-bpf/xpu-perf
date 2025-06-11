@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { FlameData, ThreadStats } from '@/types/flame.types';
-import { FlameGraphDataLoader } from '@/utils/flameDataLoader';
+import { FlameGraphDataLoader } from '../DataProcessor/flameDataLoader';
 
 interface DataState {
   data: FlameData;

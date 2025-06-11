@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useFlameGraphStore } from '@/DataManager/DataStore';
+import { useFlameGraphStore } from '@/DataManager';
 
 interface DataTableViewProps {
   className?: string;
@@ -25,24 +25,28 @@ export const DataTableView: React.FC<DataTableViewProps> = ({ className }) => {
     const rows: TableRow[] = [];
     
     Object.entries(data).forEach(([threadName, threadData]) => {
-      threadData.forEach(entry => {
-        entry.stack.forEach((funcName) => {
-          if (funcName && funcName.trim()) {
-            const existingRow = rows.find(row => row.name === funcName && row.thread === threadName);
-            if (existingRow) {
-              existingRow.callCount += 1;
-            } else {
-              rows.push({
-                name: funcName,
-                selfTime: `${entry.count}ms`,
-                totalTime: `${entry.count}ms`,
-                callCount: 1,
-                thread: threadName
-              });
-            }
+      if (Array.isArray(threadData)) {
+        threadData.forEach(entry => {
+          if (entry.stack && Array.isArray(entry.stack)) {
+            entry.stack.forEach((funcName) => {
+              if (funcName && funcName.trim()) {
+                const existingRow = rows.find(row => row.name === funcName && row.thread === threadName);
+                if (existingRow) {
+                  existingRow.callCount += 1;
+                } else {
+                  rows.push({
+                    name: funcName,
+                    selfTime: `${entry.count}ms`,
+                    totalTime: `${entry.count}ms`,
+                    callCount: 1,
+                    thread: threadName
+                  });
+                }
+              }
+            });
           }
         });
-      });
+      }
     });
 
     return rows;
@@ -78,9 +82,9 @@ export const DataTableView: React.FC<DataTableViewProps> = ({ className }) => {
 
   const exportToCSV = () => {
     const csvContent = [
-      ['Function Name', 'Self Time', 'Total Time', 'Call Count', 'Thread'].join(','),
+      'Function Name,Self Time,Total Time,Call Count,Thread',
       ...processedData.map(row => 
-        [row.name, row.selfTime, row.totalTime, row.callCount, row.thread].join(',')
+        `"${row.name}","${row.selfTime}","${row.totalTime}",${row.callCount},"${row.thread}"`
       )
     ].join('\n');
 
@@ -88,7 +92,7 @@ export const DataTableView: React.FC<DataTableViewProps> = ({ className }) => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'flame-graph-data.csv';
+    a.download = 'flame_graph_data.csv';
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -96,43 +100,77 @@ export const DataTableView: React.FC<DataTableViewProps> = ({ className }) => {
   return (
     <div className={`relative w-full h-full bg-gray-900 ${className || ''}`}>
       {/* Data Table */}
-      <div className="w-full h-full overflow-auto p-4">
-        <div className="bg-gray-800 rounded-lg overflow-hidden">
-          <table className="w-full text-white">
-            <thead className="bg-gray-700">
-              <tr>
-                <th className="px-4 py-3 text-left cursor-pointer hover:bg-gray-600" onClick={() => setSortBy('name')}>
-                  Function Name {sortBy === 'name' && '↓'}
-                </th>
-                <th className="px-4 py-3 text-left">Self Time</th>
-                <th className="px-4 py-3 text-left cursor-pointer hover:bg-gray-600" onClick={() => setSortBy('time')}>
-                  Total Time {sortBy === 'time' && '↓'}
-                </th>
-                <th className="px-4 py-3 text-left cursor-pointer hover:bg-gray-600" onClick={() => setSortBy('count')}>
-                  Call Count {sortBy === 'count' && '↓'}
-                </th>
-                <th className="px-4 py-3 text-left">Thread</th>
-              </tr>
-            </thead>
-            <tbody>
-              {processedData.map((row, index) => (
-                <tr key={`${row.name}-${row.thread}-${index}`} className="border-t border-gray-600 hover:bg-gray-700/50">
-                  <td className="px-4 py-3 font-mono">{row.name}</td>
-                  <td className="px-4 py-3">{row.selfTime}</td>
-                  <td className="px-4 py-3">{row.totalTime}</td>
-                  <td className="px-4 py-3">{row.callCount}</td>
-                  <td className="px-4 py-3">{row.thread}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        
-        {processedData.length === 0 && (
-          <div className="text-center text-gray-400 mt-8">
-            {Object.keys(data).length === 0 ? 'No data available. Start the analyzer to collect data.' : 'No functions match the filter criteria'}
+      <div className="w-full h-full overflow-auto">
+        <div className="p-4">
+          <h3 className="text-2xl font-bold text-white mb-4">📊 Data Table</h3>
+          
+          {/* Search and Filter Controls */}
+          <div className="mb-4 flex space-x-4">
+            <input
+              type="text"
+              placeholder="Search functions..."
+              className="flex-1 bg-gray-800 text-white px-3 py-2 rounded border border-gray-600"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+            />
+            <select
+              className="bg-gray-800 text-white px-3 py-2 rounded border border-gray-600"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'name' | 'time' | 'count')}
+            >
+              <option value="time">Sort by Time</option>
+              <option value="name">Sort by Name</option>
+              <option value="count">Sort by Count</option>
+            </select>
+            <select
+              className="bg-gray-800 text-white px-3 py-2 rounded border border-gray-600"
+              value={showLimit}
+              onChange={(e) => setShowLimit(e.target.value as '100' | '500' | 'all')}
+            >
+              <option value="100">Top 100</option>
+              <option value="500">Top 500</option>
+              <option value="all">Show All</option>
+            </select>
           </div>
-        )}
+
+          {/* Table */}
+          <div className="bg-gray-800 rounded-lg overflow-hidden">
+            <table className="w-full text-white">
+              <thead className="bg-gray-700">
+                <tr>
+                  <th className="text-left p-3 border-b border-gray-600">Function Name</th>
+                  <th className="text-left p-3 border-b border-gray-600">Self Time</th>
+                  <th className="text-left p-3 border-b border-gray-600">Total Time</th>
+                  <th className="text-left p-3 border-b border-gray-600">Call Count</th>
+                  <th className="text-left p-3 border-b border-gray-600">Thread</th>
+                </tr>
+              </thead>
+              <tbody>
+                {processedData.map((row, index) => (
+                  <tr key={index} className="hover:bg-gray-700 transition-colors">
+                    <td className="p-3 border-b border-gray-700 font-mono text-sm">{row.name}</td>
+                    <td className="p-3 border-b border-gray-700">{row.selfTime}</td>
+                    <td className="p-3 border-b border-gray-700">{row.totalTime}</td>
+                    <td className="p-3 border-b border-gray-700">{row.callCount}</td>
+                    <td className="p-3 border-b border-gray-700 text-gray-400">{row.thread}</td>
+                  </tr>
+                ))}
+                {processedData.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-gray-400">
+                      No data available. Start profiling to see results.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Stats */}
+          <div className="mt-4 text-sm text-gray-400">
+            Showing {processedData.length} of {tableData.length} functions
+          </div>
+        </div>
       </div>
 
       {/* View-Specific Controls Panel */}
@@ -143,68 +181,26 @@ export const DataTableView: React.FC<DataTableViewProps> = ({ className }) => {
           onClick={() => setShowControls(!showControls)}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
           </svg>
         </button>
 
         {/* Expandable Controls Panel */}
         {showControls && (
-          <div className="bg-black/80 backdrop-blur-md text-white p-4 rounded-lg min-w-64 border border-white/10 space-y-3">
-            <h4 className="text-lg font-semibold mb-3">Table Controls</h4>
+          <div className="bg-gray-800/90 backdrop-blur-md rounded-lg p-4 border border-white/10 space-y-3 min-w-[200px]">
+            <h4 className="text-white font-medium text-sm">Table Controls</h4>
             
-            {/* Search Filter */}
-            <div>
-              <label className="block text-sm mb-1">
-                Search Functions
-                <input
-                  type="text"
-                  className="w-full mt-1 px-3 py-2 bg-gray-700 rounded border border-gray-600 text-white"
-                  placeholder="function name..."
-                  value={filterText}
-                  onChange={(e) => setFilterText(e.target.value)}
-                />
-              </label>
+            <div className="space-y-2">
+              <button 
+                className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded"
+                onClick={exportToCSV}
+              >
+                📊 Export CSV
+              </button>
+              <button className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded">
+                📋 Copy Data
+              </button>
             </div>
-
-            {/* Sort Options */}
-            <div>
-              <label className="block text-sm mb-1">
-                Sort by
-                <select 
-                  className="w-full mt-1 px-3 py-2 bg-gray-700 rounded border border-gray-600 text-white"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as any)}
-                >
-                  <option value="name">Function Name</option>
-                  <option value="time">Total Time</option>
-                  <option value="count">Call Count</option>
-                </select>
-              </label>
-            </div>
-
-            {/* Display Options */}
-            <div>
-              <label className="block text-sm mb-1">
-                Show
-                <select 
-                  className="w-full mt-1 px-3 py-2 bg-gray-700 rounded border border-gray-600 text-white"
-                  value={showLimit}
-                  onChange={(e) => setShowLimit(e.target.value as any)}
-                >
-                  <option value="100">Top 100</option>
-                  <option value="500">Top 500</option>
-                  <option value="all">All Functions</option>
-                </select>
-              </label>
-            </div>
-
-            {/* Export */}
-            <button 
-              className="w-full bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm transition-colors"
-              onClick={exportToCSV}
-            >
-              Export CSV
-            </button>
           </div>
         )}
       </div>

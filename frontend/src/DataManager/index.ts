@@ -1,7 +1,7 @@
 // Store composition for backward compatibility
-import { useDataStore } from './core/dataStore';
-import { useConfigStore } from './core/configStore';
-import { useInteractionStore } from './ui/interactionStore';
+import { useDataStore } from './DataStore/dataStore';
+import { useConfigStore } from './DataStore/configStore';
+import { useInteractionStore } from './DataStore/interactionStore';
 
 // Composite hook that maintains the original flameGraphStore interface
 export const useFlameGraphStore = () => {
@@ -22,6 +22,6 @@ export const useFlameGraphStore = () => {
 };
 
 // Export individual stores for new modular usage
-export { useDataStore } from './core/dataStore';
-export { useConfigStore } from './core/configStore';
-export { useInteractionStore } from './ui/interactionStore'; 
+export { useDataStore } from './DataStore/dataStore';
+export { useConfigStore } from './DataStore/configStore';
+export { useInteractionStore } from './DataStore/interactionStore'; 
