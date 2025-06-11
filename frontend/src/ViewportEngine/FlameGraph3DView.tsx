@@ -130,14 +130,14 @@ export const FlameGraph3DView: React.FC<FlameGraph3DViewProps> = ({ className })
             <div className="flex flex-col space-y-1">
               <button 
                 onClick={resetCamera}
-                className="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded text-xs"
+                className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-xs border border-gray-600"
               >
                 Reset Camera
               </button>
               
               <button 
                 onClick={fitAll}
-                className="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded text-xs"
+                className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-xs border border-gray-600"
               >
                 Fit All
               </button>

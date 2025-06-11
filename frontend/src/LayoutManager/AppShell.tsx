@@ -29,10 +29,10 @@ export const AppShell: React.FC<AppShellProps> = ({ children, sidebar }) => {
             <h1 className="text-lg font-semibold">Zero-Instrument Profiler</h1>
           </div>
           <div className="flex items-center space-x-2">
-            <button className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm">
+            <button className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-sm border border-gray-600">
               Export
             </button>
-            <button className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm">
+            <button className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-sm border border-gray-600">
               Settings
             </button>
           </div>
