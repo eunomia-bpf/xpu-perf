@@ -21,7 +21,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, sidebar }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 flex flex-col profiler-layout">
+    <div className="profiler-layout">
       {/* Header */}
       <header className="profiler-header px-4 py-3 lg:px-6">
         <div className="flex items-center justify-between">
@@ -32,10 +32,10 @@ export const AppShell: React.FC<AppShellProps> = ({ children, sidebar }) => {
             <h1 className="text-lg lg:text-xl font-semibold">Zero-Instrument Profiler</h1>
           </div>
           <div className="flex items-center space-x-2">
-            <button className="px-3 py-1.5 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-md text-sm transition-all duration-200">
+            <button className="px-3 py-1.5 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded text-sm transition-all duration-200">
               Export
             </button>
-            <button className="px-3 py-1.5 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-md text-sm transition-all duration-200">
+            <button className="px-3 py-1.5 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded text-sm transition-all duration-200">
               Settings
             </button>
           </div>
@@ -43,22 +43,22 @@ export const AppShell: React.FC<AppShellProps> = ({ children, sidebar }) => {
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="profiler-layout-body">
         {/* Sidebar */}
-        <aside className="w-80 lg:w-96 profiler-sidebar overflow-y-auto">
-          <div className="p-4 space-y-4">
+        <aside className="w-80 lg:w-96 profiler-sidebar">
+          <div className="profiler-sidebar-content p-4 space-y-4">
             {sidebar}
           </div>
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 flex flex-col overflow-hidden profiler-main">
+        <main className="profiler-main">
           {children}
         </main>
       </div>
 
       {/* Status Bar */}
-      <footer className="bg-white border-t border-gray-200 px-4 py-2 lg:px-6">
+      <footer className="bg-white border-t border-gray-200 px-4 py-2 lg:px-6 flex-shrink-0">
         <div className="flex items-center justify-between text-sm text-gray-600">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">

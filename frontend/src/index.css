@@ -66,22 +66,36 @@
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
 
 .profiler-sidebar {
   background: #ffffff;
   border-right: 1px solid #e2e8f0;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  min-height: 0;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.profiler-sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .profiler-main {
   background: #f8fafc;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .profiler-panel {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border-radius: 6px;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
 }
 
@@ -89,7 +103,7 @@
   background: #3b82f6;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
@@ -112,7 +126,7 @@
 
 .profiler-input {
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   background: #ffffff;
@@ -127,7 +141,7 @@
 
 .profiler-select {
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   background: #ffffff;
@@ -147,6 +161,19 @@
 .status-completed { background-color: #3b82f6; }
 .status-error { background-color: #ef4444; }
 
+/* Layout responsiveness */
+.profiler-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.profiler-layout-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
 /* Responsive design */
 @media (max-width: 1024px) {
   .profiler-sidebar {
@@ -160,8 +187,13 @@
     max-width: 320px;
   }
   
-  .profiler-layout {
+  .profiler-layout-body {
     flex-direction: column;
+  }
+  
+  .profiler-main {
+    flex: 1;
+    min-height: 0;
   }
 }
 

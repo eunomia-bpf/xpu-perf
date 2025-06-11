@@ -76,26 +76,25 @@ export const DataSourceSelector: React.FC = () => {
         </button>
       </div>
 
-      {/* Current Data Context */}
-      <div className="bg-gray-50 rounded-lg p-3 text-sm border border-gray-200">
-        <div className="text-gray-700 font-medium mb-1">Current Data:</div>
+      {/* Current Data */}
+      <div className="bg-gray-50 rounded p-3 text-sm border border-gray-200">
+        <div className="text-gray-600 text-xs mb-1">Current Data:</div>
         {currentDataContext.selection ? (
-          <div className="space-y-1">
-            <div className="text-gray-800 font-medium">{currentDataContext.selection.name}</div>
-            <div className="text-gray-600">Format: {currentDataContext.format}</div>
-            <div className="text-gray-600">{currentDataContext.sources.length} sources</div>
+          <div>
+            <div className="font-medium text-gray-800">{currentDataContext.selection.name}</div>
+            <div className="text-xs text-gray-600">{currentDataContext.format} • {currentDataContext.sources.length} sources</div>
           </div>
         ) : (
           <div className="text-gray-500 italic">No data selected</div>
         )}
       </div>
 
-      {/* Existing Data Selections */}
+      {/* Data Selections */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Available Data Selections</label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Available Selections</label>
         <div className="space-y-1">
           {availableSelections.map(selection => (
-            <div key={selection.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
+            <div key={selection.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-2 border border-gray-200">
               <button
                 onClick={() => setCurrentDataSelection(selection.id)}
                 className={`flex-1 text-left text-sm transition-colors ${
@@ -104,55 +103,55 @@ export const DataSourceSelector: React.FC = () => {
                     : 'text-gray-700 hover:text-gray-900'
                 }`}
               >
-                {selection.name} ({selection.sources.length} sources)
+                {selection.name} ({selection.sources.length})
               </button>
               <button
                 onClick={() => removeDataSelection(selection.id)}
-                className="text-sm text-red-600 hover:text-red-800 ml-2 font-medium"
+                className="text-sm text-red-600 hover:text-red-800 ml-2"
               >
                 ×
               </button>
             </div>
           ))}
           {availableSelections.length === 0 && (
-            <div className="text-sm text-gray-500 italic py-2">No data selections created</div>
+            <div className="text-sm text-gray-500 italic py-2">No selections created</div>
           )}
         </div>
       </div>
 
-      {/* Create New Selection Modal */}
+      {/* Create Selection Modal */}
       {isCreatingSelection && (
-        <div className="bg-white rounded-lg p-4 border border-gray-300 shadow-sm">
+        <div className="bg-white rounded p-4 border border-gray-300 shadow-sm">
           <h4 className="text-sm font-medium text-gray-800 mb-3">Create Data Selection</h4>
           
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Selection Name</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Name</label>
               <input
                 type="text"
                 value={newSelectionName}
                 onChange={(e) => setNewSelectionName(e.target.value)}
-                placeholder="e.g., Combined Flame Data"
-                className="profiler-input w-full"
+                placeholder="Selection name"
+                className="profiler-input w-full text-sm"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Combination Mode</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Mode</label>
               <select
                 value={combinationMode}
                 onChange={(e) => setCombinationMode(e.target.value as any)}
-                className="profiler-select w-full"
+                className="profiler-select w-full text-sm"
               >
-                <option value="merge">Merge (combine objects)</option>
-                <option value="append">Append (join arrays)</option>
-                <option value="override">Override (last wins)</option>
+                <option value="merge">Merge</option>
+                <option value="append">Append</option>
+                <option value="override">Override</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Data Sources</label>
-              <div className="space-y-2 max-h-32 overflow-y-auto">
+              <label className="block text-xs font-medium text-gray-700 mb-2">Sources</label>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
                 {allDataSources.map(source => (
                   <label key={source.id} className="flex items-start space-x-2 cursor-pointer">
                     <input
@@ -162,13 +161,13 @@ export const DataSourceSelector: React.FC = () => {
                       className="mt-0.5 w-4 h-4 text-blue-600 bg-white border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
                     />
                     <div className="flex-1 text-sm">
-                      <div className="text-gray-800 font-medium">{source.name}</div>
-                      <div className="text-gray-500">{source.format} • {source.fields.join(', ')}</div>
+                      <div className="text-gray-800">{source.name}</div>
+                      <div className="text-gray-500 text-xs">{source.format}</div>
                     </div>
                   </label>
                 ))}
                 {allDataSources.length === 0 && (
-                  <div className="text-sm text-gray-500 italic">No data sources available</div>
+                  <div className="text-sm text-gray-500 italic">No sources available</div>
                 )}
               </div>
             </div>
@@ -177,7 +176,7 @@ export const DataSourceSelector: React.FC = () => {
               <button
                 onClick={handleCreateSelection}
                 disabled={!newSelectionName.trim() || selectedSources.length === 0}
-                className="profiler-button text-sm px-3 py-1.5 bg-green-600 hover:bg-green-700"
+                className="profiler-button text-sm px-3 py-1 bg-green-600 hover:bg-green-700"
               >
                 Create
               </button>
@@ -187,7 +186,7 @@ export const DataSourceSelector: React.FC = () => {
                   setNewSelectionName('');
                   setSelectedSources([]);
                 }}
-                className="text-sm px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md transition-colors"
+                className="text-sm px-3 py-1 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded transition-colors"
               >
                 Cancel
               </button>
