@@ -5,11 +5,8 @@ export const ViewControls: React.FC = () => {
   const { currentView, setCurrentView } = useViewContext();
 
   return (
-    <div className="bg-gray-700 rounded-lg p-4 space-y-3">
-      <label 
-        className="flex items-center space-x-3 cursor-pointer"
-        onClick={() => setCurrentView('3d-flame')}
-      >
+    <div className="bg-gray-700 rounded p-3 space-y-2">
+      <label className="flex items-center space-x-2 cursor-pointer">
         <input 
           type="radio" 
           name="viewType" 
@@ -18,16 +15,10 @@ export const ViewControls: React.FC = () => {
           onChange={() => setCurrentView('3d-flame')}
           className="text-blue-500"
         />
-        <div>
-          <div className="text-white font-medium">● 3D Flame Graph</div>
-          <div className="text-sm text-gray-400">Interactive 3D visualization</div>
-        </div>
+        <span className="text-sm text-white">3D Flame Graph</span>
       </label>
       
-      <label 
-        className="flex items-center space-x-3 cursor-pointer"
-        onClick={() => setCurrentView('data-table')}
-      >
+      <label className="flex items-center space-x-2 cursor-pointer">
         <input 
           type="radio" 
           name="viewType" 
@@ -36,10 +27,7 @@ export const ViewControls: React.FC = () => {
           onChange={() => setCurrentView('data-table')}
           className="text-blue-500"
         />
-        <div>
-          <div className="text-white font-medium">○ Data Table</div>
-          <div className="text-sm text-gray-400">Raw data exploration</div>
-        </div>
+        <span className="text-sm text-white">Data Table</span>
       </label>
     </div>
   );

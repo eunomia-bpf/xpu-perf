@@ -174,41 +174,31 @@ export const DataTableView: React.FC<DataTableViewProps> = ({ className }) => {
       </div>
 
       {/* View-Specific Controls for Data Table */}
-      <div className="bg-gray-800 border-t border-gray-700 p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h4 className="text-white font-semibold">Table Controls</h4>
-          <div className="text-sm text-gray-400">
-            Click headers to sort • Use search to filter
-          </div>
-        </div>
+      <div className="bg-gray-800 border-t border-gray-700 p-3">
+        <h4 className="text-sm font-medium text-white mb-3">Table Controls</h4>
         
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Search and Filter Section */}
-          <div className="space-y-3">
-            <h5 className="text-sm font-medium text-gray-300">Search & Filter</h5>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Search and Filter */}
+          <div className="space-y-2">
+            <h5 className="text-xs font-medium text-gray-300">Search & Filter</h5>
             
             <div>
-              <label className="block text-sm text-gray-300 mb-1">Search Functions:</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="function name..."
-                  className="w-full bg-gray-600 text-white rounded px-3 py-2 pr-10 text-sm"
-                />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <span className="text-gray-400">🔍</span>
-                </div>
-              </div>
+              <label className="block text-xs text-gray-300 mb-1">Search:</label>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="function name..."
+                className="w-full bg-gray-600 text-white rounded px-2 py-1 text-xs"
+              />
             </div>
             
             <div>
-              <label className="block text-sm text-gray-300 mb-1">Show Rows:</label>
+              <label className="block text-xs text-gray-300 mb-1">Show:</label>
               <select 
                 value={showCount}
                 onChange={(e) => setShowCount(Number(e.target.value))}
-                className="w-full bg-gray-600 text-white rounded px-3 py-2 text-sm"
+                className="w-full bg-gray-600 text-white rounded px-2 py-1 text-xs"
               >
                 <option value={50}>Top 50</option>
                 <option value={100}>Top 100</option>
@@ -218,16 +208,16 @@ export const DataTableView: React.FC<DataTableViewProps> = ({ className }) => {
             </div>
           </div>
 
-          {/* Sorting Section */}
-          <div className="space-y-3">
-            <h5 className="text-sm font-medium text-gray-300">Sorting</h5>
+          {/* Sorting */}
+          <div className="space-y-2">
+            <h5 className="text-xs font-medium text-gray-300">Sorting</h5>
             
             <div>
-              <label className="block text-sm text-gray-300 mb-1">Sort by:</label>
+              <label className="block text-xs text-gray-300 mb-1">Sort by:</label>
               <select 
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="w-full bg-gray-600 text-white rounded px-3 py-2 text-sm"
+                className="w-full bg-gray-600 text-white rounded px-2 py-1 text-xs"
               >
                 <option value="totalTime">Total Time</option>
                 <option value="selfTime">Self Time</option>
@@ -237,11 +227,11 @@ export const DataTableView: React.FC<DataTableViewProps> = ({ className }) => {
             </div>
             
             <div>
-              <label className="block text-sm text-gray-300 mb-1">Order:</label>
+              <label className="block text-xs text-gray-300 mb-1">Order:</label>
               <select 
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
-                className="w-full bg-gray-600 text-white rounded px-3 py-2 text-sm"
+                className="w-full bg-gray-600 text-white rounded px-2 py-1 text-xs"
               >
                 <option value="desc">Descending</option>
                 <option value="asc">Ascending</option>
@@ -249,30 +239,28 @@ export const DataTableView: React.FC<DataTableViewProps> = ({ className }) => {
             </div>
           </div>
 
-          {/* Export Section */}
-          <div className="space-y-3">
-            <h5 className="text-sm font-medium text-gray-300">Export Data</h5>
+          {/* Export */}
+          <div className="space-y-2">
+            <h5 className="text-xs font-medium text-gray-300">Export</h5>
             
-            <div className="flex flex-col space-y-2">
+            <div className="flex flex-col space-y-1">
               <button 
                 onClick={exportToCSV}
-                className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-sm transition-colors flex items-center justify-center space-x-2"
+                className="px-3 py-1 bg-green-600 hover:bg-green-500 text-white rounded text-xs"
               >
-                <span>📊</span>
-                <span>Export CSV</span>
+                Export CSV
               </button>
               
               <button 
                 onClick={exportToJSON}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm transition-colors flex items-center justify-center space-x-2"
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs"
               >
-                <span>📄</span>
-                <span>Export JSON</span>
+                Export JSON
               </button>
             </div>
             
             <div className="text-xs text-gray-400">
-              Showing {tableData.length} of {Object.keys(data).length} functions
+              {tableData.length} of {Object.keys(data).length} functions
             </div>
           </div>
         </div>
