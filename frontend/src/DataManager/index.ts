@@ -24,4 +24,7 @@ export const useFlameGraphStore = () => {
 // Export individual stores for new modular usage
 export { useDataStore } from './DataStore/dataStore';
 export { useConfigStore } from './DataStore/configStore';
-export { useInteractionStore } from './DataStore/interactionStore'; 
+export { useInteractionStore } from './DataStore/interactionStore';
+
+// Export new dynamic analyzer store
+export { useAnalyzerStore } from './DataStore/analyzerStore'; 

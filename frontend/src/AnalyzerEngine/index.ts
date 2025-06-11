@@ -1,2 +1,2 @@
-// MVP AnalyzerEngine exports
-export { FlameGraphAnalyzer } from './FlameGraphAnalyzer'; 
+// Dynamic analyzer system - replaces static FlameGraphAnalyzer
+export { DynamicAnalyzer } from './DynamicAnalyzer'; 

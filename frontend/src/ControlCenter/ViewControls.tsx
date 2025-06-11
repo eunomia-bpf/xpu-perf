@@ -13,6 +13,7 @@ export const ViewControls: React.FC = () => {
           value="3d-flame" 
           checked={currentView === '3d-flame'}
           onChange={() => setCurrentView('3d-flame')}
+          className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 focus:ring-blue-500 focus:ring-2"
         />
         <span className="text-sm text-white">3D Flame Graph</span>
       </label>
@@ -24,6 +25,7 @@ export const ViewControls: React.FC = () => {
           value="data-table" 
           checked={currentView === 'data-table'}
           onChange={() => setCurrentView('data-table')}
+          className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 focus:ring-blue-500 focus:ring-2"
         />
         <span className="text-sm text-white">Data Table</span>
       </label>

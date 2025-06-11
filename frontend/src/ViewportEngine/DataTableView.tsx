@@ -246,14 +246,14 @@ export const DataTableView: React.FC<DataTableViewProps> = ({ className }) => {
             <div className="flex flex-col space-y-1">
               <button 
                 onClick={exportToCSV}
-                className="px-3 py-1 bg-green-600 hover:bg-green-500 text-white rounded text-xs"
+                className="px-3 py-1 bg-green-600 hover:bg-green-500 text-white rounded text-xs transition-colors"
               >
                 Export CSV
               </button>
               
               <button 
                 onClick={exportToJSON}
-                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs"
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs transition-colors"
               >
                 Export JSON
               </button>

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { AppShell, ViewProvider } from '@/LayoutManager';
-import { FlameGraphAnalyzer } from '@/AnalyzerEngine';
+import { DynamicAnalyzer } from '@/AnalyzerEngine';
+import { ViewSelector } from '@/ControlCenter';
 import { ViewportManager } from '@/ViewportEngine';
 import { useFlameGraphStore } from '@/DataManager';
 
@@ -14,7 +15,14 @@ function App() {
 
   return (
     <ViewProvider>
-      <AppShell sidebar={<FlameGraphAnalyzer />}>
+      <AppShell 
+        sidebar={
+          <div className="space-y-0">
+            <DynamicAnalyzer />
+            <ViewSelector />
+          </div>
+        }
+      >
         {/* Error display */}
         {error && (
           <div className="fixed top-4 right-4 bg-red-600 text-white p-4 rounded-lg shadow-lg z-50 max-w-md">
