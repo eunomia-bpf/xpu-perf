@@ -46,9 +46,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, sidebar }) => {
       <div className="profiler-layout-body">
         {/* Sidebar */}
         <aside className="w-80 lg:w-96 profiler-sidebar">
-          <div className="profiler-sidebar-content p-4 space-y-4">
-            {sidebar}
-          </div>
+          {sidebar}
         </aside>
 
         {/* Main Content */}

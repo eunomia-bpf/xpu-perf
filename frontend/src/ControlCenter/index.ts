@@ -5,4 +5,7 @@ export { AnalyzerControls } from './AnalyzerControls';
 export { DynamicAnalyzerControls } from './DynamicAnalyzerControls';
 export { DynamicViewControls } from './DynamicViewControls';
 export { ViewSelector } from './ViewSelector';
-export { DataSourceSelector } from './DataSourceSelector'; 
+export { DataSourceSelector } from './DataSourceSelector';
+
+// Tabbed sidebar component
+export { TabbedSidebar } from './TabbedSidebar'; 

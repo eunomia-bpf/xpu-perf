@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { AppShell, ViewProvider } from '@/LayoutManager';
-import { DynamicAnalyzer } from '@/AnalyzerEngine';
-import { DataSourceSelector, ViewSelector } from '@/ControlCenter';
+import { TabbedSidebar } from '@/ControlCenter';
 import { ViewportManager } from '@/ViewportEngine';
 import { useFlameGraphStore, useDataSourceStore } from '@/DataManager';
 
@@ -23,15 +22,7 @@ function App() {
 
   return (
     <ViewProvider>
-      <AppShell 
-        sidebar={
-          <div className="space-y-0">
-            <DynamicAnalyzer />
-            <DataSourceSelector />
-            <ViewSelector />
-          </div>
-        }
-      >
+      <AppShell sidebar={<TabbedSidebar />}>
         {/* Error display */}
         {error && (
           <div className="fixed top-4 right-4 bg-red-600 text-white p-4 rounded-lg shadow-lg z-50 max-w-md">
