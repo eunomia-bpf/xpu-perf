@@ -1,301 +1,184 @@
-# 3D Flame Graph Visualizer - React TypeScript
+# Zero-Instrument Profiler Frontend
 
-A modern, interactive 3D flame graph visualization tool built with React, TypeScript, and Three.js that transforms profiling data into immersive 3D representations.
+## 🏗️ Architecture Overview
 
-## 🚀 Features
+This frontend is built with a **modular, MVP-first architecture** that prioritizes maintainability, extensibility, and clean separation of concerns.
 
-### 🎯 Core Functionality
-- **3D Visualization**: Interactive 3D flame graphs with depth-based stack representation
-- **Multi-Thread Support**: Visualize multiple threads simultaneously with Z-axis separation
-- **Real-time Interaction**: Hover effects, tooltips, and detailed function information
-- **Data Loading**: Parse `.folded` files and convert to visualization-ready format
-
-### 🎨 Visual Features
-- **Multiple Color Schemes**: 4 different color palettes (Warm, Cool, Vibrant, Pastel)
-- **Dynamic Lighting**: Ambient, directional, and point lighting for realistic appearance
-- **Shadow Mapping**: Real-time shadows for better depth perception
-- **Responsive Design**: Adapts to different screen sizes
-
-### 🔧 Interactive Controls
-- **Camera Controls**: Mouse-based orbit, zoom, and pan
-- **Auto-rotation**: Optional automatic rotation for presentations
-- **Adjustable Parameters**:
-  - Z-spacing between threads
-  - Minimum count threshold filtering
-  - Maximum stack depth limiting
-- **Statistics Display**: Real-time thread statistics and function details
-
-## 🛠️ Technology Stack
-
-- **Frontend Framework**: React 19 + TypeScript
-- **Build Tool**: Vite
-- **3D Graphics**: Three.js + React Three Fiber + Drei
-- **State Management**: Zustand
-- **Testing**: Vitest + React Testing Library
-- **Package Manager**: pnpm
+### Core Technologies
+- **React 19** + **TypeScript** + **Vite**
+- **Three.js** + **@react-three/fiber** for 3D visualization
+- **Zustand** for state management
+- **Tailwind CSS** for styling
+- **Vitest** for testing
 
 ## 📁 Project Structure
 
 ```
-src/
+frontend/src/
 ├── components/
-│   ├── FlameGraph3D/
-│   │   ├── FlameGraph3D.tsx       # Main 3D visualization component
-│   │   ├── FlameBlocks.tsx        # Individual flame block rendering
-│   │   └── ThreadLabel.tsx        # Thread name labels
-│   ├── UI/
-│   │   └── InfoPanel.tsx          # Information display panel
-│   ├── Controls/
-│   │   └── ControlPanel.tsx       # Interactive controls
+│   ├── analyzers/           # Analyzer control components
+│   │   ├── AnalyzerControlPanel.tsx
+│   │   └── index.ts
+│   ├── views/              # Self-contained view components
+│   │   ├── FlameGraph3DView.tsx    # 3D visualization with integrated controls
+│   │   ├── FlameGraph2DView.tsx    # 2D flame graph placeholder
+│   │   ├── DataTableView.tsx       # Data table with real data
+│   │   ├── LineChartView.tsx       # Chart visualization placeholder
+│   │   ├── ViewportContainer.tsx   # View switcher
+│   │   └── index.ts
+│   ├── FlameGraph3D/       # Core 3D rendering components
+│   │   ├── FlameGraphContent.tsx
+│   │   ├── FlameBlocks.tsx
+│   │   ├── LightingSystem.tsx
+│   │   ├── ThreadLabel.tsx
+│   │   └── index.ts
+│   ├── Layout/             # Layout and shell components
+│   │   ├── AppLayout.tsx
+│   │   ├── NavigationHeader.tsx
+│   │   ├── StatusBar.tsx
+│   │   ├── Sidebar.tsx
+│   │   ├── MainViewport.tsx
+│   │   └── index.ts
+│   ├── UI/                 # Shared UI components
+│   │   ├── shared/
+│   │   │   ├── LoadingSpinner.tsx
+│   │   │   ├── ErrorDisplay.tsx
+│   │   │   └── index.ts
+│   │   └── index.ts
+│   └── index.ts            # Main component barrel export
+├── stores/                 # Modular Zustand stores
+│   ├── core/
+│   │   ├── dataStore.ts    # Data and loading state
+│   │   └── configStore.ts  # Configuration state
+│   ├── ui/
+│   │   └── interactionStore.ts  # UI interaction state
+│   └── index.ts            # Store composition
+├── types/                  # TypeScript type definitions
+│   └── flame.types.ts
+├── utils/                  # Utility functions
+│   ├── flameDataLoader.ts
+│   ├── colorSchemes.ts
 │   └── __tests__/
-│       └── App.test.tsx           # Component tests
-├── utils/
-│   ├── flameDataLoader.ts         # Data parsing and processing
-│   ├── colorSchemes.ts            # Color scheme management
-│   └── __tests__/                 # Utility tests
-├── types/
-│   └── flame.types.ts             # TypeScript type definitions
-├── stores/
-│   └── flameGraphStore.ts         # Zustand state management
-└── test/
-    └── setup.ts                   # Test configuration
+└── App.tsx                 # Main application component
 ```
 
-## 🚦 Getting Started
+## 🎯 Key Architectural Principles
 
-### Prerequisites
-- Node.js >= 18.0.0
-- pnpm >= 8.0.0
-- Modern web browser with WebGL support
+### 1. **Self-Contained Views**
+Each view component includes:
+- Main visualization logic
+- Integrated, collapsible controls panel
+- View-specific state management
+- Export functionality
 
-### Installation
+**Example**: `FlameGraph3DView` contains both the 3D canvas AND its control panel.
 
-1. **Install dependencies**:
-   ```bash
-   pnpm install
-   ```
-
-2. **Start development server**:
-   ```bash
-   pnpm dev
-   ```
-
-3. **Open browser**:
-   Navigate to `http://localhost:3000`
-
-### Development Commands
-
-```bash
-# Development
-pnpm dev                # Start dev server
-pnpm build              # Build for production
-pnpm preview            # Preview production build
-
-# Code Quality
-pnpm lint               # Run ESLint
-pnpm lint:fix           # Fix ESLint issues
-pnpm format             # Format code with Prettier
-pnpm type-check         # TypeScript type checking
-
-# Testing
-pnpm test               # Run tests in watch mode
-pnpm test:run           # Run tests once
-pnpm test:ui            # Run tests with UI
-pnpm coverage           # Generate test coverage
-```
-
-## 📊 Data Format
-
-The visualizer expects `.folded` format files where each line contains:
-```
-function1;function2;function3 count
-```
-
-Example:
-```
-pthread_condattr_setpshared;worker_thread;simulate_cpu_sort_work 1099
-pthread_condattr_setpshared;request_generator;__clock_gettime 539
-```
-
-## 🎮 Usage
-
-### Loading Data
-
-1. **Sample Data**: Click "Load Sample Data" to see demo visualization
-2. **Custom Data**: Modify the data loader to load your `.folded` files
-
-### Controls
-
-- **Mouse**: 
-  - Left click + drag: Rotate view
-  - Right click + drag: Pan view
-  - Scroll: Zoom in/out
-- **Buttons**:
-  - Reset View: Return to default camera position
-  - Auto Rotate: Toggle automatic rotation
-  - Colors: Cycle through color schemes
-- **Sliders**:
-  - Z-Spacing: Adjust distance between thread layers
-  - Min Count: Filter out low-count samples
-  - Max Depth: Limit stack depth display
-
-### Interaction
-
-- **Hover**: Mouse over blocks to see detailed information
-- **Info Panel**: Shows function details and thread statistics
-- **Real-time Updates**: All controls update visualization immediately
-
-## 🧪 Testing
-
-The project includes comprehensive tests:
-
-```bash
-# Run all tests
-pnpm test:run
-
-# Run specific test categories
-pnpm test utils                    # Test utilities
-pnpm test components               # Test React components
-```
-
-### Test Coverage
-- **Unit Tests**: Data loading, color schemes, utility functions
-- **Integration Tests**: React components and user interactions
-- **Mocks**: Three.js, WebGL, and browser APIs for testing
-
-## 🏗️ Architecture
-
-### Component Hierarchy
-```
-App
-├── FlameGraph3D (Canvas + 3D Scene)
-│   ├── FlameBlocks (Recursive block rendering)
-│   └── ThreadLabel (Text labels)
-├── InfoPanel (Hover information)
-└── ControlPanel (Interactive controls)
-```
-
-### State Management
-- **Zustand Store**: Global application state
-- **Local State**: Component-specific UI state
-- **React Three Fiber**: 3D scene state
-
-### Data Flow
-1. **Load**: FlameGraphDataLoader parses folded files
-2. **Transform**: Build hierarchical tree structure
-3. **Render**: React Three Fiber creates 3D meshes
-4. **Interact**: User actions update store → trigger re-render
-
-## 🎨 Customization
-
-### Adding Color Schemes
+### 2. **Modular State Management**
 ```typescript
-// src/utils/colorSchemes.ts
-export const COLOR_SCHEMES: ColorScheme[] = [
-  // Add your custom scheme
-  {
-    name: 'Custom',
-    colors: ['#color1', '#color2', '#color3', ...]
-  }
-];
+// Separated concerns in stores
+const dataStore = useDataStore();      // Data loading, processing
+const configStore = useConfigStore();  // Configuration settings  
+const uiStore = useInteractionStore(); // UI interactions
+
+// Backward compatible composite
+const store = useFlameGraphStore();    // Combines all stores
 ```
 
-### Modifying Visualization
-```typescript
-// Adjust block dimensions
-const width = Math.max(data.count / 50, 0.8);
-const height = 0.8;
-const depth = 0.8;
+### 3. **Clean Component Separation**
+- **Analyzers**: Control data collection
+- **Views**: Display and interact with data
+- **Layout**: Application shell and navigation
+- **FlameGraph3D**: Core 3D rendering logic
+- **UI**: Shared components
 
-// Customize lighting
-<ambientLight intensity={0.8} color="#404040" />
-<directionalLight position={[100, 100, 50]} intensity={1.0} />
-```
+### 4. **Progressive Enhancement Ready**
+The architecture supports easy addition of:
+- New analyzer types (plugin system ready)
+- New view types (registry pattern)
+- Multi-viewport layouts
+- Session management
 
-## 🚀 Deployment
+## 🚀 Development Workflow
 
-### Build for Production
+### Running the Application
 ```bash
-pnpm build
+npm install
+npm run dev
 ```
 
-### Deploy Options
-- **Vercel**: `vercel --prod`
-- **Netlify**: Deploy `dist/` folder
-- **GitHub Pages**: Use GitHub Actions
-
-### Performance Optimization
-- **Code Splitting**: Automatic via Vite
-- **Tree Shaking**: Unused code removal
-- **Asset Optimization**: Image and font optimization
-- **Bundle Analysis**: Use `pnpm build --analyze`
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-1. **WebGL not supported**:
-   - Update browser to latest version
-   - Enable hardware acceleration
-   - Check graphics driver updates
-
-2. **Performance issues**:
-   - Reduce max depth (`config.maxDepth`)
-   - Increase min count filter (`config.minCount`)
-   - Disable shadows for better performance
-
-3. **Memory issues with large datasets**:
-   - Implement data streaming
-   - Use Level of Detail (LOD) for distant objects
-   - Implement frustum culling
-
-### Debug Mode
-```typescript
-// Enable Three.js debugging
-renderer.debug.checkShaderErrors = true;
-console.log('WebGL Capabilities:', renderer.capabilities);
+### Testing
+```bash
+npm run test
 ```
 
-## 📈 Performance Metrics
+### Building
+```bash
+npm run build
+```
 
-- **Initial Load**: < 2 seconds
-- **60 FPS**: Maintained with < 10k blocks
-- **Memory Usage**: < 100MB for typical datasets
-- **Bundle Size**: < 2MB gzipped
+## 🎨 UI/UX Features
 
-## 🤝 Contributing
+### Current Features
+- **Simplified Header**: Clean "menu" with action buttons
+- **Analyzer Control Panel**: Start/stop, status, basic config
+- **View Switching**: Radio buttons for 4 view types
+- **Self-Contained Views**: Each view manages its own controls
+- **Responsive Design**: Works on different screen sizes
 
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open Pull Request
+### View Types
+1. **3D Flame Graph**: Interactive 3D visualization with hover info
+2. **2D Flame Graph**: Traditional horizontal flame graph (placeholder)
+3. **Data Table**: Searchable, sortable table with real data
+4. **Line Chart**: Time-series visualization (placeholder)
 
-### Development Guidelines
-- Follow TypeScript strict mode
-- Maintain test coverage > 80%
-- Use conventional commits
-- Update documentation
+## 📊 Data Flow
 
-## 📄 License
+```
+Data Loading → Processing → Store → View → User Interaction
+     ↓            ↓          ↓      ↓         ↓
+flameDataLoader → dataStore → React → Canvas → Controls
+```
 
-This project is open source. See LICENSE file for details.
+## 🔧 Extension Points
 
-## 🙏 Acknowledgments
+### Adding a New View Type
+1. Create new view component in `src/components/views/`
+2. Add to `ViewType` union in `ViewportContainer.tsx`
+3. Add radio button option in `AnalyzerControlPanel.tsx`
+4. Export from `src/components/views/index.ts`
 
-- **Three.js**: 3D graphics library
-- **React Three Fiber**: React renderer for Three.js
-- **Brendan Gregg**: Flame graph visualization concept
-- **Vite**: Lightning-fast build tool
-- **Zustand**: Lightweight state management
+### Adding a New Analyzer
+1. Create analyzer component in `src/components/analyzers/`
+2. Extend store if needed
+3. Add to analyzer selection UI
 
-## 📚 Resources
+## 🏆 Benefits of This Architecture
 
-- [Three.js Documentation](https://threejs.org/docs/)
-- [React Three Fiber Docs](https://docs.pmnd.rs/react-three-fiber/)
-- [Flame Graphs Explained](http://www.brendangregg.com/flamegraphs.html)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
+### ✅ **Maintainability**
+- Clear separation of concerns
+- Modular components that can be developed independently
+- Consistent patterns throughout codebase
 
----
+### ✅ **Extensibility**
+- Easy to add new view types
+- Plugin-ready analyzer system
+- Scalable state management
 
-**Built with ❤️ using modern web technologies**
+### ✅ **Performance**
+- Lazy loading of heavy components
+- Optimized re-renders with Zustand
+- Efficient 3D rendering with Three.js
+
+### ✅ **Developer Experience**
+- TypeScript for type safety
+- Comprehensive testing setup
+- Hot module replacement with Vite
+- Clear import paths with barrel exports
+
+### ✅ **User Experience**
+- Self-contained views reduce cognitive load
+- Smooth transitions between view types
+- Responsive, professional interface
+- Progressive disclosure of complex features
+
+This architecture successfully balances **immediate usability** (MVP) with **future extensibility** (enterprise features), making it perfect for both rapid prototyping and long-term development.

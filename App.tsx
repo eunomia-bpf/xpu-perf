@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
-import { AppLayout } from '@/components/Layout';
-import { AnalyzerControlPanel } from '@/components/analyzers';
-import { ViewportContainer } from '@/components/views';
+import { AppLayout } from '@/LayoutManager/AppShell';
+import { AnalyzerControlPanel } from '@/ControlCenter/AnalyzerControls';
+import { ViewportContainer } from '@/ViewportEngine';
 import { LoadingSpinner, ErrorDisplay } from '@/components/UI/shared';
-import { useFlameGraphStore } from '@/stores';
+import { useFlameGraphStore } from '@/DataManager/DataStore';
 
 function App() {
   const { loadSampleData, isLoading, error } = useFlameGraphStore();
@@ -27,4 +27,4 @@ function App() {
   );
 }
 
-export default App;
+export default App; 
