@@ -57,7 +57,8 @@ The current observability landscape resembles a collection of specialized micros
 
 This fragmentation creates several critical problems that impede both observation and optimization:
 
-**Example Scenario:** Investigating a 500% latency regression in LLM inference serving (real-world case from 2024):
+**Example Scenario:** Investigating a 500% latency regression in LLM inference serving:
+
 ```
 Current Reality (Modern Tool Fragmentation):
 1. Use Prometheus/Grafana → see GPU memory usage spike from 60% to 95%
@@ -71,6 +72,7 @@ Result: 4 days investigation, GPU memory defragmentation issue missed initially
 ```
 
 **Problems Created:**
+
 - **Expertise Barriers**: Each tool requires specialized knowledge, creating bottlenecks around expert practitioners
 - **Correlation Complexity**: Manual correlation across tools is error-prone and time-consuming
 - **Incomplete Pictures**: No single tool provides a holistic view of system-wide performance bottlenecks
@@ -87,7 +89,10 @@ The temporal disconnect has worsened with modern AI/ML workloads:
 - **Multi-Model Interference**: When multiple ML models share GPU resources, performance interference patterns change every few seconds as different requests arrive, but correlation across models requires offline analysis
 - **Transformer Attention Bottlenecks**: Attention mechanism performance in transformers varies dramatically with sequence length and batch size, creating optimization opportunities that last only milliseconds but require complex cross-layer analysis to identify
 
-**Recent Examples from Industry (2023-2024):**
+**Recent Examples from Industry:**
+
+> TODO: these are fake just AI generated example, replace them with real ones. There do have many.
+
 - **OpenAI's ChatGPT scaling issues**: Required manual correlation between CUDA profiling, network telemetry, and request batching metrics over days of analysis
 - **Google's Bard optimization**: Gemini model optimization required offline analysis of TPU utilization patterns combined with request routing metrics
 - **Meta's LLaMA serving**: Production optimization required correlating PyTorch profiler data with NVIDIA Multi-Process Service (MPS) metrics and kernel scheduling data
@@ -96,7 +101,7 @@ The temporal disconnect has worsened with modern AI/ML workloads:
 
 Modern AI/ML serving environments have become exponentially more heterogeneous, combining multiple CPU architectures, various GPU generations, NPUs, custom AI accelerators, and cloud-native orchestration layers. Contemporary tools still struggle to provide coherent views across these complex architectural boundaries, particularly for AI/ML workloads.
 
-Consider the journey of a modern LLM inference request through a 2024 cloud-native AI serving stack:
+Consider the journey of a modern LLM inference request through a cloud-native AI serving stack:
 ```
 User Request → API Gateway (ARM Graviton) → Kubernetes Ingress (x86) → 
 Model Router → Pre-processing (CPU) → Token Embedding (NPU) → 
@@ -112,7 +117,10 @@ Model Parallel Aggregation → Output Formatting → Network Return
 - **Cloud Provider Isolation**: AWS CloudWatch, Google Cloud Monitoring, and Azure Monitor cannot correlate their managed AI services with custom accelerator performance
 - **Model Parallelism Complexity**: Current tools cannot trace request execution across model parallel boundaries where different transformer layers run on different hardware
 
-**2024 Examples of Architecture Blindness:**
+**Examples of Architecture Blindness:**
+
+> TODO: these are fake just AI generated example, replace them with real ones. There do have many.
+
 - **OpenAI's GPT-4 optimization**: Required manual correlation between CPU preprocessing metrics, multiple GPU generation performance data, and custom inference accelerator telemetry
 - **Anthropic's Claude serving**: Performance analysis spans TPU v4/v5, NVIDIA H100, and custom routing hardware but no tool can correlate across all three
 - **Microsoft's Copilot infrastructure**: Combines Azure AI accelerators, NVIDIA GPUs, and Intel Gaudi processors but requires separate profiling stacks for each
@@ -205,6 +213,9 @@ The fourth principle addresses the critical gap between observing problems and i
 *Table 2: Multi-layer optimization capabilities enabled by SystemScope compared to current limitations.*
 
 **Example: Automatic Cache Optimization**
+
+> TODO: these are fake just AI generated example, replace them with real ones. There do have many.
+
 ```
 Observation: Memory access pattern shows 60% L3 cache misses in matrix multiplication
 Analysis: Non-optimal memory layout causes cache line conflicts  
@@ -421,7 +432,10 @@ While the observability landscape has evolved significantly with modern tools li
 - **Vendor Lock-in**: Advanced profiling still requires vendor-specific tools (NVIDIA Nsight, Intel VTune, AMD ROCProfiler) that cannot interoperate
 - **Production Deployment Barriers**: Modern profiling tools still impose overhead or complexity that prevents continuous production use for optimization
 
-**Research Developments (2023-2024):**
+**Research Developments:**
+
+> TODO: these are fake just AI generated example, replace them with real ones. There do have many.
+
 - **MLSys Conference Papers**: Recent work on ML system optimization still requires manual correlation across profiling tools and cannot perform real-time optimization
 - **OSDI/SOSP System Papers**: Advanced system observability research focuses on specific layers (CPU, GPU, or network) rather than unified optimization
 - **Industry Reports**: Companies like OpenAI, Google, and Meta report using combinations of 5-10 different tools for production AI system optimization
