@@ -1,6 +1,10 @@
-# Rethinking System Observability: Towards Universal Real-time Profiling, Analysis, and Optimization
+# Rethinking System Observability: Towards SystemScope
 
 > I want to have a tool, that can do Real-time and Online Profiling, interactively, and can do Correlation of Multi-Layer and Multi-Component Events across heterigeneous env and full system(not only on cpu, also include gpu, npu, etc; from os level scheduling, on cpu/off cpu to network events), and can be easily extend to different events and differen vistualize approach. it should be minimal cost, with easy use (with a single binary and can work as a service with frontend, and don't need storage and copy to local for analysis) It should also help connect the observability and stem tuning/optimization together, make optimizaion from hardware level to function level, system level, and application level easily and fine-grained. All these things can come with zero instrumentation, no need to modify the code or restart the service, and zero overhead when not in analysis mode.
+
+> 1. wall-clock(means we don't miss events when scheduler out, off cpu, off gpu, etc), full-system(from app level, os level, hardware level, etc), heterigeneous(cpu, gpu, npu, cxl memory..)
+> 2. Connet the observed events and optimizations easily in one abstraction (Universal events) for real-time (DSL? Like imagine using GPU memory infomation Combined with function level frequency like stack trace to dynamically optimize the kernel scheduler, improve CPU cache manage like intel CAT, changing optimization extensions, realtime and all in one line of code.)
+> 3. Easily deployment with no friction, apply to all system, no code change and no service interruption, minimal and controllable overhead. Zero overhead when not in analysis.
 
 ## **Abstract**
 
@@ -130,9 +134,9 @@ This exclusion creates a vicious cycle: optimization efforts focus on artificial
 
 ---
 
-## **3. Towards a New Paradigm: Universal Real-time Profiling**
+## **3. Towards a New Paradigm: SystemScope**
 
-The limitations outlined above are not merely implementation challenges but reflect fundamental architectural assumptions that separate observation, analysis, and optimization into distinct phases and tools. We propose a paradigm shift towards **Universal Real-time Profiling**—a unified approach that collapses the traditional performance engineering pipeline into a single, continuous feedback system operating across heterogeneous computing environments.
+The limitations outlined above are not merely implementation challenges but reflect fundamental architectural assumptions that separate observation, analysis, and optimization into distinct phases and tools. We propose a paradigm shift towards **SystemScope**—a unified approach that collapses the traditional performance engineering pipeline into a single, continuous feedback system operating across heterogeneous computing environments.
 
 This paradigm addresses the core inefficiencies in current performance optimization: the artificial temporal delays between observing problems and implementing solutions, the manual effort required to correlate insights across system layers, and the production deployment barriers that exclude optimization tools from the environments where they would provide the most value. By integrating these capabilities into a single system with zero-instrumentation deployment, we can transform performance optimization from an expert-driven, offline process into an automated capability that operates continuously in production environments.
 
@@ -159,7 +163,7 @@ Traditional profiling follows a data movement model:
 System → Data Collection → Data Export → External Storage → Offline Analysis → Insights
 ```
 
-Universal Real-time Profiling embraces data gravity:
+SystemScope embraces data gravity:
 ```
 System → Embedded Analysis → Real-time Insights → Optional Streaming → External Integration
 ```
@@ -172,7 +176,7 @@ This approach offers several advantages:
 
 ### **3.3 Universal Compatibility: Heterogeneity as a First-Class Concern**
 
-The third principle recognizes that modern computing environments are heterogeneous by nature, not by accident. Rather than treating cross-architecture support as an afterthought, Universal Real-time Profiling makes heterogeneity a first-class design concern.
+The third principle recognizes that modern computing environments are heterogeneous by nature, not by accident. Rather than treating cross-architecture support as an afterthought, SystemScope makes heterogeneity a first-class design concern.
 
 This means designing observability tools that:
 - **Understand Multiple Architectures**: Native support for x86, ARM, RISC-V, and specialized processors
@@ -182,7 +186,7 @@ This means designing observability tools that:
 
 ### **3.4 Zero-Instrumentation Optimization: From Observation to Action**
 
-The fourth principle addresses the critical gap between observing problems and implementing solutions. Universal Real-time Profiling embeds optimization capabilities directly into the observation infrastructure, creating an active feedback loop that can implement improvements without human intervention.
+The fourth principle addresses the critical gap between observing problems and implementing solutions. SystemScope embeds optimization capabilities directly into the observation infrastructure, creating an active feedback loop that can implement improvements without human intervention.
 
 **Zero-Instrumentation Requirements:**
 - **No Code Modifications**: System optimization without altering application source code
@@ -198,7 +202,7 @@ The fourth principle addresses the critical gap between observing problems and i
 | **Runtime Level** | JIT compilation, garbage collection, thread pools | JIT optimization hints, GC tuning, connection pooling | Language-specific tools |
 | **Application Level** | Algorithm selection, data structures, caching | Query optimization, cache warming, load balancing | Manual code changes |
 
-*Table 2: Multi-layer optimization capabilities enabled by Universal Real-time Profiling compared to current limitations.*
+*Table 2: Multi-layer optimization capabilities enabled by SystemScope compared to current limitations.*
 
 **Example: Automatic Cache Optimization**
 ```
@@ -219,7 +223,7 @@ The challenge lies in the fundamental differences between system layers: CPU eve
 
 ### **4.1 The Universal Event Model**
 
-At the heart of Universal Real-time Profiling lies the concept of a **universal event**—a standardized representation of any observable system activity that includes sufficient context for automatic correlation across layers. Unlike traditional profiling approaches that capture layer-specific data in isolation, universal events are designed from the ground up for cross-layer correlation.
+At the heart of SystemScope lies the concept of a **universal event**—a standardized representation of any observable system activity that includes sufficient context for automatic correlation across layers. Unlike traditional profiling approaches that capture layer-specific data in isolation, universal events are designed from the ground up for cross-layer correlation.
 
 A universal event captures not just what happened, but the complete context necessary to understand how it relates to events in other layers:
 - **Temporal Context**: High-precision timestamps that enable correlation across layers with different time resolutions
@@ -229,7 +233,7 @@ A universal event captures not just what happened, but the complete context nece
 
 ### **4.2 Automatic Correlation Algorithms**
 
-The power of Universal Real-time Profiling lies not in collecting more data, but in automatically understanding the relationships between events across system boundaries. This requires sophisticated correlation algorithms that can operate in real-time:
+The power of SystemScope lies not in collecting more data, but in automatically understanding the relationships between events across system boundaries. This requires sophisticated correlation algorithms that can operate in real-time:
 
 **Temporal Correlation** identifies events that occur within specific time windows across different layers. For example, correlating an application function call with the kernel system calls it generates and the network packets they produce.
 
@@ -241,7 +245,7 @@ The power of Universal Real-time Profiling lies not in collecting more data, but
 
 ### **4.3 Multi-Layer Observability Architecture**
 
-Universal Real-time Profiling requires an observability architecture that can simultaneously capture events from all relevant system layers without overwhelming the system being observed. This involves careful design of collection strategies that maximize insight while minimizing overhead.
+SystemScope requires an observability architecture that can simultaneously capture events from all relevant system layers without overwhelming the system being observed. This involves careful design of collection strategies that maximize insight while minimizing overhead.
 
 The architecture must handle the fundamental challenge that different layers operate at vastly different scales and frequencies—CPU events might occur at gigahertz frequencies, while application-level events might occur at kilohertz frequencies, and network events might occur at varying rates depending on load.
 
@@ -255,13 +259,13 @@ Key architectural principles include:
 
 ## **5. The Single Binary Vision: Democratizing System Observability**
 
-One of the most significant barriers to effective system observability is the complexity of deployment and operation. Universal Real-time Profiling envisions a radically simplified deployment model that eliminates traditional barriers to observability tool adoption.
+One of the most significant barriers to effective system observability is the complexity of deployment and operation. SystemScope envisions a radically simplified deployment model that eliminates traditional barriers to observability tool adoption.
 
 ### **5.1 Zero-Friction Deployment**
 
 The traditional model for deploying observability tools involves complex multi-step processes: installing packages, configuring systems, setting up infrastructure, managing dependencies, and requiring specialized expertise at each step. This complexity creates significant barriers to adoption, especially in production environments where changes must be carefully managed.
 
-Universal Real-time Profiling proposes a **single binary deployment model** where all necessary capabilities are contained within one self-contained executable. This approach draws inspiration from modern distributed systems design where applications are packaged as complete, immutable artifacts that can be deployed anywhere without external dependencies.
+SystemScope proposes a **single binary deployment model** where all necessary capabilities are contained within one self-contained executable. This approach draws inspiration from modern distributed systems design where applications are packaged as complete, immutable artifacts that can be deployed anywhere without external dependencies.
 
 The single binary approach offers several critical advantages:
 - **Immediate Availability**: Observability capabilities are available within seconds of downloading a single file
@@ -271,7 +275,7 @@ The single binary approach offers several critical advantages:
 
 ### **5.2 Embedded Analysis and Visualization**
 
-Traditional observability tools separate data collection, storage, analysis, and visualization into distinct components. This separation creates complexity, latency, and operational overhead. Universal Real-time Profiling integrates all these capabilities into a single, cohesive system.
+Traditional observability tools separate data collection, storage, analysis, and visualization into distinct components. This separation creates complexity, latency, and operational overhead. SystemScope integrates all these capabilities into a single, cohesive system.
 
 By embedding analysis and visualization capabilities directly alongside data collection, we can:
 - **Eliminate Data Movement Latency**: Analysis happens immediately where data is collected
@@ -281,7 +285,7 @@ By embedding analysis and visualization capabilities directly alongside data col
 
 ### **5.3 Production-First Design**
 
-Universal Real-time Profiling is designed with production environments as the primary use case, not development environments. This represents a philosophical shift from traditional profiling tools that were designed for development and then adapted for production use.
+SystemScope is designed with production environments as the primary use case, not development environments. This represents a philosophical shift from traditional profiling tools that were designed for development and then adapted for production use.
 
 Production-first design means:
 - **Minimal Overhead**: Performance impact must be negligible enough for continuous production use
@@ -291,11 +295,11 @@ Production-first design means:
 
 ## **6. Extensibility and Future Evolution**
 
-While Universal Real-time Profiling provides a comprehensive foundation for system observability, the diversity of modern computing environments requires an extensible architecture that can adapt to new technologies and use cases.
+While SystemScope provides a comprehensive foundation for system observability, the diversity of modern computing environments requires an extensible architecture that can adapt to new technologies and use cases.
 
 ### **6.1 The Plugin Paradigm**
 
-Universal Real-time Profiling embraces a plugin architecture that allows new event sources and visualization approaches to be integrated without modifying the core system. This plugin paradigm enables:
+SystemScope embraces a plugin architecture that allows new event sources and visualization approaches to be integrated without modifying the core system. This plugin paradigm enables:
 
 - **Domain-Specific Extensions**: Specialized profiling for specific technologies (IoT sensors, blockchain networks, quantum computing)
 - **Visualization Innovation**: New ways to understand and interact with system performance data
@@ -304,7 +308,7 @@ Universal Real-time Profiling embraces a plugin architecture that allows new eve
 
 ### **6.2 Adaptive Intelligence**
 
-As Universal Real-time Profiling systems observe more environments and correlate more events, they can develop adaptive intelligence about system behavior patterns. This intelligence can inform:
+As SystemScope systems observe more environments and correlate more events, they can develop adaptive intelligence about system behavior patterns. This intelligence can inform:
 
 - **Predictive Analysis**: Identifying patterns that precede performance issues
 - **Automatic Optimization**: Suggesting configuration changes based on observed behavior
@@ -313,13 +317,13 @@ As Universal Real-time Profiling systems observe more environments and correlate
 
 ---
 
-## **7. Comparative Analysis: Universal Real-time Profiling vs. Current Approaches**
+## **7. Comparative Analysis: SystemScope vs. Current Approaches**
 
-To understand the significance of Universal Real-time Profiling, it's important to examine how it differs from existing observability approaches across key dimensions.
+To understand the significance of SystemScope, it's important to examine how it differs from existing observability approaches across key dimensions.
 
 ### **7.1 Comprehensive Tool Comparison Matrix**
 
-| **Capability** | **Traditional Tools** | **Universal Real-time Profiling** | **Advantage** |
+| **Capability** | **Traditional Tools** | **SystemScope** | **Advantage** |
 |----------------|----------------------|-----------------------------------|---------------|
 | **Temporal Model** | Batch/offline analysis | Real-time streaming analysis | Live optimization, immediate insights |
 | **Layer Coverage** | Single-layer focus | Cross-layer correlation | Holistic system understanding |
@@ -329,7 +333,7 @@ To understand the significance of Universal Real-time Profiling, it's important 
 | **Instrumentation** | Code modification required | Zero-instrumentation approach | Production-safe continuous use |
 | **Overhead** | High (5-50%) when active | Near-zero when inactive | Always-on capability |
 
-*Table 3: Detailed comparison of Universal Real-time Profiling capabilities versus traditional approaches.*
+*Table 3: Detailed comparison of SystemScope capabilities versus traditional approaches.*
 
 ### **7.2 Temporal Characteristics: Real-time vs. Batch Processing**
 
@@ -345,7 +349,7 @@ Day 7+: Implement fixes
 Result: 1 week to resolution, issue may have evolved
 ```
 
-**Universal Real-time Model:**
+**SystemScope Model:**
 ```
 Real-time Optimization Workflow (Proposed):
 Minute 1: System detects performance anomaly
@@ -576,32 +580,3 @@ The technical challenges are significant—real-time event correlation across he
 This transformation is not merely an incremental improvement in tooling, but a necessary evolution in how we approach system optimization. As computing environments continue to grow in complexity—with new accelerator architectures, distributed computing patterns, and real-time requirements—the manual approach to performance optimization will become increasingly untenable. Automated, integrated optimization represents the only scalable approach to managing this complexity while maintaining the performance levels that modern applications demand.
 
 The ultimate vision extends beyond better performance tools to fundamentally better systems: computing environments that automatically adapt to changing conditions, optimize themselves based on real usage patterns, and provide immediate feedback to developers and operators about the performance implications of their decisions. Universal Real-time Profiling provides a concrete path toward this vision, with immediate practical benefits and long-term potential to transform how we build and operate computing systems.
-
----
-
-## **References**
-
-[1] Gregg, B. (2019). "BPF Performance Tools: Linux System and Application Observability." *Addison-Wesley*.
-
-[2] Dean, J., & Barroso, L. A. (2013). "The Tail at Scale." *Communications of the ACM*, 56(2).
-
-[3] Cantrill, B., Shapiro, M. W., & Leventhal, A. H. (2004). "Dynamic Instrumentation of Production Systems." *USENIX Annual Technical Conference*.
-
-[4] OpenTelemetry Community. (2024). "OpenTelemetry Specification v1.3+." *Cloud Native Computing Foundation*.
-
-[5] NVIDIA Corporation. (2024). "Nsight Systems 2024.1: Container and Multi-GPU Profiling." *NVIDIA Developer Documentation*.
-
-[6] New Relic, Inc. (2023). "Pixie: Kubernetes-native Observability with eBPF." *CNCF Graduated Project Documentation*.
-
-[7] Grafana Labs. (2023). "Pyroscope: Continuous Profiling Platform." *Grafana Open Source Projects*.
-
-[8] Zheng, L., et al. (2024). "Alpa: Automating Inter- and Intra-Operator Parallelism for Distributed Deep Learning." *OSDI '24*.
-
-[9] Patel, A., et al. (2024). "Analysis of Large Language Model Serving Performance in Production." *MLSys '24*.
-
-[10] Kubernetes SIG Instrumentation. (2024). "Cloud Native Observability: Prometheus, Grafana, and OpenTelemetry Integration." *CNCF Technical Reports*.
-
----
-
-*This proposal presents a conceptual framework for Universal Real-time Profiling, Analysis, and Optimization. The ideas outlined here address fundamental scalability limitations in current performance optimization approaches and propose a path toward automated, integrated optimization capabilities for heterogeneous computing environments.*
-
