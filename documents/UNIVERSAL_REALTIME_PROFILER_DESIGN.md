@@ -1,4 +1,4 @@
-# Rethinking System Observability: Towards SystemScope
+# Rethinking System with SystemScope: Towards Universal Real-time Profiling, Analysis, and Optimization
 
 > I want to have a tool, that can do Real-time and Online Profiling, interactively, and can do Correlation of Multi-Layer and Multi-Component Events across heterigeneous env and full system(not only on cpu, also include gpu, npu, etc; from os level scheduling, on cpu/off cpu to network events), and can be easily extend to different events and differen vistualize approach. it should be minimal cost, with easy use (with a single binary and can work as a service with frontend, and don't need storage and copy to local for analysis) It should also help connect the observability and stem tuning/optimization together, make optimizaion from hardware level to function level, system level, and application level easily and fine-grained. All these things can come with zero instrumentation, no need to modify the code or restart the service, and zero overhead when not in analysis mode.
 
