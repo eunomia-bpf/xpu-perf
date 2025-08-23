@@ -1,147 +1,158 @@
-# **libbpf-starter-template**
+# **SystemScope**
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-[![Build and publish](https://github.com/eunomia-bpf/libbpf-starter-template/actions/workflows/publish.yml/badge.svg)](https://github.com/eunomia-bpf/libbpf-starter-template/actions/workflows/publish.yml)
-![GitHub stars](https://img.shields.io/github/stars/eunomia-bpf/libbpf-starter-template?style=social)
+[![Build and publish](https://github.com/yunwei37/systemscope/actions/workflows/publish.yml/badge.svg)](https://github.com/yunwei37/systemscope/actions/workflows/publish.yml)
 
-Welcome to the **`libbpf-starter-template`**! This project template is designed to help you quickly start
-developing eBPF projects using libbpf in C. The template provides a solid starting point with a Makefile, 
-Dockerfile, and GitHub action, along with all necessary dependencies to simplify your development process.
+**SystemScope** is a unified real-time profiling, analysis, and optimization system for modern heterogeneous computing environments. It provides zero-instrumentation system profiling using eBPF technology with minimal overhead, offering real-time visualization and analysis capabilities through an interactive web frontend.
 
-借助于 GitHub 模板和 Github Codespace，可以轻松构建 eBPF 项目和开发环境，一键在线编译运行 eBPF 程序。关于中文的文档和详细的 eBPF 开发教程，可以参考：https://github.com/eunomia-bpf/bpf-developer-tutorial
+## **Vision**
 
-There are other templates for other languages:
-
-- <https://github.com/eunomia-bpf/libbpf-starter-template>: eBPF project template based on the C language and the libbpf framework.
-- <https://github.com/eunomia-bpf/cilium-ebpf-starter-template>: eBPF project template based on the Go language and the cilium/ebpf framework.
-- <https://github.com/eunomia-bpf/libbpf-rs-starter-template>: eBPF project template based on the Rust language and the libbpf-rs framework.
-- <https://github.com/eunomia-bpf/eunomia-template>: eBPF project template based on the C language and the eunomia-bpf framework.
-
-## **Getting Started**
-
-To get started, simply click the "Use this template" button on the GitHub repository page. This will create
-a new repository in your account with the same files and structure as this template.
-
-### Use docker
-
-Run the following code to run the eBPF code from the cloud to your local machine in one line:
-
-```console
-$ sudo docker run --rm -it --privileged ghcr.io/eunomia-bpf/libbpf-template:latest
-TIME     EVENT COMM             PID     PPID    FILENAME/EXIT CODE
-09:25:14 EXEC  sh               28142   1788    /bin/sh
-09:25:14 EXEC  playerctl        28142   1788    /nix/store/vf3rsb7j3p7zzyjpb0a3axl8yq4z1sq5-playerctl-2.4.1/bin/playerctl
-09:25:14 EXIT  playerctl        28142   1788    [1] (6ms)
-09:25:15 EXEC  sh               28145   1788    /bin/sh
-09:25:15 EXEC  playerctl        28145   1788    /nix/store/vf3rsb7j3p7zzyjpb0a3axl8yq4z1sq5-playerctl-2.4.1/bin/playerctl
-09:25:15 EXIT  playerctl        28145   1788    [1] (6ms)
-```
-
-### Use Nix
-
-Using [direnv](https://github.com/direnv/direnv) and nix, you can quickly access a dev shell with a complete development environment.
-
-With direnv, you can automatically load the required dependencies when you enter the directory.
-This way you don't have to worry about installing dependencies to break your other project development environment.
-
-See how to install direnv and Nix:
-- direnv: https://github.com/direnv/direnv/blob/master/docs/installation.md
-- Nix: run
-```
-sh <(curl -L https://nixos.org/nix/install) --daemon
-```
-
-Then use the following command to enable direnv support in this directory.
-
-```sh
-direnv allow
-```
-
-If you want use nix flake without direnv, simply run:
-
-```sh
-nix develop
-```
+SystemScope aims to revolutionize system observability by:
+- **Real-time profiling** across CPU, GPU, and other accelerators without code modification
+- **Zero-instrumentation** deployment with negligible overhead when not actively profiling
+- **Multi-layer correlation** of events from hardware level to application level
+- **Interactive visualization** through 3D flamegraphs and real-time dashboards
+- **Automated optimization** discovery through cross-layer analysis
 
 ## **Features**
 
-This starter template includes the following features:
+- **eBPF-based Profiling**: On-CPU and off-CPU profiling with minimal overhead
+- **Real-time Streaming**: WebSocket-based live data streaming to frontend
+- **3D Flamegraph Visualization**: Interactive Three.js-based visualization
+- **Zero Configuration**: Single binary deployment with no code changes required
+- **Production Ready**: Designed for continuous operation in production environments
+- **Extensible Architecture**: Easy to add new collectors and visualization methods
 
-- A **`Makefile`** that allows you to build the project in one command
-- A **`Dockerfile`** to create a containerized environment for your project
-- A **`flake.nix`** to enter a dev shell with needed dependencies
-- A GitHub action to automate your build and publish process
-  and docker image
-- All necessary dependencies for C development with libbpf
+## **Quick Start**
 
-## **How to use**
+### **Prerequisites**
 
-### **1. Create a new repository using this template**
+- Linux kernel 4.9+ with eBPF support
+- CMake 3.16+
+- C++20 compatible compiler
+- Node.js 16+ (for frontend development)
+- Root privileges (for eBPF programs)
 
-Click the "Use this template" button on the GitHub repository page to create a new repository based on this template.
+### **Installation**
 
-### **2. Clone your new repository**
+Install dependencies on Ubuntu:
 
-Clone your newly created repository to your local machine:
-
-```sh
-git clone https://github.com/your_username/your_new_repository.git --recursive
-```
-
-Or after clone the repo, you can update the git submodule with following commands:
-
-```sh
-git submodule update --init --recursive
-```
-
-### **3. Install dependencies**
-
-For dependencies, it varies from distribution to distribution. You can refer to shell.nix and dockerfile for installation.
-
-On Ubuntu, you may run `make install` or
-
-```sh
+```bash
+make install
+# or manually:
 sudo apt-get install -y --no-install-recommends \
         libelf1 libelf-dev zlib1g-dev \
         make clang llvm
 ```
 
-to install dependencies.
+### **Build**
 
-### **4. Build the project**
-
-To build the project, run the following command:
-
-```sh
+```bash
+# Build the entire project
 make build
+
+# Or using CMake directly
+cmake -B build
+cmake --build build
 ```
 
-This will compile your code and create the necessary binaries. You can you the `Github Code space` or `Github Action` to build the project as well.
+### **Run**
 
-### ***Run the Project***
+Start the profiler (requires root):
 
-You can run the binary with:
-
-```console
-sudo src/bootstrap
+```bash
+sudo ./build/src/bpf_profiler
 ```
 
-Or with Github Packages locally:
+The web interface will be available at `http://localhost:8080`
 
-```console
-docker run --rm -it --privileged -v $(pwd):/examples ghcr.io/eunomia-bpf/libbpf-template:latest
+### **Frontend Development**
+
+```bash
+cd frontend
+npm install
+npm run dev  # Start development server
 ```
 
-### **7. GitHub Actions**
+## **Architecture**
 
-This template also includes a GitHub action that will automatically build and publish your project when you push to the repository.
-To customize this action, edit the **`.github/workflows/publish.yml`** file.
+SystemScope consists of three main components:
+
+1. **eBPF Collectors**: Kernel-space programs that collect profiling data
+   - On-CPU profiling using performance events
+   - Off-CPU time tracking
+   - Network and I/O event collection (planned)
+
+2. **Profile Server**: User-space daemon that processes and serves data
+   - Stack trace symbolization via blazesym
+   - Real-time data aggregation
+   - WebSocket server for frontend communication
+
+3. **Web Frontend**: Interactive visualization interface
+   - React + TypeScript + Three.js
+   - Real-time 3D flamegraph rendering
+   - Performance metrics dashboard
+
+## **Development**
+
+### **Running Tests**
+
+```bash
+# Run all tests
+make test
+
+# Run frontend tests
+cd frontend
+npm run test
+```
+
+### **Code Structure**
+
+```
+systemscope/
+├── src/
+│   ├── collectors/     # eBPF collectors
+│   ├── server/         # WebSocket server
+│   └── main.cpp        # Entry point
+├── frontend/           # React frontend
+├── tests/             # C++ tests
+└── tools/             # Utility scripts
+```
+
+## **Docker Support**
+
+Run SystemScope in a container:
+
+```bash
+docker run --rm -it --privileged ghcr.io/yunwei37/systemscope:latest
+```
+
+## **Roadmap**
+
+- [ ] GPU profiling support (CUDA/ROCm)
+- [ ] Distributed tracing integration
+- [ ] Automated optimization recommendations
+- [ ] Kubernetes operator for cluster-wide deployment
+- [ ] Machine learning-based anomaly detection
 
 ## **Contributing**
 
-We welcome contributions to improve this template! If you have any ideas or suggestions,
-feel free to create an issue or submit a pull request.
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## **Documentation**
+
+For detailed documentation, see:
+- [Architecture Overview](documents/intro.md)
+- [Development Guide](CLAUDE.md)
+- [API Reference](docs/api.md)
 
 ## **License**
 
-This project is licensed under the MIT License. See the **[LICENSE](LICENSE)** file for more information.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## **Acknowledgments**
+
+SystemScope builds upon several excellent open-source projects:
+- [libbpf](https://github.com/libbpf/libbpf) for eBPF functionality
+- [blazesym](https://github.com/libblazevm/blazesym) for symbolization
+- [React Three Fiber](https://github.com/pmndrs/react-three-fiber) for 3D visualization
