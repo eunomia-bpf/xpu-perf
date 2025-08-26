@@ -19,8 +19,8 @@
 #include <bpf/bpf.h>
 #include <sys/stat.h>
 #include <string.h>
-#include "profile.h"
-#include "profile.skel.h"
+#include "oncputime.h"
+#include "oncputime.skel.h"
 #include "blazesym.h"
 #include "arg_parse.h"
 
@@ -303,7 +303,7 @@ static void print_headers()
 int main(int argc, char **argv)
 {
 	struct bpf_link *links[MAX_CPU_NR] = {};
-	struct profile_bpf *obj;
+	struct oncputime_bpf *obj;
 	int pids_fd, tids_fd;
 	int err, i;
 	__u8 val = 0;
@@ -336,7 +336,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	obj = profile_bpf__open();
+	obj = oncputime_bpf__open();
 	if (!obj) {
 		fprintf(stderr, "failed to open BPF object\n");
 		blazesym_free(symbolizer);
@@ -356,7 +356,7 @@ int main(int argc, char **argv)
 				env.perf_max_stack_depth * sizeof(unsigned long));
 	bpf_map__set_max_entries(obj->maps.stackmap, env.stack_storage_size);
 
-	err = profile_bpf__load(obj);
+	err = oncputime_bpf__load(obj);
 	if (err) {
 		fprintf(stderr, "failed to load BPF programs\n");
 		goto cleanup;
@@ -408,7 +408,7 @@ cleanup:
 	}
 	
 	blazesym_free(symbolizer);
-	profile_bpf__destroy(obj);
+	oncputime_bpf__destroy(obj);
 
 	return err != 0;
 }

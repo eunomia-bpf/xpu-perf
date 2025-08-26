@@ -24,13 +24,13 @@ INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(dir $(VMLINUX))
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-APPS = offcputime profile
+APPS = offcputime oncputime
 
 CARGO ?= $(shell which cargo)
 ifeq ($(strip $(CARGO)),)
 BZS_APPS :=
 else
-BZS_APPS := offcputime profile
+BZS_APPS := offcputime oncputime
 # Required by libblazesym
 ALL_LDFLAGS += -lrt -ldl -lpthread -lm
 endif

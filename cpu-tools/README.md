@@ -3,7 +3,7 @@
 This directory contains two powerful BPF-based profiling tools derived from BCC libbpf-tools:
 
 - **offcputime** - Traces off-CPU time by stack traces
-- **profile** - Profiles CPU usage by sampling stack traces
+- **oncputime** - Profiles CPU usage by sampling stack traces
 
 ## Overview
 
@@ -71,9 +71,9 @@ These tools use eBPF (Extended Berkeley Packet Filter) to efficiently collect pr
 - `--state`: Filter by thread state bitmask
 - `-v, --verbose`: Verbose debug output
 
-### profile
+### oncputime
 
-`profile` samples CPU usage by capturing stack traces at regular intervals, showing where CPU time is being spent. This is useful for identifying CPU hotspots and performance bottlenecks.
+`oncputime` samples CPU usage by capturing stack traces at regular intervals, showing where CPU time is being spent. This is useful for identifying CPU hotspots and performance bottlenecks.
 
 #### How it works
 - Uses perf events to sample at timed intervals (default: 49 Hz)
@@ -84,34 +84,34 @@ These tools use eBPF (Extended Berkeley Packet Filter) to efficiently collect pr
 #### Usage
 ```bash
 # Basic usage - profile at 49 Hz until Ctrl+C
-./profile
+./oncputime
 
 # Profile at 99 Hz sampling rate
-./profile -F 99
+./oncputime -F 99
 
 # Profile for 5 seconds only
-./profile 5
+./oncputime 5
 
 # Profile specific PID
-./profile -p 185
+./oncputime -p 185
 
 # Profile specific thread (TID)
-./profile -L 185
+./oncputime -L 185
 
 # Show only user space stacks
-./profile -U
+./oncputime -U
 
 # Show only kernel space stacks
-./profile -K
+./oncputime -K
 
 # Output in folded format for flame graphs
-./profile -f
+./oncputime -f
 
 # Profile specific CPU core
-./profile -C 0
+./oncputime -C 0
 
 # Include idle CPU time in results
-./profile -I
+./oncputime -I
 ```
 
 #### Command Line Options
@@ -144,7 +144,7 @@ make all
 
 # Build specific tool
 make offcputime
-make profile
+make oncputime
 
 # Clean build artifacts
 make clean
@@ -197,7 +197,7 @@ python;_start;__libc_start_main;main;nanosleep;entry_SYSCALL_64_after_hwframe;do
 - **Sleep/delays**: Explicit sleeps or timer waits
 - **Page faults**: Memory allocation and swapping
 
-### profile Results
+### oncputime Results
 - **Stack traces**: Show the code path where CPU cycles were spent
 - **Count values**: Number of samples captured (higher = more CPU time)
 - **Thread info**: Process name and PID consuming CPU
@@ -219,9 +219,9 @@ Both tools support folded output format that can be used with Brendan Gregg's Fl
 git clone https://github.com/brendangregg/FlameGraph
 ./FlameGraph/flamegraph.pl out.folded > offcpu.svg
 
-# Generate flame graph from profile  
-./profile -f 30 > out.folded
-./FlameGraph/flamegraph.pl out.folded > profile.svg
+# Generate flame graph from oncputime  
+./oncputime -f 30 > out.folded
+./FlameGraph/flamegraph.pl out.folded > oncpu.svg
 ```
 
 ## Troubleshooting
@@ -236,7 +236,7 @@ git clone https://github.com/brendangregg/FlameGraph
 ### Performance Considerations
 
 - `offcputime` has minimal overhead as it only triggers on scheduler events
-- `profile` overhead increases with sampling frequency - start with lower rates
+- `oncputime` overhead increases with sampling frequency - start with lower rates
 - Use filtering options (-p, -t) to reduce data collection scope
 - Increase `--stack-storage-size` if you see "stack traces could not be displayed" warnings
 

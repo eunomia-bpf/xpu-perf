@@ -2,7 +2,7 @@
 """
 Combined On-CPU and Off-CPU Profiler
 
-This script runs both 'profile' and 'offcputime' tools simultaneously to capture
+This script runs both 'oncputime' and 'offcputime' tools simultaneously to capture
 both on-CPU and off-CPU activity for a given process, then combines the results
 into a unified flamegraph.
 
@@ -33,12 +33,12 @@ class CombinedProfiler:
         
         # Find tool paths
         self.script_dir = Path(__file__).parent
-        self.profile_tool = self.script_dir / "profile"
+        self.oncpu_tool = self.script_dir / "oncputime"
         self.offcpu_tool = self.script_dir / "offcputime"
         
         # Check if tools exist
-        if not self.profile_tool.exists():
-            raise FileNotFoundError(f"Profile tool not found at {self.profile_tool}")
+        if not self.oncpu_tool.exists():
+            raise FileNotFoundError(f"Oncputime tool not found at {self.oncpu_tool}")
         if not self.offcpu_tool.exists():
             raise FileNotFoundError(f"Offcputime tool not found at {self.offcpu_tool}")
 
@@ -68,12 +68,12 @@ class CombinedProfiler:
         except Exception:
             return False, []
 
-    def run_profile_tool(self):
-        """Run the profile tool in a separate thread"""
+    def run_oncpu_tool(self):
+        """Run the oncputime tool in a separate thread"""
         try:
             cmd = [
-                str(self.profile_tool),
-                # "./profiler profile",
+                str(self.oncpu_tool),
+                # "./profiler oncputime",
                 "-p", str(self.pid),
                 "-F", str(self.freq),
                 "-f",  # Folded output format
@@ -84,15 +84,15 @@ class CombinedProfiler:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.duration + 10)
             
             if result.returncode != 0:
-                self.profile_error = f"Profile tool failed: {result.stderr}"
+                self.profile_error = f"Oncputime tool failed: {result.stderr}"
                 return
                 
             self.profile_output = result.stdout.strip().split('\n') if result.stdout.strip() else []
             
         except subprocess.TimeoutExpired:
-            self.profile_error = "Profile tool timed out"
+            self.profile_error = "Oncputime tool timed out"
         except Exception as e:
-            self.profile_error = f"Profile tool error: {str(e)}"
+            self.profile_error = f"Oncputime tool error: {str(e)}"
 
     def run_offcpu_tool(self):
         """Run the offcputime tool in a separate thread"""
@@ -133,20 +133,20 @@ class CombinedProfiler:
             print(f"Starting combined profiling for PID {self.pid} for {self.duration} seconds...")
             
             # Create threads for both tools
-            profile_thread = threading.Thread(target=self.run_profile_tool)
+            oncpu_thread = threading.Thread(target=self.run_oncpu_tool)
             offcpu_thread = threading.Thread(target=self.run_offcpu_tool)
             
             # Start both threads
-            profile_thread.start()
+            oncpu_thread.start()
             offcpu_thread.start()
             
             # Wait for both to complete
-            profile_thread.join()
+            oncpu_thread.join()
             offcpu_thread.join()
             
             # Check for errors
             if self.profile_error:
-                print(f"Profile tool error: {self.profile_error}", file=sys.stderr)
+                print(f"Oncpu tool error: {self.profile_error}", file=sys.stderr)
             if self.offcpu_error:
                 print(f"Offcpu tool error: {self.offcpu_error}", file=sys.stderr)
                 
@@ -214,7 +214,7 @@ class CombinedProfiler:
         """Worker function for on-CPU profiling of a specific thread"""
         try:
             cmd = [
-                str(self.profile_tool),
+                str(self.oncpu_tool),
                 "-L", str(tid),  # Specific thread
                 "-F", str(self.freq),
                 "-f",  # Folded output
@@ -279,7 +279,7 @@ class CombinedProfiler:
         oncpu_stacks = {}
         offcpu_stacks = {}
         
-        # Process on-CPU data (profile tool)
+        # Process on-CPU data (oncputime tool)
         print(f"Processing {len(self.profile_output)} on-CPU stack traces...")
         oncpu_total_samples = 0
         for line in self.profile_output:

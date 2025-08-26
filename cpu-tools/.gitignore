@@ -2,6 +2,7 @@
 /bootstrap
 /profile
 /offcputime
+/oncputime
 res.txt
 *.o
 oncpu.txt
