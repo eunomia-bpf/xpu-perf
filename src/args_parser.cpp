@@ -29,13 +29,12 @@ void ArgsParser::setup_parser(argparse::ArgumentParser& program) {
                       "  profiler profile --pid 1234                       # Profile specific process\n"
                       "  profiler profile --pid 1234,5678 --tid 9012       # Profile specific processes and thread\n"
                       "  profiler wallclock --duration 30 --pid 1234       # Combined analysis for 30 seconds\n"
-                      "  profiler offcputime --tid 5678                     # Run until Ctrl+C for specific thread\n"
-                      "  profiler server                                    # Start HTTP server mode");
+                      "  profiler offcputime --tid 5678                     # Run until Ctrl+C for specific thread");
     
     // Add subcommands for different analyzer types
     program.add_argument("analyzer")
         .help("Type of analysis to perform")
-        .choices("profile", "offcputime", "wallclock", "server")
+        .choices("profile", "offcputime", "wallclock")
         .metavar("ANALYZER");
     
     // Duration argument

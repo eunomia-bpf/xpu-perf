@@ -61,11 +61,7 @@ endif()
 # Add local third-party dependencies as subdirectories
 add_subdirectory(src/third_party/Catch2)
 add_subdirectory(src/third_party/argparse)
-add_subdirectory(src/third_party/json)
 add_subdirectory(src/third_party/spdlog)
-
-# Include cpp-httplib as header-only library
-set(HTTPLIB_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/cpp-httplib)
 
 # Find required packages
 find_program(CLANG_EXECUTABLE NAMES clang REQUIRED)
@@ -251,9 +247,6 @@ target_link_libraries(profiler_lib PUBLIC
 add_executable(profiler
     src/main.cpp
     src/args_parser.cpp
-    src/server/profile_server.cpp
-    src/server/api_handler.cpp
-    src/server/frontend_handler.cpp
 )
 
 # Set C++ standard for the target
@@ -265,8 +258,6 @@ set_target_properties(profiler PROPERTIES
 # Add include directories for the main executable
 target_include_directories(profiler PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${HTTPLIB_INCLUDE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/json/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/spdlog/include
     ${OUTPUT_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/libbpf/include/uapi
@@ -277,7 +268,6 @@ target_include_directories(profiler PRIVATE
 target_link_libraries(profiler PRIVATE 
     profiler_lib
     argparse
-    nlohmann_json::nlohmann_json
     spdlog::spdlog
 )
 

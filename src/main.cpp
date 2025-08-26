@@ -19,7 +19,6 @@
 #include "collectors/oncpu/profile.hpp"
 #include "collectors/offcpu/offcputime.hpp"
 #include "flamegraph_generator.hpp"
-#include "server/profile_server.hpp"
 #include "third_party/spdlog/include/spdlog/spdlog.h"
 
 static volatile bool running = true;
@@ -53,31 +52,6 @@ int main(int argc, char **argv)
     
     // Parse arguments using the new parser
     ProfilerArgs args = ArgsParser::parse(argc, argv);
-
-    // Handle server subcommand differently
-    if (args.analyzer_type == "server") {
-        spdlog::info("Starting server mode...");
-        
-        server::ServerConfig config;
-        server::ProfileServer server(config);
-        
-        // Set up signal handler for graceful shutdown
-        signal(SIGINT, [](int) {
-            spdlog::info("Shutting down server...");
-            exit(0);
-        });
-        signal(SIGTERM, [](int) {
-            spdlog::info("Shutting down server...");
-            exit(0);
-        });
-        
-        if (!server.start()) {
-            spdlog::error("Failed to start server");
-            return 1;
-        }
-        
-        return 0;
-    }
 
     if (args.verbose) {
         spdlog::info("Analyzer: {}", args.analyzer_type);

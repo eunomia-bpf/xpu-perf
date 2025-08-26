@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SystemScope is a high-performance wall-clock eBPF profiler for Linux systems. It provides zero-instrumentation profiling with minimal overhead, capturing both on-CPU and off-CPU time. The optional `systemscope-vis` frontend package provides web-based visualization capabilities.
+SystemScope is a high-performance eBPF profiler for Linux systems. It provides zero-instrumentation profiling with minimal overhead, capturing both on-CPU and off-CPU time for comprehensive performance analysis.
 
 ## Build System
 
@@ -84,13 +84,6 @@ Common:
 - Outputs SVG files using folded stack format
 - Handles per-thread and aggregate views
 
-#### 5. Server Mode (`src/server/`)
-Optional HTTP/WebSocket server:
-- `profile_server.cpp/hpp`: Main server class
-- `api_handler.cpp/hpp`: REST API endpoints
-- `frontend_handler.cpp/hpp`: WebSocket for real-time data
-- `config.hpp`: Server configuration
-
 ### Command-Line Interface
 
 ```
@@ -100,7 +93,6 @@ Analyzers:
   profile      - On-CPU profiling
   offcputime   - Off-CPU time analysis  
   wallclock    - Combined analysis
-  server       - HTTP server mode
 
 Key Options:
   -d, --duration SECONDS     # Profiling duration
@@ -161,28 +153,8 @@ Run with: `make test` or `ctest --test-dir build`
 - **argparse**: Command-line parsing (included)
 - **spdlog**: Logging (included)
 
-### Optional Dependencies
-- **cpp-httplib**: HTTP server (header-only, included)
-- **nlohmann/json**: JSON handling (included)
+### Test Dependencies
 - **Catch2**: Testing framework (included)
-
-## Optional Frontend (systemscope-vis)
-
-The frontend is a separate npm package in `frontend/`:
-
-```bash
-cd frontend
-npm install
-npm run dev   # Development server
-npm run build # Production build
-npm run test  # Run tests
-```
-
-Components:
-- React + TypeScript
-- Profile data viewer
-- WebSocket client for real-time data
-- Located at `http://localhost:5173` in dev mode
 
 ## Development Notes
 
@@ -220,3 +192,20 @@ Components:
 - Adjust sampling frequency with `-f`
 - Increase min-block time for less overhead
 - Use PID filtering to reduce data volume
+
+## Project Structure
+
+```
+systemscope/
+├── src/
+│   ├── analyzers/      # Analyzer implementations
+│   ├── collectors/     # eBPF collectors
+│   ├── main.cpp       # Entry point
+│   └── args_parser.cpp # CLI argument handling
+├── tests/             # Unit tests
+├── tools/             # Additional profiling tools
+├── vmlinux/          # Pre-generated vmlinux headers
+├── libbpf/           # libbpf submodule
+├── blazesym/         # Blazesym for symbolization
+└── CMakeLists.txt    # Build configuration
+```

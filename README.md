@@ -3,7 +3,7 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 [![Build and publish](https://github.com/yunwei37/systemscope/actions/workflows/publish.yml/badge.svg)](https://github.com/yunwei37/systemscope/actions/workflows/publish.yml)
 
-SystemScope is a high-performance wall-clock eBPF profiler for Linux systems. It provides zero-instrumentation profiling with minimal overhead, capturing both on-CPU and off-CPU time to give a complete picture of application performance.
+SystemScope is a high-performance eBPF profiler for Linux systems. It provides zero-instrumentation profiling with minimal overhead, capturing both on-CPU and off-CPU time to give a complete picture of application performance.
 
 ## Features
 
@@ -80,7 +80,6 @@ ANALYZER:
   profile       On-CPU profiling
   offcputime    Off-CPU time analysis
   wallclock     Combined wall-clock profiling
-  server        Start HTTP server mode
 
 Options:
   -d, --duration SECONDS         Duration to run (default: until interrupted)
@@ -108,9 +107,9 @@ SystemScope generates flamegraph files in the current directory with the naming 
 └── stacks_{PID}.txt          # Raw stack traces
 ```
 
-### Examples
+## Examples
 
-#### Profile a Python Application
+### Profile a Python Application
 ```bash
 # Start your Python app
 python myapp.py &
@@ -123,7 +122,7 @@ sudo ./build/profiler profile --pid $PID --duration 30
 firefox profile_profile_pid${PID}_*/flame_cpu_${PID}.svg
 ```
 
-#### Analyze Database Performance
+### Analyze Database Performance
 ```bash
 # Find MySQL process ID
 PID=$(pgrep mysqld)
@@ -135,7 +134,7 @@ sudo ./build/profiler wallclock --pid $PID --duration 60
 ls wallclock_profile_pid${PID}_*/
 ```
 
-#### Debug High CPU Usage
+### Debug High CPU Usage
 ```bash
 # Quick system-wide CPU profile
 sudo ./build/profiler profile --duration 5 --frequency 99
@@ -144,22 +143,10 @@ sudo ./build/profiler profile --duration 5 --frequency 99
 sudo ./build/profiler profile --duration 10 -U
 ```
 
-#### Investigate Lock Contention
+### Investigate Lock Contention
 ```bash
 # Off-CPU analysis with 1ms minimum
 sudo ./build/profiler offcputime --duration 30 --min-block 1000
-```
-
-## Server Mode
-
-SystemScope can run as a server for continuous profiling:
-
-```bash
-# Start server (runs on port 8080)
-sudo ./build/profiler server
-
-# The server provides HTTP endpoints for real-time profiling
-# Optional: Use with systemscope-vis frontend for visualization
 ```
 
 ## Architecture
@@ -223,15 +210,17 @@ make build
 make test
 ```
 
-## Optional Visualization
+## Integration with Visualization Tools
 
-A separate visualization package `systemscope-vis` is available in the `frontend/` directory for those who want a built-in web UI for viewing profile data. This is optional and SystemScope works perfectly with external tools like flamegraph.pl, pprof, or speedscope.
+SystemScope outputs standard flamegraph format that works with popular tools:
 
 ```bash
-# Optional: Install visualization frontend
-cd frontend
-npm install
-npm run dev
+# Use with Brendan Gregg's FlameGraph
+git clone https://github.com/brendangregg/FlameGraph
+cat profile_profile_*/stacks_*.txt | ./FlameGraph/flamegraph.pl > output.svg
+
+# Convert to pprof format (requires additional tools)
+# Or use the built-in SVG output directly
 ```
 
 ## Contributing
