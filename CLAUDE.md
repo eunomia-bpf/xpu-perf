@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SystemScope is a unified real-time profiling, analysis, and optimization system for modern heterogeneous computing environments. It uses eBPF for zero-instrumentation system profiling and provides real-time visualization through a web frontend.
+SystemScope is a high-performance wall-clock eBPF profiler for Linux systems. It provides zero-instrumentation profiling with minimal overhead, outputting standard formats compatible with popular visualization tools. The optional `systemscope-vis` frontend package provides 3D visualization capabilities.
 
 ## Build Commands
 
@@ -29,7 +29,9 @@ make clean
 make install
 ```
 
-## Frontend Development
+## Optional Frontend Development (systemscope-vis)
+
+The frontend is now a separate package called `systemscope-vis` in the `frontend/` directory.
 
 ```bash
 cd frontend
@@ -70,13 +72,15 @@ npm run format
    - Handles frontend connections and profile data delivery
 
 3. **Flamegraph Generator** (`src/flamegraph_generator.cpp`)
-   - Converts raw profiling data to flamegraph format
+   - Converts raw profiling data to standard formats
    - Handles stack trace symbolization via blazesym
+   - Supports folded stacks, pprof, and Chrome trace formats
 
-4. **Frontend** (`frontend/`)
+4. **Optional Frontend** (`frontend/` - package `systemscope-vis`)
+   - Separate npm package for visualization
    - React + TypeScript + Three.js
    - 3D visualization of flamegraphs
-   - Real-time WebSocket connection to backend
+   - Can be used standalone or with SystemScope server
 
 ### Key Dependencies
 

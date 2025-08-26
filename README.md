@@ -1,158 +1,149 @@
-# **SystemScope**
+# SystemScope - Wall-Clock eBPF Profiler
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 [![Build and publish](https://github.com/yunwei37/systemscope/actions/workflows/publish.yml/badge.svg)](https://github.com/yunwei37/systemscope/actions/workflows/publish.yml)
 
-**SystemScope** is a unified real-time profiling, analysis, and optimization system for modern heterogeneous computing environments. It provides zero-instrumentation system profiling using eBPF technology with minimal overhead, offering real-time visualization and analysis capabilities through an interactive web frontend.
+SystemScope is a high-performance wall-clock eBPF profiler for Linux systems. It provides zero-instrumentation profiling with minimal overhead, outputting standard formats compatible with popular visualization tools.
 
-## **Vision**
+## Features
 
-SystemScope aims to revolutionize system observability by:
-- **Real-time profiling** across CPU, GPU, and other accelerators without code modification
-- **Zero-instrumentation** deployment with negligible overhead when not actively profiling
-- **Multi-layer correlation** of events from hardware level to application level
-- **Interactive visualization** through 3D flamegraphs and real-time dashboards
-- **Automated optimization** discovery through cross-layer analysis
+- **Wall-clock profiling**: Track both on-CPU and off-CPU time
+- **eBPF-based**: Zero instrumentation, minimal overhead
+- **Standard formats**: Output to pprof, folded stacks, or Chrome trace format
+- **Production ready**: Designed for continuous operation in production
+- **Simple**: Single binary, no dependencies on target applications
 
-## **Features**
+## Quick Start
 
-- **eBPF-based Profiling**: On-CPU and off-CPU profiling with minimal overhead
-- **Real-time Streaming**: WebSocket-based live data streaming to frontend
-- **3D Flamegraph Visualization**: Interactive Three.js-based visualization
-- **Zero Configuration**: Single binary deployment with no code changes required
-- **Production Ready**: Designed for continuous operation in production environments
-- **Extensible Architecture**: Easy to add new collectors and visualization methods
-
-## **Quick Start**
-
-### **Prerequisites**
+### Prerequisites
 
 - Linux kernel 4.9+ with eBPF support
 - CMake 3.16+
 - C++20 compatible compiler
-- Node.js 16+ (for frontend development)
 - Root privileges (for eBPF programs)
 
-### **Installation**
-
-Install dependencies on Ubuntu:
+### Installation
 
 ```bash
+# Install dependencies (Ubuntu/Debian)
 make install
-# or manually:
-sudo apt-get install -y --no-install-recommends \
-        libelf1 libelf-dev zlib1g-dev \
-        make clang llvm
-```
 
-### **Build**
-
-```bash
-# Build the entire project
+# Build
 make build
 
-# Or using CMake directly
-cmake -B build
-cmake --build build
+# Run profiler
+sudo ./build/src/bpf_profiler --duration 30 --output folded > profile.txt
+
+# Visualize with external tools
+flamegraph.pl profile.txt > flamegraph.svg
 ```
 
-### **Run**
+## Usage
 
-Start the profiler (requires root):
+### Basic Profiling
 
 ```bash
-sudo ./build/src/bpf_profiler
+# Profile for 30 seconds, output folded stacks
+sudo systemscope profile --duration 30 --output folded > stacks.txt
+
+# Profile specific PIDs
+sudo systemscope profile --pid 1234,5678 --duration 10
+
+# Off-CPU profiling
+sudo systemscope offcpu --duration 30 --output pprof -o offcpu.pb.gz
 ```
 
-The web interface will be available at `http://localhost:8080`
+### Output Formats
 
-### **Frontend Development**
+SystemScope supports multiple output formats for compatibility with existing tools:
+
+- **folded**: Brendan Gregg's folded stack format (for flamegraph.pl)
+- **pprof**: Google's pprof format (for go tool pprof)
+- **chrome**: Chrome trace format (for chrome://tracing)
+
+### Integration with Visualization Tools
 
 ```bash
+# With Brendan Gregg's FlameGraph
+systemscope profile --output folded | flamegraph.pl > flame.svg
+
+# With pprof web UI
+systemscope profile --output pprof -o profile.pb.gz
+go tool pprof -http=:8080 profile.pb.gz
+
+# With speedscope
+systemscope profile --output speedscope -o profile.json
+# Open https://speedscope.app and load profile.json
+```
+
+## Architecture
+
+SystemScope focuses on efficient data collection:
+
+1. **eBPF Collectors**: Kernel-space programs for profiling
+   - On-CPU sampling via perf events
+   - Off-CPU time tracking
+   - Minimal overhead design
+
+2. **Data Processing**: User-space processing pipeline
+   - Stack trace symbolization
+   - Format conversion
+   - Streaming output support
+
+## Optional Visualization
+
+A separate visualization package `systemscope-vis` is available in the `frontend/` directory for those who want a built-in web UI. This is optional and SystemScope works perfectly with external tools.
+
+```bash
+# Optional: Install visualization frontend
 cd frontend
 npm install
-npm run dev  # Start development server
+npm run dev
 ```
 
-## **Architecture**
+## Development
 
-SystemScope consists of three main components:
-
-1. **eBPF Collectors**: Kernel-space programs that collect profiling data
-   - On-CPU profiling using performance events
-   - Off-CPU time tracking
-   - Network and I/O event collection (planned)
-
-2. **Profile Server**: User-space daemon that processes and serves data
-   - Stack trace symbolization via blazesym
-   - Real-time data aggregation
-   - WebSocket server for frontend communication
-
-3. **Web Frontend**: Interactive visualization interface
-   - React + TypeScript + Three.js
-   - Real-time 3D flamegraph rendering
-   - Performance metrics dashboard
-
-## **Development**
-
-### **Running Tests**
+### Running Tests
 
 ```bash
-# Run all tests
 make test
-
-# Run frontend tests
-cd frontend
-npm run test
 ```
 
-### **Code Structure**
+### Project Structure
 
 ```
 systemscope/
 ├── src/
-│   ├── collectors/     # eBPF collectors
-│   ├── server/         # WebSocket server
-│   └── main.cpp        # Entry point
-├── frontend/           # React frontend
-├── tests/             # C++ tests
-└── tools/             # Utility scripts
+│   ├── collectors/     # eBPF profiling programs
+│   ├── exporters/      # Output format converters
+│   └── main.cpp        # CLI entry point
+├── frontend/           # Optional visualization (systemscope-vis)
+└── tests/             # Test suite
 ```
 
-## **Docker Support**
-
-Run SystemScope in a container:
+## Docker Support
 
 ```bash
-docker run --rm -it --privileged ghcr.io/yunwei37/systemscope:latest
+docker run --rm -it --privileged ghcr.io/yunwei37/systemscope:latest \
+    profile --duration 30 --output folded
 ```
 
-## **Roadmap**
+## Performance
 
-- [ ] GPU profiling support (CUDA/ROCm)
-- [ ] Distributed tracing integration
-- [ ] Automated optimization recommendations
-- [ ] Kubernetes operator for cluster-wide deployment
-- [ ] Machine learning-based anomaly detection
+- Less than 1% CPU overhead during profiling
+- Minimal memory footprint
+- No impact when not profiling
 
-## **Contributing**
+## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-## **Documentation**
+## License
 
-For detailed documentation, see:
-- [Architecture Overview](documents/intro.md)
-- [Development Guide](CLAUDE.md)
-- [API Reference](docs/api.md)
+MIT License. See [LICENSE](LICENSE) file for details.
 
-## **License**
+## Acknowledgments
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## **Acknowledgments**
-
-SystemScope builds upon several excellent open-source projects:
+SystemScope builds upon:
 - [libbpf](https://github.com/libbpf/libbpf) for eBPF functionality
 - [blazesym](https://github.com/libblazevm/blazesym) for symbolization
-- [React Three Fiber](https://github.com/pmndrs/react-three-fiber) for 3D visualization

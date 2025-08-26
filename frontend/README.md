@@ -1,30 +1,27 @@
-# 🔥 Zero-Instrument Profiler Frontend
+# systemscope-vis
 
-A **data-focused, completely decoupled** profiler frontend built with React, TypeScript, and Three.js.
+3D Flamegraph visualization for SystemScope profiler data.
 
-## 🎯 **Key Features**
+## Overview
 
-### ✅ **Complete Decoupling**
-- **Views** are independent of **analyzers** - they only understand data formats
-- **Data Sources** can be combined from multiple analyzer instances
-- **Format-driven compatibility** determines which views can display data
+`systemscope-vis` is an optional web-based visualization frontend for SystemScope profiler. It provides interactive 3D flamegraph rendering using React and Three.js.
 
-### ✅ **Dynamic Configuration**
-- **Schema-driven UIs** for both analyzers and views
-- **Multiple analyzer instances** can run simultaneously
-- **Flexible data combination** with merge/append/override modes
+## Features
 
-### ✅ **Modern Architecture**
-- **TypeScript** with strict typing throughout
-- **Zustand** for state management with proper separation of concerns
-- **Modular design** with clear boundaries between layers
+- Interactive 3D flamegraph visualization
+- Real-time data streaming via WebSocket
+- Configurable view controls
+- Data export capabilities
 
-## 🚀 **Quick Start**
+## Installation
 
 ```bash
-# Install dependencies
 npm install
+```
 
+## Development
+
+```bash
 # Start development server
 npm run dev
 
@@ -32,118 +29,31 @@ npm run dev
 npm run build
 
 # Run tests
-npm test
+npm run test
 ```
 
-## 🏗️ **Architecture Overview**
+## Usage
 
-```
-🎨 Presentation Layer
-├── AnalyzerEngine     # Analyzer instance management
-├── ControlCenter      # Control components (NEW: DataSourceSelector)
-├── ViewportEngine     # View components (simplified & decoupled)
-└── LayoutManager      # App shell and layout
-
-📊 Data Management Layer  
-├── DataSourceStore    # NEW: Central data source management
-├── AnalyzerStore      # Analyzer configs and instances
-└── Legacy Stores      # Backward compatibility
-
-🔧 Configuration Layer
-├── analyzer.types.ts  # Core type definitions
-└── flame.types.ts     # Legacy flame graph types
-```
-
-## 📊 **Data Flow**
-
-1. **Analyzer Instances** → Produce data with specific formats
-2. **DataSourceStore** → Manages and combines data sources  
-3. **Views** → Check format compatibility and render data
-4. **User** → Selects data sources and compatible views
-
-## 🔄 **Usage Workflow**
-
-1. **Create analyzer instances** with custom configurations
-2. **Run analyzers** to generate profiling data
-3. **Select data sources** - combine multiple analyzer outputs
-4. **Choose compatible views** based on data format
-5. **Visualize data** with format-appropriate rendering
-
-## 📁 **Key Components**
-
-### **NEW: Data-Focused Components**
-- `DataSourceSelector` - Select and combine multiple data sources
-- `DynamicViewControls` - Format-based view compatibility checking  
-- `DataSourceStore` - Central data source management
-
-### **Enhanced Components**
-- `DynamicAnalyzer` - Manage multiple analyzer instances
-- `FlameGraph3DView` - Simplified 3D visualization  
-- `DataTableView` - Universal text-based data display
-
-## 🎛️ **Available Analyzers**
-
-- **🔥 Flame Graph Profiler**: CPU profiling with stack trace sampling
-- **⏰ Wall Clock Analyzer**: Combined on-CPU and off-CPU profiling  
-- **💤 Off-CPU Time Analyzer**: Analyze time spent off-CPU (blocking)
-
-## 🖼️ **Available Views**
-
-- **🎯 3D Flame Graph**: Interactive 3D visualization (optimized for flamegraph format)
-- **📊 Data View**: Universal text display (works with any format)
-
-## 🔧 **Configuration**
-
-All components use **schema-driven configuration**:
-
-```typescript
-// Analyzer configuration
-{
-  duration: 30,        // seconds
-  frequency: 99,       // Hz  
-  target: "process",   // process name or PID
-}
-
-// View configuration  
-{
-  colorScheme: "hot-cold"  // visualization style
-}
-```
-
-## 📚 **Documentation**
-
-- **[Architecture Guide](./docs/ARCHITECTURE.md)** - Detailed technical architecture
-- **[User Guide](./docs/USER_GUIDE.md)** - How to use the data-focused interface
-
-## 🧪 **Testing**
+This frontend is designed to work with SystemScope's server mode:
 
 ```bash
-# Run tests
-npm test
+# Start SystemScope server
+sudo systemscope server --port 8080
 
-# Run tests with UI
-npm run test:ui
-
-# Generate coverage
-npm run coverage
+# In another terminal, start the frontend
+npm run dev
 ```
 
-## 🏆 **Benefits of This Design**
+The visualization will be available at `http://localhost:5173`
 
-- **🔄 Extensible**: Add new analyzers/views without coupling
-- **🧩 Modular**: Clear separation of concerns  
-- **🎯 Flexible**: Combine data from multiple sources
-- **🛡️ Type-Safe**: Full TypeScript coverage
-- **👤 User-Friendly**: Data-focused workflow
+## Standalone Usage
 
-## 🔮 **Roadmap**
+You can also use this as a standalone flamegraph viewer by loading profile data files directly through the UI.
 
-- [ ] File upload data sources
-- [ ] API-based data streaming  
-- [ ] Additional view types (timeline, statistics)
-- [ ] Advanced data filtering and transformation
-- [ ] Export and sharing capabilities
+## Note
 
----
+SystemScope works perfectly with external visualization tools like flamegraph.pl, pprof, or speedscope. This frontend is optional and provided for users who prefer an integrated solution.
 
-**Built with ❤️ using a completely decoupled, data-first architecture!**
+## License
+
+MIT
