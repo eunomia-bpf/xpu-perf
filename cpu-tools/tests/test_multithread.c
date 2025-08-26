@@ -189,7 +189,7 @@ void simulate_cpu_string_work(int request_id, int intensity) {
 
 // CPU-intensive: Sorting and data structures
 void simulate_cpu_sort_work(int request_id, int intensity) {
-    int size = intensity * 5000;
+    int size = intensity * 500;
     int *array = malloc(size * sizeof(int));
     
     // Generate random data
@@ -408,12 +408,18 @@ void* worker_thread(void* arg) {
                 __sync_fetch_and_add(&cpu_sort_requests, 1);
                 break;
             case 3: // File I/O
+            case 4: // File I/O
+            case 5:
                 simulate_file_io(req.request_id);
                 break;
-            case 4: // Network operations
+            case 6: // Network operations
+            case 7:
+            case 8:
                 simulate_network_operation(req.request_id, req.request_id);
                 break;
-            case 5: // Poll/wait operations
+            case 9: // Poll/wait operations
+            case 10:
+            case 11:
                 simulate_poll_wait(req.request_id);
                 break;
         }
@@ -442,7 +448,7 @@ void* request_generator(void* arg) {
     while (running) {
         request_t req;
         req.request_id = request_id++;
-        req.request_type = rand() % 6; // 6 different request types
+        req.request_type = rand() % 12; // 6 different request types
         get_timestamp(&req.arrival_time);
         
         if (enqueue_request(&req) < 0) {

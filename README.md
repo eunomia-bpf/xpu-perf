@@ -10,6 +10,10 @@ A high-performance wall-clock profiler that combines on-CPU and off-CPU profilin
 - **Low Overhead**: Less than 1% CPU overhead using eBPF-based profiling
 - **Zero Instrumentation**: No modifications needed to target applications
 
+## Examples
+
+![flamegraph](./cpu-tools/tests/example.svg)
+
 ## Quick Start
 
 ### Prerequisites

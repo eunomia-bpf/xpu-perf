@@ -26,3 +26,6 @@
             > <run CUDA application>
 
 
+export CUDA_INJECTION64_PATH=/root/yunwei37/cupti-tutorial/cupti_trace_injection/libcupti_trace_injection.so
+export NVTX_INJECTION64_PATH=/usr/local/cuda-13.0/extras/CUPTI/lib64/libcupti.so
+export LD_LIBRARY_PATH=/usr/local/cuda-13.0/extras/CUPTI/lib64:$LD_LIBRARY_PATH

@@ -14,7 +14,7 @@ echo "✅ Multi-threaded test program built successfully"
 echo
 
 # Make the profiler script executable
-chmod +x combined_profiler.py
+chmod +x wallclock_profiler.py
 
 echo "🚀 Starting multi-threaded web server simulation..."
 ./test_multithread &
@@ -44,7 +44,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Run the multi-threaded profiler
-python3 combined_profiler.py $TEST_PID -d 20 -f 99 -m 1000
+python3 wallclock_profiler.py $TEST_PID -d 20 -f 99 -m 1000
 
 echo
 echo "🧹 Cleaning up test program..."
