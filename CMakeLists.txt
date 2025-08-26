@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(bpf_profiler)
+project(systemscope)
 
 # Force Unix Makefiles generator to avoid Ninja issues
 if(NOT CMAKE_GENERATOR STREQUAL "Unix Makefiles")

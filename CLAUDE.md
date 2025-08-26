@@ -4,100 +4,219 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SystemScope is a high-performance wall-clock eBPF profiler for Linux systems. It provides zero-instrumentation profiling with minimal overhead, outputting standard formats compatible with popular visualization tools. The optional `systemscope-vis` frontend package provides 3D visualization capabilities.
+SystemScope is a high-performance wall-clock eBPF profiler for Linux systems. It provides zero-instrumentation profiling with minimal overhead, capturing both on-CPU and off-CPU time. The optional `systemscope-vis` frontend package provides web-based visualization capabilities.
 
-## Build Commands
+## Build System
 
 ```bash
-# Build the project
+# Quick build
 make build
-# or directly with CMake
-cmake -B build
-cmake --build build
+
+# Clean build
+make clean
 
 # Run tests
 make test
-# or
-cmake -B build
-cmake --build build --target profiler_tests
-ctest --test-dir build
-
-# Clean build artifacts
-make clean
 
 # Install dependencies (Ubuntu)
 make install
 ```
 
-## Optional Frontend Development (systemscope-vis)
+### Build Details
+- CMake 3.16+ with Unix Makefiles generator
+- C++20 standard required
+- AddressSanitizer enabled by default in debug builds
+- Binary name: `profiler` (in `build/` directory)
 
-The frontend is now a separate package called `systemscope-vis` in the `frontend/` directory.
+## Source Code Structure
+
+### Main Components (`src/`)
+
+#### 1. Entry Point
+- `main.cpp`: Command-line interface and analyzer orchestration
+- `args_parser.cpp/hpp`: Argument parsing using argparse library
+
+#### 2. Analyzers (`src/analyzers/`)
+Three main analyzer types, each with specific use cases:
+
+- **ProfileAnalyzer** (`profile_analyzer.hpp`)
+  - On-CPU profiling using perf events
+  - Samples at specified frequency (default 49 Hz)
+  - Best for CPU-bound performance analysis
+
+- **OffCPUTimeAnalyzer** (`offcputime_analyzer.hpp`)
+  - Tracks time spent off-CPU (blocking, I/O, sleep)
+  - Configurable minimum block time threshold
+  - Best for I/O-bound and lock contention analysis
+
+- **WallClockAnalyzer** (`wallclock_analyzer.cpp/hpp`)
+  - Combines on-CPU and off-CPU data
+  - Provides complete wall-clock time view
+  - Best for comprehensive performance analysis
+
+Supporting classes:
+- `base_analyzer.hpp`: Abstract base class for all analyzers
+- `analyzer_config.hpp`: Configuration structures
+- `flamegraph_view.cpp/hpp`: Data structure for flamegraph representation
+- `symbol_resolver.cpp/hpp`: Stack trace symbolization using blazesym
+
+#### 3. eBPF Collectors (`src/collectors/`)
+Kernel-space data collection:
+
+- **On-CPU Collector** (`oncpu/`)
+  - `profile.bpf.c`: eBPF program for CPU sampling
+  - `profile.cpp/hpp`: User-space handler
+  - Uses perf events for sampling
+
+- **Off-CPU Collector** (`offcpu/`)
+  - `offcputime.bpf.c`: eBPF program for off-CPU tracking
+  - `offcputime.cpp/hpp`: User-space handler
+  - Hooks into scheduler events
+
+Common:
+- `collector_interface.hpp`: Abstract interface for collectors
+- `sampling_data.hpp`: Data structures for samples
+- `config.hpp`: Collector configuration
+- `bpf_event.h`: Shared kernel/user-space structures
+
+#### 4. Data Processing
+- `flamegraph_generator.cpp/hpp`: Converts raw samples to flamegraph format
+- Outputs SVG files using folded stack format
+- Handles per-thread and aggregate views
+
+#### 5. Server Mode (`src/server/`)
+Optional HTTP/WebSocket server:
+- `profile_server.cpp/hpp`: Main server class
+- `api_handler.cpp/hpp`: REST API endpoints
+- `frontend_handler.cpp/hpp`: WebSocket for real-time data
+- `config.hpp`: Server configuration
+
+### Command-Line Interface
+
+```
+Usage: profiler ANALYZER [options]
+
+Analyzers:
+  profile      - On-CPU profiling
+  offcputime   - Off-CPU time analysis  
+  wallclock    - Combined analysis
+  server       - HTTP server mode
+
+Key Options:
+  -d, --duration SECONDS     # Profiling duration
+  -p, --pid PID[,PID...]    # Target processes
+  -t, --tid TID[,TID...]    # Target threads
+  -f, --frequency HZ        # Sampling rate (default: 49)
+  -m, --min-block µs        # Min off-CPU time (default: 1000)
+```
+
+### Output Format
+
+SystemScope generates organized output directories:
+```
+{analyzer}_profile_[pid{PID}]_{timestamp}/
+├── flame_cpu_{PID}.svg       # On-CPU flamegraph
+├── flame_offcpu_{PID}.svg    # Off-CPU flamegraph
+├── flame_wallclock_{PID}.svg # Combined view
+└── stacks_{PID}.txt          # Raw stack data
+```
+
+## Key Implementation Details
+
+### eBPF Programs
+- Located in `src/collectors/{oncpu,offcpu}/*.bpf.c`
+- Compiled at build time using clang
+- Loaded into kernel via libbpf
+- Use BPF ring buffers for data transfer
+
+### Stack Walking
+- Uses frame pointers when available
+- Falls back to DWARF unwinding via blazesym
+- Maximum stack depth configurable (default: 127)
+
+### Symbol Resolution
+- Blazesym library for fast symbolization
+- Caches symbol maps for efficiency
+- Handles kernel and user-space symbols
+
+### Performance Considerations
+- Default 49 Hz sampling (avoids 50 Hz timer aliasing)
+- Ring buffer size tuned for low overhead
+- Minimal kernel-space processing
+
+## Testing
+
+Tests are in `tests/` directory:
+- `test_profile_collector.cpp`: On-CPU collector tests
+- `test_offcputime_collector.cpp`: Off-CPU collector tests
+- `test_flamegraph_view.cpp`: Data structure tests
+
+Run with: `make test` or `ctest --test-dir build`
+
+## Dependencies
+
+### Core Dependencies
+- **libbpf**: eBPF library (included)
+- **blazesym**: Symbolization (built from source)
+- **argparse**: Command-line parsing (included)
+- **spdlog**: Logging (included)
+
+### Optional Dependencies
+- **cpp-httplib**: HTTP server (header-only, included)
+- **nlohmann/json**: JSON handling (included)
+- **Catch2**: Testing framework (included)
+
+## Optional Frontend (systemscope-vis)
+
+The frontend is a separate npm package in `frontend/`:
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Development server
-npm run dev
-
-# Build production
-npm run build
-
-# Run tests
-npm run test
-npm run test:run  # Run once without watch
-
-# Type checking
-npm run type-check
-
-# Linting and formatting
-npm run lint
-npm run lint:fix
-npm run format
+npm run dev   # Development server
+npm run build # Production build
+npm run test  # Run tests
 ```
 
-## Architecture
-
-### Core Components
-
-1. **eBPF Collectors** (`src/collectors/`)
-   - `oncpu/`: On-CPU profiling using performance events
-   - `offcpu/`: Off-CPU time tracking
-   - BPF programs compile to bytecode loaded into kernel
-
-2. **Profile Server** (`src/server/`)
-   - WebSocket server for real-time data streaming
-   - Handles frontend connections and profile data delivery
-
-3. **Flamegraph Generator** (`src/flamegraph_generator.cpp`)
-   - Converts raw profiling data to standard formats
-   - Handles stack trace symbolization via blazesym
-   - Supports folded stacks, pprof, and Chrome trace formats
-
-4. **Optional Frontend** (`frontend/` - package `systemscope-vis`)
-   - Separate npm package for visualization
-   - React + TypeScript + Three.js
-   - 3D visualization of flamegraphs
-   - Can be used standalone or with SystemScope server
-
-### Key Dependencies
-
-- **libbpf**: eBPF library for kernel instrumentation
-- **blazesym**: Symbolization for stack traces
-- **CMake**: Build system
-- **React Three Fiber**: 3D visualization in frontend
-
-### Testing Strategy
-
-- C++ tests use Google Test framework
-- Frontend tests use Vitest
-- Tests located in `tests/` for backend, `frontend/src/__tests__/` for frontend
+Components:
+- React + TypeScript
+- Profile data viewer
+- WebSocket client for real-time data
+- Located at `http://localhost:5173` in dev mode
 
 ## Development Notes
 
-- The project uses CMake with Unix Makefiles generator
-- AddressSanitizer is enabled by default for debug builds
-- BPF programs require root privileges to run
-- Frontend connects to backend via WebSocket on port 8080 (default)
+### Adding a New Analyzer
+1. Create class inheriting from `BaseAnalyzer`
+2. Implement `start()` method
+3. Add configuration in `analyzer_config.hpp`
+4. Register in `main.cpp` and `args_parser.cpp`
+
+### Adding a New Collector
+1. Write eBPF program in `src/collectors/`
+2. Create user-space handler class
+3. Implement `ICollector` interface
+4. Add to CMakeLists.txt compilation
+
+### Debugging Tips
+- Use `-v` flag for verbose output
+- Check `dmesg` for eBPF verifier errors
+- Use `bpftool prog list` to see loaded programs
+- AddressSanitizer enabled by default in debug builds
+
+## Common Issues and Solutions
+
+### Build Issues
+- Ensure clang is installed for BPF compilation
+- Check kernel headers are available
+- Verify CMake uses Unix Makefiles generator
+
+### Runtime Issues
+- Requires root or CAP_SYS_ADMIN capability
+- Check kernel has eBPF support (4.9+)
+- Verify frame pointers enabled for stack walking
+
+### Performance Tuning
+- Adjust sampling frequency with `-f`
+- Increase min-block time for less overhead
+- Use PID filtering to reduce data volume
