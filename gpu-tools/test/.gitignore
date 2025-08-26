@@ -1,0 +1,28 @@
+# Compiled binaries
+vectorAdd
+matrixMul
+bandwidthTest
+deviceQuery
+
+# Object files
+*.o
+*.obj
+
+# CUDA compiled files
+*.cubin
+*.ptx
+*.fatbin
+
+# Dependency files
+*.d
+
+# Temporary files
+*~
+*.swp
+*.swo
+
+# Log files
+*.log
+
+# Output files
+*.out

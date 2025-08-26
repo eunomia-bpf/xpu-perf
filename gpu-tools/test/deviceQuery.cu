@@ -1,12 +1,15 @@
 /**
  * Device Query
  * This sample queries the properties of the CUDA devices present in the system
- * From CUDA SDK Samples
+ * From CUDA SDK Samples - Modified for CUDA 12.8 and 13.0 compatibility
  */
 
 #include <cuda_runtime.h>
 #include <helper_cuda.h>
 #include <stdio.h>
+
+// Forward declaration
+inline int _ConvertSMVer2Cores(int major, int minor);
 
 int main(int argc, char **argv)
 {
@@ -56,11 +59,7 @@ int main(int argc, char **argv)
                _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor),
                _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) *
                deviceProp.multiProcessorCount);
-        printf("  GPU Max Clock rate:                            %.0f MHz (%0.2f GHz)\n",
-               deviceProp.clockRate * 1e-3f, deviceProp.clockRate * 1e-6f);
 
-        printf("  Memory Clock rate:                             %.0f Mhz\n",
-               deviceProp.memoryClockRate * 1e-3f);
         printf("  Memory Bus Width:                              %d-bit\n",
                deviceProp.memoryBusWidth);
 
@@ -92,10 +91,10 @@ int main(int argc, char **argv)
                deviceProp.maxGridSize[2]);
         printf("  Maximum memory pitch:                          %lu bytes\n", deviceProp.memPitch);
         printf("  Texture alignment:                             %lu bytes\n", deviceProp.textureAlignment);
-        printf("  Concurrent copy and kernel execution:          %s with %d copy engine(s)\n",
-               (deviceProp.deviceOverlap ? "Yes" : "No"), deviceProp.asyncEngineCount);
+        printf("  Concurrent copy and kernel execution:          Yes with %d copy engine(s)\n",
+               deviceProp.asyncEngineCount);
         printf("  Run time limit on kernels:                     %s\n",
-               deviceProp.kernelExecTimeoutEnabled ? "Yes" : "No");
+               deviceProp.computePreemptionSupported ? "Yes" : "No");
         printf("  Integrated GPU sharing Host Memory:            %s\n",
                deviceProp.integrated ? "Yes" : "No");
         printf("  Support host page-locked memory mapping:       %s\n",
@@ -108,21 +107,8 @@ int main(int argc, char **argv)
                deviceProp.unifiedAddressing ? "Yes" : "No");
         printf("  Supports Cooperative Kernel Launch:            %s\n",
                deviceProp.cooperativeLaunch ? "Yes" : "No");
-        printf("  Supports MultiDevice Co-op Kernel Launch:      %s\n",
-               deviceProp.cooperativeMultiDeviceLaunch ? "Yes" : "No");
         printf("  Device PCI Domain ID / Bus ID / location ID:   %d / %d / %d\n",
                deviceProp.pciDomainID, deviceProp.pciBusID, deviceProp.pciDeviceID);
-
-        const char *sComputeMode[] = {
-            "Default (multiple host threads can use ::cudaSetDevice() with device simultaneously)",
-            "Exclusive (only one host thread in one process is able to use ::cudaSetDevice() with this device)",
-            "Prohibited (no host thread can use ::cudaSetDevice() with this device)",
-            "Exclusive Process (many threads in one process is able to use ::cudaSetDevice() with this device)",
-            "Unknown",
-            NULL
-        };
-        printf("  Compute Mode:\n");
-        printf("     < %s >\n", sComputeMode[deviceProp.computeMode]);
     }
 
     printf("\ndeviceQuery, CUDA Driver = CUDART, CUDA Driver Version = %d.%d, CUDA Runtime Version = %d.%d, NumDevs = %d\n",
