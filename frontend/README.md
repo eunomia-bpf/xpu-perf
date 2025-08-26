@@ -1,16 +1,16 @@
 # systemscope-vis
 
-3D Flamegraph visualization for SystemScope profiler data.
+Profile data visualization for SystemScope profiler.
 
 ## Overview
 
-`systemscope-vis` is an optional web-based visualization frontend for SystemScope profiler. It provides interactive 3D flamegraph rendering using React and Three.js.
+`systemscope-vis` is an optional web-based visualization frontend for SystemScope profiler. It provides a modern React-based interface for viewing and analyzing profiling data.
 
 ## Features
 
-- Interactive 3D flamegraph visualization
+- Profile data viewer with metadata display
 - Real-time data streaming via WebSocket
-- Configurable view controls
+- Multiple view modes (profile view, data table)
 - Data export capabilities
 
 ## Installation

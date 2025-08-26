@@ -92,7 +92,7 @@ SystemScope focuses on efficient data collection:
 
 ## Optional Visualization
 
-A separate visualization package `systemscope-vis` is available in the `frontend/` directory for those who want a built-in web UI. This is optional and SystemScope works perfectly with external tools.
+A separate visualization package `systemscope-vis` is available in the `frontend/` directory for those who want a built-in web UI for viewing profile data. This is optional and SystemScope works perfectly with external tools like flamegraph.pl, pprof, or speedscope.
 
 ```bash
 # Optional: Install visualization frontend

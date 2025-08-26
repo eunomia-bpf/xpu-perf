@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useDataSourceStore } from '@/DataManager/DataStore/dataSourceStore';
 
-interface FlameGraph3DViewProps {
+interface ProfileDataViewProps {
   className?: string;
 }
 
-export const FlameGraph3DView: React.FC<FlameGraph3DViewProps> = ({ className }) => {
+export const ProfileDataView: React.FC<ProfileDataViewProps> = ({ className }) => {
   const [colorScheme, setColorScheme] = useState('hot-cold');
   
   const { currentDataContext } = useDataSourceStore();
@@ -19,9 +19,9 @@ export const FlameGraph3DView: React.FC<FlameGraph3DViewProps> = ({ className })
         <div className="w-full h-full flex items-center justify-center">
           <div className="text-center">
             <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl text-white">🎯</span>
+              <span className="text-2xl text-white">📊</span>
             </div>
-            <h3 className="text-xl font-semibold text-gray-800 mb-4">3D Flame Graph</h3>
+            <h3 className="text-xl font-semibold text-gray-800 mb-4">Profile Data Viewer</h3>
             
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 max-w-sm mx-auto">
               <div className="grid grid-cols-2 gap-3 text-sm">
@@ -39,11 +39,11 @@ export const FlameGraph3DView: React.FC<FlameGraph3DViewProps> = ({ className })
               
               {isFlameGraphCompatible ? (
                 <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-700">
-                  ✅ Compatible data format
+                  ✅ Compatible flamegraph format
                 </div>
               ) : (
                 <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
-                  ⚠️ Non-optimal format for flame graph
+                  ⚠️ Generic data format
                 </div>
               )}
             </div>

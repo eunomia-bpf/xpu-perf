@@ -1,5 +1,5 @@
 import React from 'react';
-import { FlameGraph3DView } from '@/ViewportEngine/FlameGraph3DView';
+import { ProfileDataView } from '@/ViewportEngine/ProfileDataView';
 import { DataTableView } from '@/ViewportEngine/DataTableView';
 import { useViewContext } from './ViewContext';
 
@@ -9,11 +9,11 @@ export const SingleViewLayout: React.FC = () => {
   const renderCurrentView = () => {
     switch (currentView) {
       case '3d-flame':
-        return <FlameGraph3DView className="w-full h-full" />;
+        return <ProfileDataView className="w-full h-full" />;
       case 'data-table':
         return <DataTableView className="w-full h-full" />;
       default:
-        return <FlameGraph3DView className="w-full h-full" />;
+        return <ProfileDataView className="w-full h-full" />;
     }
   };
 

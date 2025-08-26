@@ -240,7 +240,7 @@ export const BUILT_IN_VIEWS: ViewConfig[] = [
     defaultConfig: {
       colorScheme: 'hot-cold'
     },
-    component: 'FlameGraph3DView',
+    component: 'ProfileDataView',
     dataRequirements: {
       format: 'flamegraph',
       requiredFields: ['stack', 'value']
