@@ -487,6 +487,7 @@ void* stats_thread(void* arg) {
 int main() {
     printf("🚀 Multi-threaded Web Server Simulation Starting...\n");
     printf("Configuration:\n");
+    printf("  - PID: %d\n", getpid());
     printf("  - Worker threads: %d\n", NUM_WORKER_THREADS);
     printf("  - Simulation duration: %d seconds\n", SIMULATION_DURATION);
     printf("  - Request types: Math CPU, String CPU, Sort CPU, File I/O, Network, Poll\n\n");

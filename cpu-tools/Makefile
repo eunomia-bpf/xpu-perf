@@ -26,6 +26,9 @@ ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
 APPS = offcputime oncputime
 
+# Test programs
+TEST_PROGS = tests/test_combined tests/test_multithread tests/double_bandwidth
+
 CARGO ?= $(shell which cargo)
 ifeq ($(strip $(CARGO)),)
 BZS_APPS :=
@@ -68,12 +71,18 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS)
+all: $(APPS) $(TEST_PROGS)
+
+.PHONY: tests
+tests: $(TEST_PROGS)
+
+.PHONY: all-with-tests
+all-with-tests: all tests
 
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(APPS)
+	$(Q)rm -rf $(OUTPUT) $(APPS) $(TEST_PROGS)
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
@@ -132,6 +141,19 @@ $(BZS_APPS): $(LIBBLAZESYM_OBJ)
 $(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
+
+# Build test programs
+tests/test_combined: tests/test_combined.c
+	$(call msg,TEST,$@)
+	$(Q)$(CC) $(CFLAGS) $< -o $@ -lpthread
+
+tests/test_multithread: tests/test_multithread.c
+	$(call msg,TEST,$@)
+	$(Q)$(CC) $(CFLAGS) $< -o $@ -lpthread -lm
+
+tests/double_bandwidth: tests/double_bandwidth.c
+	$(call msg,TEST,$@)
+	$(Q)$(CC) $(CFLAGS) -D_GNU_SOURCE -std=c11 -O3 $< -o $@ -lpthread -lm
 
 # delete failed targets
 .DELETE_ON_ERROR:
