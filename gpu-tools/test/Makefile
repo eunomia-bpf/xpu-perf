@@ -28,9 +28,10 @@ ifeq ($(CUDA_VERSION),12.8)
 endif
 
 # Pass CUDA version as a define
-NVCC_FLAGS += -DCUDA_VERSION_MAJOR=$(shell echo $(CUDA_VERSION) | cut -d. -f1)
+CUDA_VERSION_NUM := $(shell echo $(CUDA_VERSION) | sed 's/\.//g')000
+NVCC_FLAGS += -DCUDA_VERSION_NUM=$(CUDA_VERSION_NUM)
 
-TARGETS = vectorAdd matrixMul bandwidthTest deviceQuery
+TARGETS = vectorAdd matrixMul bandwidthTest deviceQuery complex_target
 
 all: 
 	@echo "Building with CUDA $(CUDA_VERSION) from $(CUDA_PATH)"
@@ -48,6 +49,9 @@ bandwidthTest: bandwidthTest.cu helper_cuda.h
 deviceQuery: deviceQuery.cu helper_cuda.h
 	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) -o $@ $< $(LIBRARIES) $(LDFLAGS)
 
+complex_target: complex_target.cu
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) -o $@ $< $(LIBRARIES) $(LDFLAGS) -lcuda
+
 clean:
 	rm -f $(TARGETS) *.o *.cubin *.ptx *.fatbin
 
@@ -60,6 +64,8 @@ run: all
 	./bandwidthTest
 	@echo "\nRunning deviceQuery..."
 	./deviceQuery
+	@echo "\nRunning complex_target..."
+	./complex_target
 
 # Allow user to specify CUDA version explicitly
 cuda12.8:

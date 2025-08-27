@@ -3,6 +3,7 @@ vectorAdd
 matrixMul
 bandwidthTest
 deviceQuery
+complex_target
 
 # Object files
 *.o
