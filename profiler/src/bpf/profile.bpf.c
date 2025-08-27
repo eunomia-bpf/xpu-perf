@@ -28,6 +28,7 @@ int profile(void *ctx)
 
 	event->pid = pid;
 	event->cpu_id = cpu_id;
+	event->timestamp = bpf_ktime_get_ns();
 
 	if (bpf_get_current_comm(event->comm, sizeof(event->comm)))
 		event->comm[0] = 0;
