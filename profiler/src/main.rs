@@ -1,8 +1,6 @@
 use std::mem::MaybeUninit;
 use std::time::Duration;
 
-use blazesym::symbolize;
-
 use clap::ArgAction;
 use clap::Parser;
 
@@ -41,6 +39,9 @@ struct Args {
     /// Filter by PID (optional)
     #[arg(short = 'p', long = "pid")]
     pid: Option<i32>,
+    /// Output in extended folded format (timestamp_ns comm pid tid cpu stack1;stack2;...)
+    #[arg(short = 'E', long = "fold-extend")]
+    fold_extend: bool,
 }
 
 fn main() -> Result<(), libbpf_rs::Error> {
@@ -61,8 +62,6 @@ fn main() -> Result<(), libbpf_rs::Error> {
 
     let freq = if args.freq < 1 { 1 } else { args.freq };
 
-    let symbolizer = symbolize::Symbolizer::new();
-
     let skel_builder = ProfileSkelBuilder::default();
     let mut open_object = MaybeUninit::uninit();
     let open_skel = skel_builder.open(&mut open_object).unwrap();
@@ -72,11 +71,21 @@ fn main() -> Result<(), libbpf_rs::Error> {
     let _links = perf::attach_perf_event(&pefds, &skel.progs.profile);
 
     let mut builder = libbpf_rs::RingBufferBuilder::new();
+    
+    let output_format = if args.fold_extend {
+        event::OutputFormat::FoldedExtended
+    } else {
+        event::OutputFormat::Standard
+    };
+    
+    let event_handler = event::EventHandler::new(output_format);
+    
     builder
         .add(&skel.maps.events, move |data| {
-            event::handle_event(&symbolizer, data)
+            event_handler.handle(data)
         })
         .unwrap();
+    
     let ringbuf = builder.build().unwrap();
     while ringbuf.poll(Duration::MAX).is_ok() {}
 
