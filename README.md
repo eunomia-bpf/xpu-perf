@@ -2,6 +2,8 @@
 
 A wall-clock profiler that combines on-CPU, off-CPU, and GPU profiling to provide complete visibility into application performance. Built using eBPF technology for zero-instrumentation profiling with minimal overhead.
 
+> WIP
+
 ## Features
 
 - **Combined Wall-Clock Profiling**: Simultaneously tracks both on-CPU execution time and off-CPU blocking time
