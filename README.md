@@ -1,4 +1,4 @@
-# systemscope - eBPF Wall Clock Profiler
+# systemscope: eBPF Wall Clock Profiler for CPU & GPU
 
 A wall-clock profiler that combines on-CPU, off-CPU, and GPU profiling to provide complete visibility into application performance. Built using eBPF technology for zero-instrumentation profiling with minimal overhead.
 
@@ -41,13 +41,6 @@ sudo apt-get install -y libelf1 libelf-dev zlib1g-dev make clang llvm python3 gi
 ### Basic Usage
 
 ```bash
-# Profile a process for 30 seconds
-make run PID=1234
-
-# Custom profiling parameters
-make run PID=1234 DURATION=60 FREQ=99 MIN_BLOCK=5000
-
-# Or run directly with Python
 sudo python3 cpu-tools/wallclock_profiler.py 1234 -d 30 -f 49 -m 1000
 ```
 
@@ -90,22 +83,9 @@ The profiler generates several output files:
 - **Height**: Shows call stack depth
 - **Interactive**: Click on frames to zoom, search for functions
 
-## Examples
 
 
-### Profile a Python Application
 
-```bash
-# Start your Python application
-python my_app.py &
-PID=$!
-
-# Profile it
-make run PID=$PID DURATION=30
-
-# View the flamegraph
-firefox combined_profile_pid${PID}_*.svg
-```
 
 
 ## GPU Profiling
