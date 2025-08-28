@@ -1,6 +1,6 @@
 # systemscope - eBPF Wall Clock Profiler
 
-A high-performance wall-clock profiler that combines on-CPU and off-CPU profiling to provide complete visibility into application performance. Built using eBPF technology for zero-instrumentation profiling with minimal overhead.
+A wall-clock profiler that combines on-CPU, off-CPU, and GPU profiling to provide complete visibility into application performance. Built using eBPF technology for zero-instrumentation profiling with minimal overhead.
 
 ## Features
 
@@ -92,6 +92,7 @@ The profiler generates several output files:
 
 ## Examples
 
+
 ### Profile a Python Application
 
 ```bash
@@ -106,35 +107,25 @@ make run PID=$PID DURATION=30
 firefox combined_profile_pid${PID}_*.svg
 ```
 
-### Analyze Database Performance
+
+## GPU Profiling
+
+For CUDA applications, use the CUPTI trace tools:
 
 ```bash
-# Find MySQL process
-PID=$(pgrep mysqld)
+# Build CUPTI library
+cd gpu-tools/cupti_trace && make
 
-# Profile with longer duration for better coverage
-make run PID=$PID DURATION=60 MIN_BLOCK=5000
+# Profile a CUDA application
+python3 gpuperf.py ./your_cuda_app
 
-# Check results
-ls combined_profile_pid${PID}_*/
+# Combined CPU+GPU profiling
+python3 gpuperf.py --cpu ./your_cuda_app
+
+# View detailed documentation
+cat gpu-tools/cupti_trace/README.md
 ```
 
-### Debug High CPU Usage
-
-```bash
-# Quick profiling with higher frequency
-sudo python3 cpu-tools/wallclock_profiler.py $PID -d 10 -f 99
-```
-
-### Profile Multi-threaded Application
-
-```bash
-# The profiler automatically detects multi-threaded apps
-make run PID=$PID
-
-# Results will be in multithread_combined_profile_*/
-# Each thread gets its own flamegraph and analysis
-```
 
 ## Architecture
 
@@ -167,27 +158,6 @@ The wall clock profiler combines two eBPF-based tools:
 - **Overhead**: Typically < 1% CPU at default settings
   - Scales with sampling frequency and stack depth
 
-## Troubleshooting
-
-### Permission Denied
-```bash
-# Requires root or CAP_SYS_ADMIN capability
-sudo python3 cpu-tools/wallclock_profiler.py <PID>
-```
-
-### No Stack Traces
-```bash
-# Enable frame pointers for better stack traces
-echo 1 | sudo tee /proc/sys/kernel/perf_event_paranoid
-
-# For compiled languages, rebuild with -fno-omit-frame-pointer
-```
-
-### Process Not Found
-```bash
-# Verify the process exists
-ps -p <PID>
-```
 
 ### Low Coverage Warning
 This indicates the process was mostly idle during profiling. Try:

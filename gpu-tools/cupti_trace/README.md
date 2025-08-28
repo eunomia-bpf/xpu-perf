@@ -4,6 +4,31 @@
 
 The CUPTI Trace Injection Library is a powerful profiling tool that enables automatic tracing and performance monitoring of any CUDA application without requiring source code modification. It leverages NVIDIA's CUPTI (CUDA Profiling Tools Interface) to collect detailed runtime information about CUDA kernels, memory operations, and API calls.
 
+## Directory Structure
+
+```
+cupti_trace/
+├── Core Libraries & Headers
+│   ├── cupti_trace_injection.cpp    # Main injection library source
+│   ├── helper_cupti.h               # Error handling and utilities
+│   ├── helper_cupti_activity.h      # Activity management framework
+│   └── libcupti_trace_injection.so  # Compiled injection library
+├── Python Tools
+│   ├── cupti_trace_parser.py        # CUPTI trace parser module
+│   ├── gpuperf.py                   # Automated profiling tool
+│   └── merge_gpu_cpu_trace.py       # Trace merger utility
+├── Visualization
+│   └── combined_flamegraph.pl       # Flamegraph generator
+├── Build System
+│   └── Makefile                     # Cross-platform build configuration
+└── Generated Artifacts (examples)
+    ├── gpu_results.txt              # Raw CUPTI trace
+    ├── gpu_results.json             # Chrome Trace Format
+    ├── cpu_results.txt              # CPU profiling data
+    ├── merged_trace.folded          # Merged folded stacks
+    └── merged_flamegraph.svg        # Interactive flamegraph
+```
+
 ## Table of Contents
 
 1. [Features](#features)
@@ -59,7 +84,9 @@ The CUPTI Trace Injection Library is a powerful profiling tool that enables auto
 
 ## Components
 
-### 1. **cupti_trace_injection.cpp** (Main Library)
+### Core Libraries and Headers
+
+#### 1. **cupti_trace_injection.cpp** (Main Library)
 The core injection library that implements the CUPTI-based tracing mechanism.
 
 #### Key Data Structures:
@@ -143,25 +170,67 @@ Common error handling and utility macros for CUPTI operations.
 - `DEV_NAME_LEN`: 256 bytes for device names
 - `EXIT_WAIVED`: 2 (special exit code)
 
-### 4. **cupti_to_chrome_trace.py**
-Python script to convert CUPTI trace output to Chrome Trace Format.
+### Python Tools and Scripts
 
-#### Supported Event Types:
-- Runtime API events
-- Driver API events
-- Kernel executions
-- Memory operations
-- Overhead measurements
-- NVTX markers
+#### 4. **cupti_trace_parser.py**
+Python module for parsing CUPTI trace data with support for various event types.
 
-### 5. **Makefile**
+##### Key Features:
+- Parses CUPTI trace output into structured data
+- Regular expression patterns for different trace formats:
+  - Runtime API events
+  - Driver API events  
+  - Kernel executions
+  - Memory operations (MEMCPY, MEMSET, MEMORY2)
+  - Overhead measurements
+  - Grid and device information
+- Converts traces to Chrome Trace Format (JSON)
+- Extensible parser class for custom processing
+
+#### 5. **gpuperf.py**
+High-level GPU profiling orchestration tool that automates the profiling workflow.
+
+##### Key Features:
+- Automatic CUPTI injection setup
+- Integration with CPU profiler (if available)
+- Temporary file management
+- Process management for profiled applications
+- Automatic trace parsing and conversion
+- Support for both GPU-only and combined CPU/GPU profiling
+
+#### 6. **merge_gpu_cpu_trace.py**
+Tool for merging GPU and CPU traces into unified visualization formats.
+
+##### Key Classes:
+- `GPUEvent`: Represents GPU operations (kernels, memory transfers)
+- `CPUSample`: Represents CPU stack samples
+- `TraceMerger`: Combines traces based on timestamp alignment
+
+##### Output Formats:
+- Folded flamegraph format for combined visualization
+- Chrome Trace Format with merged timeline
+- Support for correlating CPU stacks with GPU operations
+
+#### 7. **combined_flamegraph.pl**
+Perl script for generating flamegraph visualizations from merged trace data.
+
+##### Features:
+- Processes folded stack format
+- Generates SVG flamegraphs
+- Combines CPU and GPU execution visualization
+- Color coding for different operation types
+
+### Build System
+
+#### 8. **Makefile**
 Build system for the injection library with platform-specific configurations.
 
-#### Key Features:
+##### Key Features:
 - Auto-detection of CUDA installation path
 - Cross-platform support (Linux, Windows, macOS)
 - Architecture-specific builds (x86_64, ARM/aarch64)
 - Automatic library path configuration
+- Support for CUDA versions (default: 13.0)
 
 ## Workflow
 
@@ -294,6 +363,20 @@ make
 2. Run nmake
 3. Output: libcupti_trace_injection.dll
 
+## Generated Files and Artifacts
+
+### Build Artifacts
+- **libcupti_trace_injection.so** (Linux) / **libcupti_trace_injection.dll** (Windows)
+  - The compiled injection library
+  - Must be loaded via CUDA_INJECTION64_PATH environment variable
+
+### Trace Output Files
+- **gpu_results.txt**: Raw CUPTI trace output with activity records
+- **gpu_results.json**: Chrome Trace Format JSON for visualization
+- **cpu_results.txt**: CPU profiling data (when using combined profiling)
+- **merged_trace.folded**: Folded stack format for flamegraph generation
+- **merged_flamegraph.svg**: Interactive SVG flamegraph visualization
+
 ## Usage
 
 ### Basic Usage
@@ -312,16 +395,42 @@ export LD_LIBRARY_PATH=/usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
 ./your_cuda_app > trace_output.txt
 ```
 
+### Using the Python Tools
+
+#### Parse and Convert Traces
+```bash
+# Parse CUPTI trace output
+python3 cupti_trace_parser.py -i trace_output.txt -o parsed_trace.json
+```
+
+#### Automated GPU Profiling
+```bash
+# Profile a CUDA application
+python3 gpuperf.py ./your_cuda_app [args]
+
+# With custom output file
+python3 gpuperf.py -o my_profile.json ./your_cuda_app
+
+# Combined CPU/GPU profiling (requires CPU profiler)
+python3 gpuperf.py --cpu ./your_cuda_app
+```
+
+#### Merge GPU and CPU Traces
+```bash
+# Merge traces into folded format
+python3 merge_gpu_cpu_trace.py --gpu gpu_results.json --cpu cpu_results.txt -o merged.folded
+
+# Generate flamegraph from merged trace
+./combined_flamegraph.pl merged.folded > merged_flamegraph.svg
+```
+
 ### Converting to Chrome Trace Format
 
 ```bash
-# Convert CUPTI output to Chrome trace format
-python3 cupti_to_chrome_trace.py -i trace_output.txt -o trace.json
-
 # View in Chrome
 # 1. Open Chrome browser
 # 2. Navigate to chrome://tracing
-# 3. Load trace.json
+# 3. Load gpu_results.json or any generated JSON trace
 ```
 
 ## Output Formats
