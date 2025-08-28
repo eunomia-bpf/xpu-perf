@@ -12,7 +12,13 @@ A high-performance wall-clock profiler that combines on-CPU and off-CPU profilin
 
 ## Examples
 
+Wall-clock profiler:
+
 ![flamegraph](./cpu-tools/tests/example.svg)
+
+CPU & GPU mixed profiling:
+
+![flamegraph](./gpu-tools/test/merged_flamegraph.svg)
 
 ## Quick Start
 

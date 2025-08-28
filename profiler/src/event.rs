@@ -1,5 +1,7 @@
 use std::mem;
+use std::time::{SystemTime, UNIX_EPOCH};
 use blazesym::symbolize;
+use nix::sys::sysinfo;
 
 pub const MAX_STACK_DEPTH: usize = 128;
 pub const TASK_COMM_LEN: usize = 16;
@@ -26,14 +28,34 @@ pub enum OutputFormat {
 pub struct EventHandler {
     symbolizer: symbolize::Symbolizer,
     format: OutputFormat,
+    boot_time_ns: u64,
 }
 
 impl EventHandler {
     pub fn new(format: OutputFormat) -> Self {
+        // Get system uptime to calculate boot time
+        let boot_time_ns = Self::get_boot_time_ns();
+        
         Self {
             symbolizer: symbolize::Symbolizer::new(),
             format,
+            boot_time_ns,
         }
+    }
+
+    fn get_boot_time_ns() -> u64 {
+        // Get current Unix timestamp in nanoseconds
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("System time before Unix epoch");
+        let now_ns = now.as_nanos() as u64;
+        
+        // Get system uptime in nanoseconds
+        let info = sysinfo::sysinfo().expect("Failed to get sysinfo");
+        let uptime_ns = (info.uptime().as_secs_f64() * 1_000_000_000.0) as u64;
+        
+        // Boot time = current time - uptime
+        now_ns - uptime_ns
     }
 
     pub fn handle(&self, data: &[u8]) -> ::std::os::raw::c_int {
@@ -78,8 +100,10 @@ impl EventHandler {
 
     fn handle_standard(&self, event: &StacktraceEvent) {
         let comm = Self::get_comm_str(&event.comm);
-        let timestamp_sec = event.timestamp / 1_000_000_000;
-        let timestamp_nsec = event.timestamp % 1_000_000_000;
+        // Convert kernel timestamp to Unix timestamp
+        let unix_timestamp_ns = event.timestamp + self.boot_time_ns;
+        let timestamp_sec = unix_timestamp_ns / 1_000_000_000;
+        let timestamp_nsec = unix_timestamp_ns % 1_000_000_000;
         println!("[{}.{:09}] COMM: {} (pid={}) @ CPU {}", 
                  timestamp_sec, timestamp_nsec, comm, event.pid, event.cpu_id);
 
@@ -124,16 +148,18 @@ impl EventHandler {
             let kstack = Self::get_stack_slice(&event.kstack, event.kstack_size);
             let kernel_frames = symbolize_stack_to_vec(&self.symbolizer, kstack, 0);
             
-            // Add kernel frames with [k] prefix in reverse order (top to bottom)
+            // Add kernel frames with [k] suffix in reverse order (top to bottom)
             for frame in kernel_frames.iter().rev() {
-                stack_frames.push(format!("[k]{}", frame));
+                stack_frames.push(format!("{}_[k]", frame));
             }
         }
 
         // Format: timestamp_ns comm pid tid cpu stack1;stack2;stack3
+        // Convert kernel timestamp to Unix timestamp
+        let unix_timestamp_ns = event.timestamp + self.boot_time_ns;
         println!(
             "{} {} {} {} {} {}",
-            event.timestamp,
+            unix_timestamp_ns,
             comm,
             event.pid,
             tid,

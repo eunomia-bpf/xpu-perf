@@ -7,8 +7,10 @@ import subprocess
 import tempfile
 import atexit
 import time
+import json
 from pathlib import Path
 from cupti_trace_parser import CuptiTraceParser
+from merge_gpu_cpu_trace import TraceMerger
 
 class GPUPerf:
     def __init__(self):
@@ -61,7 +63,7 @@ class GPUPerf:
         
         try:
             self.profiler_proc = subprocess.Popen(
-                [str(self.cpu_profiler), "-p", str(pid), "-E"],
+                [str(self.cpu_profiler), "-p", str(pid), "-E", "-f", "200"],
                 stdout=open(cpu_output_file, 'w'),
                 stderr=subprocess.DEVNULL
             )
@@ -84,7 +86,7 @@ class GPUPerf:
             if self.profiler_output and os.path.exists(self.profiler_output):
                 print(f"CPU profile saved to: {self.profiler_output}")
     
-    def run_with_trace(self, command, output_trace=None, chrome_trace=None, cpu_profile=None):
+    def run_with_trace(self, command, output_trace=None, chrome_trace=None, cpu_profile=None, merged_trace=None, no_merge=False):
         """Run a command with CUPTI tracing and optional CPU profiling enabled"""
         
         # Determine if we're doing GPU profiling
@@ -188,7 +190,67 @@ class GPUPerf:
             except:
                 pass
         
+        # Generate merged folded trace if both CPU and GPU traces are available (and not disabled)
+        if not no_merge and cpu_profile and (chrome_trace or output_trace):
+            merged_output = merged_trace if merged_trace else "merged_trace.folded"
+            self.generate_merged_trace(
+                cpu_trace=cpu_profile,
+                gpu_trace=chrome_trace if chrome_trace else None,
+                gpu_raw_trace=trace_file if do_gpu_profiling else None,
+                output_file=merged_output
+            )
+        
         return return_code
+    
+    def generate_merged_trace(self, cpu_trace=None, gpu_trace=None, gpu_raw_trace=None, output_file=None):
+        """Generate merged CPU+GPU folded trace using TraceMerger"""
+        if not cpu_trace or not (gpu_trace or gpu_raw_trace):
+            return  # Need both CPU and GPU traces
+        
+        if not output_file:
+            output_file = "merged_trace.folded"
+        
+        print(f"\nGenerating merged CPU+GPU trace: {output_file}")
+        
+        try:
+            merger = TraceMerger()
+            
+            # Parse CPU trace
+            if os.path.exists(cpu_trace):
+                merger.parse_cpu_trace(cpu_trace)
+            else:
+                print(f"Warning: CPU trace not found: {cpu_trace}")
+                return
+            
+            # Parse GPU trace (prefer JSON, fallback to raw)
+            if gpu_trace and os.path.exists(gpu_trace):
+                merger.parse_gpu_trace(gpu_trace)
+            elif gpu_raw_trace and os.path.exists(gpu_raw_trace):
+                # Convert raw trace to events first
+                events = self.parse_cupti_trace(gpu_raw_trace)
+                # Create temporary JSON for merger
+                import json
+                temp_json = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+                json.dump({"traceEvents": events}, temp_json)
+                temp_json.close()
+                merger.parse_gpu_trace(temp_json.name)
+                os.unlink(temp_json.name)
+            else:
+                print(f"Warning: GPU trace not found")
+                return
+            
+            # Merge traces
+            merger.merge_traces()
+            
+            # Write folded output
+            merger.write_folded_output(output_file)
+            
+            print(f"✓ Merged trace generated: {output_file}")
+            print(f"\nTo generate flamegraph:")
+            print(f"  /root/yunwei37/systemscope/cpu-tools/combined_flamegraph.pl {output_file} > merged_flamegraph.svg")
+            
+        except Exception as e:
+            print(f"Error generating merged trace: {e}", file=sys.stderr)
     
     def cleanup_temp_files(self):
         """Clean up temporary files"""
@@ -256,9 +318,11 @@ def main():
     parser.add_argument('-o', '--output', help='Save raw CUPTI trace to file (default: gpu_results.txt)')
     parser.add_argument('-c', '--chrome', help='Convert trace to Chrome format and save to file (default: gpu_results.json)')
     parser.add_argument('-p', '--cpu-profile', help='Also capture CPU profile and save to file (default: cpu_results.txt)')
+    parser.add_argument('-m', '--merged', help='Save merged CPU+GPU folded trace (default: merged_trace.folded)')
     parser.add_argument('--cpu-only', action='store_true', help='Only run CPU profiler without GPU tracing')
     parser.add_argument('--no-gpu', action='store_true', help='Disable GPU profiling')
     parser.add_argument('--no-cpu', action='store_true', help='Disable CPU profiling')
+    parser.add_argument('--no-merge', action='store_true', help='Disable automatic merged trace generation')
     parser.add_argument('command', nargs=argparse.REMAINDER, help='Command to run with profiling')
     
     args = parser.parse_args()
@@ -314,7 +378,9 @@ def main():
         full_command, 
         output_trace=gpu_output, 
         chrome_trace=chrome_output,
-        cpu_profile=cpu_output
+        cpu_profile=cpu_output,
+        merged_trace=args.merged,
+        no_merge=args.no_merge
     )
 
 if __name__ == '__main__':
