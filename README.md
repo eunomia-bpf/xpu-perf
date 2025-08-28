@@ -220,7 +220,7 @@ The profiler provides detailed time accounting:
 Coverage interpretation:
 - < 50%: Process mostly idle or sleeping
 - 50-100%: Normal active process
-- > 100%: Multi-threaded or measurement overlap
+- \> 100%: Multi-threaded or measurement overlap
 
 ## License
 
