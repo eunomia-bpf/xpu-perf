@@ -19,7 +19,8 @@ INCLUDES := -I$(CUDA_PATH)/include -I.
 LIBRARIES := -L$(CUDA_PATH)/lib64
 
 # Compiler flags - no architecture specification to allow auto-detection
-NVCC_FLAGS := -O2
+# Added -g for debug info and -Xcompiler for host compiler flags
+NVCC_FLAGS := -O2 -g -lineinfo -Xcompiler "-fno-omit-frame-pointer -g"
 LDFLAGS := -lcudart
 
 # Add flag for CUDA 12.8 with newer GCC

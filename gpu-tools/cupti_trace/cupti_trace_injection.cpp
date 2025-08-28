@@ -95,6 +95,14 @@ AtExitHandler(void)
         CUPTI_API_CALL(DisableCuptiActivities(NULL));
         CUPTI_API_CALL_VERBOSE(cuptiActivityFlushAll(1));
     }
+    
+    // Flush and close output file if it's not stdout
+    if (globals.pOutputFile && globals.pOutputFile != stdout && globals.pOutputFile != stderr)
+    {
+        fflush(globals.pOutputFile);
+        fclose(globals.pOutputFile);
+        globals.pOutputFile = NULL;
+    }
 }
 
 #ifdef _WIN32
@@ -407,7 +415,23 @@ SetupCupti(void)
     pUserData->printActivityRecords        = 1;
 
     // Common CUPTI Initialization.
-    InitCuptiTrace(pUserData, (void *)InjectionCallbackHandler, stdout);
+    // Configure output file from environment variable or use default
+    const char *outputPath = getenv("CUPTI_TRACE_OUTPUT_FILE");
+    if (!outputPath) {
+        outputPath = "cupti_trace_output.txt";  // Default filename
+    }
+    
+    FILE *outputFile = stdout;  // Default to stdout
+    if (strcmp(outputPath, "stdout") != 0) {
+        outputFile = fopen(outputPath, "w");
+        if (!outputFile) {
+            std::cerr << "Failed to open output file '" << outputPath << "', falling back to stdout\n";
+            outputFile = stdout;
+        } else {
+            std::cout << "CUPTI trace output will be written to: " << outputPath << "\n";
+        }
+    }
+    InitCuptiTrace(pUserData, (void *)InjectionCallbackHandler, outputFile);
 
     injectionGlobals.subscriberHandle = globals.subscriberHandle;
 
