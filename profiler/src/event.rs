@@ -108,17 +108,6 @@ impl EventHandler {
         
         let mut stack_frames = Vec::new();
 
-        // Process kernel stack (if present)
-        if event.kstack_size > 0 {
-            let kstack = Self::get_stack_slice(&event.kstack, event.kstack_size);
-            let kernel_frames = symbolize_stack_to_vec(&self.symbolizer, kstack, 0);
-            
-            // Add kernel frames with [k] prefix in reverse order (top to bottom)
-            for frame in kernel_frames.iter().rev() {
-                stack_frames.push(format!("[k]{}", frame));
-            }
-        }
-
         // Process user stack (if present)
         if event.ustack_size > 0 {
             let ustack = Self::get_stack_slice(&event.ustack, event.ustack_size);
@@ -127,6 +116,17 @@ impl EventHandler {
             // Add user frames in reverse order (top to bottom)
             for frame in user_frames.iter().rev() {
                 stack_frames.push(frame.clone());
+            }
+        }
+
+        // Process kernel stack (if present)
+        if event.kstack_size > 0 {
+            let kstack = Self::get_stack_slice(&event.kstack, event.kstack_size);
+            let kernel_frames = symbolize_stack_to_vec(&self.symbolizer, kstack, 0);
+            
+            // Add kernel frames with [k] prefix in reverse order (top to bottom)
+            for frame in kernel_frames.iter().rev() {
+                stack_frames.push(format!("[k]{}", frame));
             }
         }
 

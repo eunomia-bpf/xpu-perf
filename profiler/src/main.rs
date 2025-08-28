@@ -25,7 +25,7 @@ use profile::*;
 #[derive(Parser, Debug)]
 struct Args {
     /// Sampling frequency
-    #[arg(short, default_value_t = 1)]
+    #[arg(short, default_value_t = 50)]
     freq: u64,
     /// Increase verbosity (can be supplied multiple times).
     #[arg(short = 'v', long = "verbose", global = true, action = ArgAction::Count)]
