@@ -23,7 +23,7 @@ class GPUPerf:
         self.parser = CuptiTraceParser()  # Initialize the parser
         
         # Path to CPU profiler
-        self.cpu_profiler = Path("/root/yunwei37/systemscope/profiler/target/release/profile")
+        self.cpu_profiler = Path("/root/yunwei37/xpu-perf/profiler/target/release/profile")
         if not self.cpu_profiler.exists():
             print(f"Warning: CPU profiler not found at {self.cpu_profiler}", file=sys.stderr)
             self.cpu_profiler = None

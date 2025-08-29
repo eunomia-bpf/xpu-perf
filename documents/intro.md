@@ -142,9 +142,9 @@ This exclusion creates a vicious cycle: optimization efforts focus on artificial
 
 ---
 
-## **3. Towards a New Paradigm: SystemScope**
+## **3. Towards a New Paradigm: xpu-perf**
 
-The limitations outlined above are not merely implementation challenges but reflect fundamental architectural assumptions that separate observation, analysis, and optimization into distinct phases and tools. We propose a paradigm shift towards **SystemScope**—a unified approach that collapses the traditional performance engineering pipeline into a single, continuous feedback system operating across heterogeneous computing environments.
+The limitations outlined above are not merely implementation challenges but reflect fundamental architectural assumptions that separate observation, analysis, and optimization into distinct phases and tools. We propose a paradigm shift towards **xpu-perf**—a unified approach that collapses the traditional performance engineering pipeline into a single, continuous feedback system operating across heterogeneous computing environments.
 
 This paradigm addresses the core inefficiencies in current performance optimization: the artificial temporal delays between observing problems and implementing solutions, the manual effort required to correlate insights across system layers, and the production deployment barriers that exclude optimization tools from the environments where they would provide the most value. By integrating these capabilities into a single system with zero-instrumentation deployment, we can transform performance optimization from an expert-driven, offline process into an automated capability that operates continuously in production environments.
 
@@ -171,7 +171,7 @@ Traditional profiling follows a data movement model:
 System → Data Collection → Data Export → External Storage → Offline Analysis → Insights
 ```
 
-SystemScope embraces data gravity:
+xpu-perf embraces data gravity:
 ```
 System → Embedded Analysis → Real-time Insights → Optional Streaming → External Integration
 ```
@@ -184,7 +184,7 @@ This approach offers several advantages:
 
 ### **3.3 Universal Compatibility: Heterogeneity as a First-Class Concern**
 
-The third principle recognizes that modern computing environments are heterogeneous by nature, not by accident. Rather than treating cross-architecture support as an afterthought, SystemScope makes heterogeneity a first-class design concern.
+The third principle recognizes that modern computing environments are heterogeneous by nature, not by accident. Rather than treating cross-architecture support as an afterthought, xpu-perf makes heterogeneity a first-class design concern.
 
 This means designing observability tools that:
 - **Understand Multiple Architectures**: Native support for x86, ARM, RISC-V, and specialized processors
@@ -194,7 +194,7 @@ This means designing observability tools that:
 
 ### **3.4 Zero-Instrumentation Optimization: From Observation to Action**
 
-The fourth principle addresses the critical gap between observing problems and implementing solutions. SystemScope embeds optimization capabilities directly into the observation infrastructure, creating an active feedback loop that can implement improvements without human intervention.
+The fourth principle addresses the critical gap between observing problems and implementing solutions. xpu-perf embeds optimization capabilities directly into the observation infrastructure, creating an active feedback loop that can implement improvements without human intervention.
 
 **Zero-Instrumentation Requirements:**
 - **No Code Modifications**: System optimization without altering application source code
@@ -210,7 +210,7 @@ The fourth principle addresses the critical gap between observing problems and i
 | **Runtime Level** | JIT compilation, garbage collection, thread pools | JIT optimization hints, GC tuning, connection pooling | Language-specific tools |
 | **Application Level** | Algorithm selection, data structures, caching | Query optimization, cache warming, load balancing | Manual code changes |
 
-*Table 2: Multi-layer optimization capabilities enabled by SystemScope compared to current limitations.*
+*Table 2: Multi-layer optimization capabilities enabled by xpu-perf compared to current limitations.*
 
 **Example: Automatic Cache Optimization**
 
@@ -234,7 +234,7 @@ The challenge lies in the fundamental differences between system layers: CPU eve
 
 ### **4.1 The Universal Event Model**
 
-At the heart of SystemScope lies the concept of a **universal event**—a standardized representation of any observable system activity that includes sufficient context for automatic correlation across layers. Unlike traditional profiling approaches that capture layer-specific data in isolation, universal events are designed from the ground up for cross-layer correlation.
+At the heart of xpu-perf lies the concept of a **universal event**—a standardized representation of any observable system activity that includes sufficient context for automatic correlation across layers. Unlike traditional profiling approaches that capture layer-specific data in isolation, universal events are designed from the ground up for cross-layer correlation.
 
 A universal event captures not just what happened, but the complete context necessary to understand how it relates to events in other layers:
 - **Temporal Context**: High-precision timestamps that enable correlation across layers with different time resolutions
@@ -244,7 +244,7 @@ A universal event captures not just what happened, but the complete context nece
 
 ### **4.2 Automatic Correlation Algorithms**
 
-The power of SystemScope lies not in collecting more data, but in automatically understanding the relationships between events across system boundaries. This requires sophisticated correlation algorithms that can operate in real-time:
+The power of xpu-perf lies not in collecting more data, but in automatically understanding the relationships between events across system boundaries. This requires sophisticated correlation algorithms that can operate in real-time:
 
 **Temporal Correlation** identifies events that occur within specific time windows across different layers. For example, correlating an application function call with the kernel system calls it generates and the network packets they produce.
 
@@ -256,7 +256,7 @@ The power of SystemScope lies not in collecting more data, but in automatically 
 
 ### **4.3 Multi-Layer Observability Architecture**
 
-SystemScope requires an observability architecture that can simultaneously capture events from all relevant system layers without overwhelming the system being observed. This involves careful design of collection strategies that maximize insight while minimizing overhead.
+xpu-perf requires an observability architecture that can simultaneously capture events from all relevant system layers without overwhelming the system being observed. This involves careful design of collection strategies that maximize insight while minimizing overhead.
 
 The architecture must handle the fundamental challenge that different layers operate at vastly different scales and frequencies—CPU events might occur at gigahertz frequencies, while application-level events might occur at kilohertz frequencies, and network events might occur at varying rates depending on load.
 
@@ -270,13 +270,13 @@ Key architectural principles include:
 
 ## **5. The Single Binary Vision: Democratizing System Observability**
 
-One of the most significant barriers to effective system observability is the complexity of deployment and operation. SystemScope envisions a radically simplified deployment model that eliminates traditional barriers to observability tool adoption.
+One of the most significant barriers to effective system observability is the complexity of deployment and operation. xpu-perf envisions a radically simplified deployment model that eliminates traditional barriers to observability tool adoption.
 
 ### **5.1 Zero-Friction Deployment**
 
 The traditional model for deploying observability tools involves complex multi-step processes: installing packages, configuring systems, setting up infrastructure, managing dependencies, and requiring specialized expertise at each step. This complexity creates significant barriers to adoption, especially in production environments where changes must be carefully managed.
 
-SystemScope proposes a **single binary deployment model** where all necessary capabilities are contained within one self-contained executable. This approach draws inspiration from modern distributed systems design where applications are packaged as complete, immutable artifacts that can be deployed anywhere without external dependencies.
+xpu-perf proposes a **single binary deployment model** where all necessary capabilities are contained within one self-contained executable. This approach draws inspiration from modern distributed systems design where applications are packaged as complete, immutable artifacts that can be deployed anywhere without external dependencies.
 
 The single binary approach offers several critical advantages:
 - **Immediate Availability**: Observability capabilities are available within seconds of downloading a single file
@@ -286,7 +286,7 @@ The single binary approach offers several critical advantages:
 
 ### **5.2 Embedded Analysis and Visualization**
 
-Traditional observability tools separate data collection, storage, analysis, and visualization into distinct components. This separation creates complexity, latency, and operational overhead. SystemScope integrates all these capabilities into a single, cohesive system.
+Traditional observability tools separate data collection, storage, analysis, and visualization into distinct components. This separation creates complexity, latency, and operational overhead. xpu-perf integrates all these capabilities into a single, cohesive system.
 
 By embedding analysis and visualization capabilities directly alongside data collection, we can:
 - **Eliminate Data Movement Latency**: Analysis happens immediately where data is collected
@@ -296,7 +296,7 @@ By embedding analysis and visualization capabilities directly alongside data col
 
 ### **5.3 Production-First Design**
 
-SystemScope is designed with production environments as the primary use case, not development environments. This represents a philosophical shift from traditional profiling tools that were designed for development and then adapted for production use.
+xpu-perf is designed with production environments as the primary use case, not development environments. This represents a philosophical shift from traditional profiling tools that were designed for development and then adapted for production use.
 
 Production-first design means:
 - **Minimal Overhead**: Performance impact must be negligible enough for continuous production use
@@ -306,11 +306,11 @@ Production-first design means:
 
 ## **6. Extensibility and Future Evolution**
 
-While SystemScope provides a comprehensive foundation for system observability, the diversity of modern computing environments requires an extensible architecture that can adapt to new technologies and use cases.
+While xpu-perf provides a comprehensive foundation for system observability, the diversity of modern computing environments requires an extensible architecture that can adapt to new technologies and use cases.
 
 ### **6.1 The Plugin Paradigm**
 
-SystemScope embraces a plugin architecture that allows new event sources and visualization approaches to be integrated without modifying the core system. This plugin paradigm enables:
+xpu-perf embraces a plugin architecture that allows new event sources and visualization approaches to be integrated without modifying the core system. This plugin paradigm enables:
 
 - **Domain-Specific Extensions**: Specialized profiling for specific technologies (IoT sensors, blockchain networks, quantum computing)
 - **Visualization Innovation**: New ways to understand and interact with system performance data
@@ -319,7 +319,7 @@ SystemScope embraces a plugin architecture that allows new event sources and vis
 
 ### **6.2 Adaptive Intelligence**
 
-As SystemScope systems observe more environments and correlate more events, they can develop adaptive intelligence about system behavior patterns. This intelligence can inform:
+As xpu-perf systems observe more environments and correlate more events, they can develop adaptive intelligence about system behavior patterns. This intelligence can inform:
 
 - **Predictive Analysis**: Identifying patterns that precede performance issues
 - **Automatic Optimization**: Suggesting configuration changes based on observed behavior
@@ -330,11 +330,11 @@ As SystemScope systems observe more environments and correlate more events, they
 
 ## **7. Comparative Analysis: SystemScope vs. Current Approaches**
 
-To understand the significance of SystemScope, it's important to examine how it differs from existing observability approaches across key dimensions.
+To understand the significance of xpu-perf, it's important to examine how it differs from existing observability approaches across key dimensions.
 
 ### **7.1 Comprehensive Tool Comparison Matrix**
 
-| **Capability** | **Traditional Tools** | **SystemScope** | **Advantage** |
+| **Capability** | **Traditional Tools** | **xpu-perf** | **Advantage** |
 |----------------|----------------------|-----------------------------------|---------------|
 | **Temporal Model** | Batch/offline analysis | Real-time streaming analysis | Live optimization, immediate insights |
 | **Layer Coverage** | Single-layer focus | Cross-layer correlation | Holistic system understanding |
@@ -344,7 +344,7 @@ To understand the significance of SystemScope, it's important to examine how it 
 | **Instrumentation** | Code modification required | Zero-instrumentation approach | Production-safe continuous use |
 | **Overhead** | High (5-50%) when active | Near-zero when inactive | Always-on capability |
 
-*Table 3: Detailed comparison of SystemScope capabilities versus traditional approaches.*
+*Table 3: Detailed comparison of xpu-perf capabilities versus traditional approaches.*
 
 ### **7.2 Temporal Characteristics: Real-time vs. Batch Processing**
 
@@ -360,7 +360,7 @@ Day 7+: Implement fixes
 Result: 1 week to resolution, issue may have evolved
 ```
 
-**SystemScope Model:**
+**xpu-perf Model:**
 ```
 Real-time Optimization Workflow (Proposed):
 Minute 1: System detects performance anomaly
@@ -523,7 +523,7 @@ This vision also raises important challenges that must be addressed:
 The term "Universal Real-time Profiling" captures the core concepts but may benefit from refinement. Several naming directions emerge based on different aspects of the system:
 
 #### **Observatory-Focused Names**
-- **SystemScope** or **LiveScope**: Emphasizes the "observatory not laboratory" philosophy
+- **xpu-perf** or **LiveScope**: Emphasizes the "observatory not laboratory" philosophy
 - **OmniScope**: Suggests comprehensive, all-encompassing observation
 - **System Observatory**: More formal, academic terminology
 
@@ -565,9 +565,9 @@ The term "Universal Real-time Profiling" captures the core concepts but may bene
 
 *Rationale*: These names signal that this is not just another profiling tool but represents a new generation. However, they may become dated over time.
 
-#### **Recommended Direction: SystemScope**
+#### **Recommended Direction: xpu-perf**
 
-Among these options, **SystemScope** offers several advantages:
+Among these options, **xpu-perf** offers several advantages:
 
 1. **Metaphorical Power**: Telescopes and microscopes are well-understood instruments for observation, making the concept immediately accessible
 2. **Observatory Philosophy**: Reinforces the "observation not experimentation" approach  
@@ -579,9 +579,9 @@ Among these options, **SystemScope** offers several advantages:
 Alternative formulations:
 - **LiveScope**: Emphasizes real-time nature
 - **OmniScope**: Emphasizes universal coverage  
-- **SystemScope Live**: Combines system focus with real-time emphasis
+- **xpu-perf Live**: Combines system focus with real-time emphasis
 
-The choice of terminology matters significantly for adoption, as it shapes how people conceptualize and discuss the tool. "SystemScope" positions the tool as a scientific instrument for system understanding rather than just another profiling utility, which aligns with the paradigm shift the document advocates.
+The choice of terminology matters significantly for adoption, as it shapes how people conceptualize and discuss the tool. "xpu-perf" positions the tool as a scientific instrument for system understanding rather than just another profiling utility, which aligns with the paradigm shift the document advocates.
 
 ## **9. Conclusion**
 

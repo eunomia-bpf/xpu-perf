@@ -1,4 +1,4 @@
-# systemscope: eBPF Wall Clock Profiler for CPU & GPU
+# xpu-perf: eBPF Wall Clock Profiler for CPU & GPU
 
 A wall-clock profiler that combines on-CPU, off-CPU, and GPU profiling to provide complete visibility into application performance. Built using eBPF technology for zero-instrumentation profiling with minimal overhead.
 
