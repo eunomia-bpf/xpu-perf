@@ -6,3 +6,5 @@ gpu_results.json
 __pycache__/
 *.svg
 *.folded
+*.txt
+test_cupti

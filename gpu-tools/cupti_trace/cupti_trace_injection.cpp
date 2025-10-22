@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <mutex>
+#include <map>
 
 // CUDA headers
 #include <cuda.h>
@@ -58,6 +59,16 @@
 
 // Variable related to initialize injection.
 std::mutex initializeInjectionMutex;
+
+// Data structures for graph node tracking
+typedef struct ApiData_st
+{
+    const char *pFunctionName;
+    uint32_t correlationId;
+} ApiData;
+
+typedef std::map<uint64_t, ApiData> NodeIdApiDataMap;
+NodeIdApiDataMap nodeIdCorrelationMap;
 
 // Global Structure
 typedef struct InjectionGlobals_st
@@ -212,6 +223,44 @@ SelectActivities()
     return CUPTI_SUCCESS;
 }
 
+void
+GraphTraceRecords(
+    CUpti_Activity *pRecord)
+{
+    switch (pRecord->kind)
+    {
+        case CUPTI_ACTIVITY_KIND_MEMCPY:
+        {
+            CUpti_ActivityMemcpy6 *pMemcpyRecord = (CUpti_ActivityMemcpy6 *) pRecord;
+
+            // Retrieve the information of the API used to create the node.
+            NodeIdApiDataMap::iterator it = nodeIdCorrelationMap.find(pMemcpyRecord->graphNodeId);
+            if (it != nodeIdCorrelationMap.end())
+            {
+                fprintf(globals.pOutputFile, "Graph node was created using API %s with correlationId %u\n",
+                        it->second.pFunctionName, it->second.correlationId);
+            }
+            break;
+        }
+        case CUPTI_ACTIVITY_KIND_KERNEL:
+        case CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL:
+        {
+            CUpti_ActivityKernel9 *pKernelRecord = (CUpti_ActivityKernel9 *) pRecord;
+
+            // Retrieve the information of the API used to create the node.
+            NodeIdApiDataMap::iterator it = nodeIdCorrelationMap.find(pKernelRecord->graphNodeId);
+            if (it != nodeIdCorrelationMap.end())
+            {
+                fprintf(globals.pOutputFile, "Graph node was created using API %s with correlationId %u\n",
+                        it->second.pFunctionName, it->second.correlationId);
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 static CUptiResult
 EnableCuptiActivities(
     CUcontext context)
@@ -345,6 +394,9 @@ InjectionCallbackHandler(
     CUpti_CallbackId callbackId,
     void *pCallbackData)
 {
+    static const char *s_pFunctionName;
+    static uint32_t s_correlationId;
+
     const CUpti_CallbackData *pCallbackInfo = (CUpti_CallbackData *)pCallbackData;
 
     // Check last error.
@@ -355,6 +407,51 @@ InjectionCallbackHandler(
         case CUPTI_CB_DOMAIN_STATE:
             HandleDomainStateCallback(callbackId, (CUpti_StateData *)pCallbackData);
             break;
+        case CUPTI_CB_DOMAIN_RESOURCE:
+        {
+            CUpti_ResourceData *pResourceData = (CUpti_ResourceData *)pCallbackData;
+            switch (callbackId)
+            {
+                case CUPTI_CBID_RESOURCE_GRAPHNODE_CREATED:
+                {
+                    // Do not store info for the nodes that are created during graph instantiate.
+                    if (s_pFunctionName && !strncmp(s_pFunctionName, "cudaGraphInstantiate", strlen("cudaGraphInstantiate")))
+                    {
+                        break;
+                    }
+                    CUpti_GraphData *callbackData = (CUpti_GraphData *) pResourceData->resourceDescriptor;
+                    uint64_t nodeId;
+
+                    // Query the graph node ID and store the API correlation id and function name.
+                    CUPTI_API_CALL(cuptiGetGraphNodeId(callbackData->node, &nodeId));
+                    ApiData apiData;
+                    apiData.correlationId = s_correlationId;
+                    apiData.pFunctionName = s_pFunctionName;
+                    nodeIdCorrelationMap[nodeId] = apiData;
+                    break;
+                }
+                case CUPTI_CBID_RESOURCE_GRAPHNODE_CLONED:
+                {
+                    CUpti_GraphData *callbackData = (CUpti_GraphData *) pResourceData->resourceDescriptor;
+                    uint64_t nodeId, originalNodeId;
+
+                    // Overwrite the map entry with node ID of the cloned graph node.
+                    CUPTI_API_CALL(cuptiGetGraphNodeId(callbackData->originalNode, &originalNodeId));
+                    NodeIdApiDataMap::iterator it = nodeIdCorrelationMap.find(originalNodeId);
+                    if (it != nodeIdCorrelationMap.end())
+                    {
+                        CUPTI_API_CALL(cuptiGetGraphNodeId(callbackData->node, &nodeId));
+                        ApiData apiData = it->second;
+                        nodeIdCorrelationMap.erase(it);
+                        nodeIdCorrelationMap[nodeId] = apiData;
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+            break;
+        }
         case CUPTI_CB_DOMAIN_DRIVER_API:
         {
             switch (callbackId)
@@ -384,6 +481,12 @@ InjectionCallbackHandler(
         }
         case CUPTI_CB_DOMAIN_RUNTIME_API:
         {
+            if (pCallbackInfo->callbackSite == CUPTI_API_ENTER)
+            {
+                s_correlationId = pCallbackInfo->correlationId;
+                s_pFunctionName = pCallbackInfo->functionName;
+            }
+
             switch (callbackId)
             {
                 case CUPTI_RUNTIME_TRACE_CBID_cudaDeviceReset_v3020:
@@ -411,7 +514,7 @@ SetupCupti(void)
     MEMORY_ALLOCATION_CALL(pUserData);
 
     memset(pUserData, 0, sizeof(UserData));
-    pUserData->pPostProcessActivityRecords = NULL;
+    pUserData->pPostProcessActivityRecords = GraphTraceRecords;
     pUserData->printActivityRecords        = 1;
 
     // Common CUPTI Initialization.
@@ -420,7 +523,7 @@ SetupCupti(void)
     if (!outputPath) {
         outputPath = "cupti_trace_output.txt";  // Default filename
     }
-    
+
     FILE *outputFile = stdout;  // Default to stdout
     if (strcmp(outputPath, "stdout") != 0) {
         outputFile = fopen(outputPath, "w");
@@ -438,6 +541,11 @@ SetupCupti(void)
     // Subscribe Driver callback to call OnProfilerStart/OnProfilerStop function.
     CUPTI_API_CALL_VERBOSE(cuptiEnableCallback(1, injectionGlobals.subscriberHandle, CUPTI_CB_DOMAIN_DRIVER_API, CUPTI_DRIVER_TRACE_CBID_cuProfilerStart));
     CUPTI_API_CALL_VERBOSE(cuptiEnableCallback(1, injectionGlobals.subscriberHandle, CUPTI_CB_DOMAIN_DRIVER_API, CUPTI_DRIVER_TRACE_CBID_cuProfilerStop));
+
+    // Enable callbacks for CUDA graph node tracking.
+    CUPTI_API_CALL_VERBOSE(cuptiEnableCallback(1, injectionGlobals.subscriberHandle, CUPTI_CB_DOMAIN_RESOURCE, CUPTI_CBID_RESOURCE_GRAPHNODE_CREATED));
+    CUPTI_API_CALL_VERBOSE(cuptiEnableCallback(1, injectionGlobals.subscriberHandle, CUPTI_CB_DOMAIN_RESOURCE, CUPTI_CBID_RESOURCE_GRAPHNODE_CLONED));
+    CUPTI_API_CALL_VERBOSE(cuptiEnableDomain(1, injectionGlobals.subscriberHandle, CUPTI_CB_DOMAIN_RUNTIME_API));
 
     // Enable CUPTI activities.
     CUPTI_API_CALL(EnableCuptiActivities(NULL));

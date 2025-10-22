@@ -919,7 +919,7 @@ GetCorrelationId(
             return ((CUpti_ActivityMemset4 *)pRecord)->correlationId;
         case CUPTI_ACTIVITY_KIND_KERNEL:
         case CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL:
-            return ((CUpti_ActivityKernel10 *)pRecord)->correlationId;
+            return ((CUpti_ActivityKernel9 *)pRecord)->correlationId;
         case CUPTI_ACTIVITY_KIND_DRIVER:
         case CUPTI_ACTIVITY_KIND_RUNTIME:
             return ((CUpti_ActivityAPI *)pRecord)->correlationId;
@@ -1030,7 +1030,7 @@ PrintActivity(
         case CUPTI_ACTIVITY_KIND_KERNEL:
         case CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL:
         {
-            CUpti_ActivityKernel10 *pKernelRecord = (CUpti_ActivityKernel10 *)pRecord;
+            CUpti_ActivityKernel9 *pKernelRecord = (CUpti_ActivityKernel9 *)pRecord;
 
             fprintf(pFileHandle, "%s [ %llu, %llu ] duration %llu, \"%s\", correlationId %u, cacheConfigRequested %d, cacheConfigExecuted %d\n"
                     "\tgrid [ %u, %u, %u ], block [ %u, %u, %u ], cluster [ %u, %u, %u ], sharedMemory (static %u, dynamic %u)\n"
@@ -1795,9 +1795,9 @@ PrintActivity(
         }
         case CUPTI_ACTIVITY_KIND_MEMORY_POOL:
         {
-            CUpti_ActivityMemoryPool3 *pMemoryPoolRecord = (CUpti_ActivityMemoryPool3 *)(void *)pRecord;
+            CUpti_ActivityMemoryPool2 *pMemoryPoolRecord = (CUpti_ActivityMemoryPool2 *)(void *)pRecord;
 
-            fprintf(pFileHandle, "%s [ %llu ] memoryPoolOperation %s, memoryPool %s, address %llu, size %llu, utilizedSize %llu, %d isManagedPool, releaseThreshold %llu,\n"
+            fprintf(pFileHandle, "%s [ %llu ] memoryPoolOperation %s, memoryPool %s, address %llu, size %llu, utilizedSize %llu, releaseThreshold %llu,\n"
                     "  deviceId %u, processId %u, correlationId %u\n",
                     GetActivityKindString(pMemoryPoolRecord->kind),
                     (unsigned long long)pMemoryPoolRecord->timestamp,
@@ -1806,7 +1806,6 @@ PrintActivity(
                     (unsigned long long)pMemoryPoolRecord->address,
                     (unsigned long long)pMemoryPoolRecord->size,
                     (unsigned long long)pMemoryPoolRecord->utilizedSize,
-                    pMemoryPoolRecord->isManagedPool,
                     (unsigned long long)pMemoryPoolRecord->releaseThreshold,
                     pMemoryPoolRecord->deviceId,
                     pMemoryPoolRecord->processId,

@@ -6,15 +6,16 @@ ifndef OS
     HOST_ARCH := $(shell uname -m)
 endif
 
-CUDA_INSTALL_PATH ?= /usr/local/cuda-13.0
+CUDA_INSTALL_PATH ?= /usr/local/cuda-12.9
 NVCC := "$(CUDA_INSTALL_PATH)/bin/nvcc"
-CUPTI_INSTALL_PATH ?= $(CUDA_INSTALL_PATH)/extras/CUPTI
-INCLUDES := -I"$(CUDA_INSTALL_PATH)/include" -I$(CUPTI_INSTALL_PATH)/include -I$(CUPTI_INSTALL_PATH)/samples/common
+CUPTI_INSTALL_PATH ?= $(CUDA_INSTALL_PATH)/targets/x86_64-linux
+CUPTI_SAMPLES_PATH ?= $(CUDA_INSTALL_PATH)/extras/CUPTI/samples/common
+INCLUDES := -I"$(CUDA_INSTALL_PATH)/include" -I$(CUPTI_INSTALL_PATH)/include -I$(CUPTI_SAMPLES_PATH)
 
 ifeq ($(OS),Windows_NT)
     LIB_PATH ?= ..\..\lib64
 else
-    EXTRAS_LIB_PATH := ../../lib64
+    EXTRAS_LIB_PATH := $(CUPTI_INSTALL_PATH)/lib
     LIB_PATH ?= $(CUDA_INSTALL_PATH)/lib64
 endif
 
@@ -63,6 +64,6 @@ endif
 
 all: cupti_trace_injection
 cupti_trace_injection: cupti_trace_injection.cpp
-	$(NVCC) $(NVCC_COMPILER) $(NVCCFLAGS) $(INCLUDES) -o $(LIBNAME) -shared $< $(LIBS)
+	$(NVCC) $(NVCC_COMPILER) $(NVCCFLAGS) $(INCLUDES) -o $(LIBNAME) -shared $< $(LIBS) --no-device-link
 clean:
 	rm -f $(LIBNAME) cupti_trace_injection.o
