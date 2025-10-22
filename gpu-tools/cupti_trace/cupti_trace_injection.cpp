@@ -399,8 +399,16 @@ InjectionCallbackHandler(
 
     const CUpti_CallbackData *pCallbackInfo = (CUpti_CallbackData *)pCallbackData;
 
-    // Check last error.
-    CUPTI_API_CALL(cuptiGetLastError());
+    // Clear any previous CUPTI errors. cuptiGetLastError() retrieves and clears the last error.
+    // We don't treat this as fatal since it's just clearing state from previous operations.
+    CUptiResult _status = cuptiGetLastError();
+    if (_status != CUPTI_SUCCESS && _status != CUPTI_ERROR_NOT_INITIALIZED)
+    {
+        const char *pErrorString;
+        cuptiGetResultString(_status, &pErrorString);
+        // Log but don't exit - this is just informational
+        std::cerr << "Warning: Cleared previous CUPTI error(" << _status << "): " << pErrorString << "\n";
+    }
 
     switch (domain)
     {

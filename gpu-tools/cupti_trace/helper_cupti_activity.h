@@ -33,8 +33,8 @@
 // Macros
 #define LINE_SIZE 2048
 
-// CUPTI buffer size 8 MB
-#define BUF_SIZE (8 * 1024 * 1024)
+// CUPTI buffer size 32 MB
+#define BUF_SIZE (32 * 1024 * 1024)
 
 // 8-byte alignment for the buffers
 #define ALIGN_SIZE (8)
