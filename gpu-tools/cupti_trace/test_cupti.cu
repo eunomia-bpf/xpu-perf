@@ -1,770 +1,702 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include <iostream>
+#include <iomanip>
+#include <vector>
+#include <memory>
+#include <string>
+#include <array>
+#include <random>
+#include <chrono>
+#include <thread>
+#include <fstream>
+#include <algorithm>
 #include <cuda_runtime.h>
-#include <math.h>
-#include <unistd.h>
-#include <time.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <signal.h>
-#include <sys/stat.h>
-#include <sys/types.h>
+#include <cmath>
 
 // =============================================================================
-// Configuration - Scaled up for ~1GB total memory usage
+// Configuration using constexpr
 // =============================================================================
-#define BATCH_SIZE 8
-#define SEQ_LENGTH 512
-#define HIDDEN_DIM 1024
-#define NUM_HEADS 8
-#define HEAD_DIM (HIDDEN_DIM / NUM_HEADS)
-#define FFN_DIM (HIDDEN_DIM * 4)
-#define NUM_LAYERS 3
-#define VOCAB_SIZE 2000
-// Main buffer size: 8 * 512 * 1024 * 4 = 16MB per buffer
-// TransformerLayer allocations per layer: ~100MB
-// 3 layers = ~300MB, plus I/O buffers = total ~400-500MB
+namespace Config {
+    constexpr size_t BATCH_SIZE = 16;
+    constexpr size_t SEQ_LENGTH = 1024;
+    constexpr size_t HIDDEN_DIM = 2048;
+    constexpr size_t NUM_HEADS = 16;
+    constexpr size_t HEAD_DIM = HIDDEN_DIM / NUM_HEADS;
+    constexpr size_t FFN_DIM = HIDDEN_DIM * 4;
+    constexpr size_t NUM_LAYERS = 4;
+    constexpr size_t VOCAB_SIZE = 4000;
+    constexpr int DURATION_SECONDS = 10;
+}
 
 // =============================================================================
-// GPU Kernels - Transformer Operations
+// CUDA Error Checking Wrapper
 // =============================================================================
+class CudaError : public std::runtime_error {
+public:
+    explicit CudaError(const std::string& msg) : std::runtime_error(msg) {}
+};
 
-// Attention: Q * K^T
-__global__ void attentionQKT(float *Q, float *K, float *scores,
-                              int batch, int seq_len, int head_dim) {
-    int b = blockIdx.z;
-    int i = blockIdx.y * blockDim.y + threadIdx.y;  // query position
-    int j = blockIdx.x * blockDim.x + threadIdx.x;  // key position
-
-    if (b < batch && i < seq_len && j < seq_len) {
-        float sum = 0.0f;
-        for (int k = 0; k < head_dim; k++) {
-            int q_idx = b * seq_len * head_dim + i * head_dim + k;
-            int k_idx = b * seq_len * head_dim + j * head_dim + k;
-            sum += Q[q_idx] * K[k_idx];
-        }
-        scores[b * seq_len * seq_len + i * seq_len + j] = sum / sqrtf((float)head_dim);
+inline void checkCuda(cudaError_t result, const char* file, int line) {
+    if (result != cudaSuccess) {
+        throw CudaError(std::string("CUDA Error: ") +
+                       cudaGetErrorString(result) +
+                       " at " + file + ":" + std::to_string(line));
     }
 }
 
-// Softmax operation
-__global__ void softmax(float *input, float *output, int batch, int seq_len) {
-    int b = blockIdx.y;
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+#define CUDA_CHECK(call) checkCuda((call), __FILE__, __LINE__)
+
+// =============================================================================
+// RAII CUDA Memory Wrapper
+// =============================================================================
+template<typename T>
+class CudaDeviceMemory {
+private:
+    T* data_ = nullptr;
+    size_t size_ = 0;
+
+public:
+    explicit CudaDeviceMemory(size_t count) : size_(count) {
+        if (count > 0) {
+            CUDA_CHECK(cudaMalloc(&data_, count * sizeof(T)));
+            std::cout << "[CUDA] Allocated " << (count * sizeof(T)) / (1024.0 * 1024.0)
+                     << " MB on device" << std::endl;
+        }
+    }
+
+    ~CudaDeviceMemory() {
+        if (data_) {
+            cudaFree(data_);
+        }
+    }
+
+    // Delete copy operations
+    CudaDeviceMemory(const CudaDeviceMemory&) = delete;
+    CudaDeviceMemory& operator=(const CudaDeviceMemory&) = delete;
+
+    // Allow move operations
+    CudaDeviceMemory(CudaDeviceMemory&& other) noexcept
+        : data_(other.data_), size_(other.size_) {
+        other.data_ = nullptr;
+        other.size_ = 0;
+    }
+
+    CudaDeviceMemory& operator=(CudaDeviceMemory&& other) noexcept {
+        if (this != &other) {
+            if (data_) cudaFree(data_);
+            data_ = other.data_;
+            size_ = other.size_;
+            other.data_ = nullptr;
+            other.size_ = 0;
+        }
+        return *this;
+    }
+
+    T* get() { return data_; }
+    const T* get() const { return data_; }
+    size_t size() const { return size_; }
+
+    void copyFromHost(const std::vector<T>& host_data) {
+        if (host_data.size() != size_) {
+            throw std::runtime_error("Size mismatch in copyFromHost");
+        }
+        CUDA_CHECK(cudaMemcpy(data_, host_data.data(),
+                             size_ * sizeof(T), cudaMemcpyHostToDevice));
+    }
+
+    void copyToHost(std::vector<T>& host_data) const {
+        if (host_data.size() != size_) {
+            host_data.resize(size_);
+        }
+        CUDA_CHECK(cudaMemcpy(host_data.data(), data_,
+                             size_ * sizeof(T), cudaMemcpyDeviceToHost));
+    }
+
+    void zero() {
+        CUDA_CHECK(cudaMemset(data_, 0, size_ * sizeof(T)));
+    }
+};
+
+// =============================================================================
+// CUDA Stream Wrapper
+// =============================================================================
+class CudaStream {
+private:
+    cudaStream_t stream_ = nullptr;
+
+public:
+    CudaStream() {
+        CUDA_CHECK(cudaStreamCreate(&stream_));
+    }
+
+    ~CudaStream() {
+        if (stream_) {
+            cudaStreamDestroy(stream_);
+        }
+    }
+
+    CudaStream(const CudaStream&) = delete;
+    CudaStream& operator=(const CudaStream&) = delete;
+
+    cudaStream_t get() const { return stream_; }
+
+    void synchronize() {
+        CUDA_CHECK(cudaStreamSynchronize(stream_));
+    }
+};
+
+// =============================================================================
+// GPU Kernels
+// =============================================================================
+__global__ void attentionQKTKernel(const float* Q, const float* K, float* scores,
+                                   size_t batch, size_t seq_len, size_t head_dim) {
+    size_t b = blockIdx.z;
+    size_t i = blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (b < batch && i < seq_len && j < seq_len) {
+        float sum = 0.0f;
+        for (size_t k = 0; k < head_dim; k++) {
+            size_t q_idx = b * seq_len * head_dim + i * head_dim + k;
+            size_t k_idx = b * seq_len * head_dim + j * head_dim + k;
+            sum += Q[q_idx] * K[k_idx];
+        }
+        scores[b * seq_len * seq_len + i * seq_len + j] = sum / sqrtf(static_cast<float>(head_dim));
+    }
+}
+
+__global__ void softmaxKernel(const float* input, float* output, size_t batch, size_t seq_len) {
+    size_t b = blockIdx.y;
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (b < batch && i < seq_len) {
         float max_val = -INFINITY;
-        for (int j = 0; j < seq_len; j++) {
-            int idx = b * seq_len * seq_len + i * seq_len + j;
+        for (size_t j = 0; j < seq_len; j++) {
+            size_t idx = b * seq_len * seq_len + i * seq_len + j;
             max_val = fmaxf(max_val, input[idx]);
         }
 
         float sum = 0.0f;
-        for (int j = 0; j < seq_len; j++) {
-            int idx = b * seq_len * seq_len + i * seq_len + j;
+        for (size_t j = 0; j < seq_len; j++) {
+            size_t idx = b * seq_len * seq_len + i * seq_len + j;
             output[idx] = expf(input[idx] - max_val);
             sum += output[idx];
         }
 
-        for (int j = 0; j < seq_len; j++) {
-            int idx = b * seq_len * seq_len + i * seq_len + j;
+        for (size_t j = 0; j < seq_len; j++) {
+            size_t idx = b * seq_len * seq_len + i * seq_len + j;
             output[idx] /= sum;
         }
     }
 }
 
-// Attention scores * V
-__global__ void attentionScoresV(float *scores, float *V, float *output,
-                                  int batch, int seq_len, int head_dim) {
-    int b = blockIdx.z;
-    int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int k = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (b < batch && i < seq_len && k < head_dim) {
-        float sum = 0.0f;
-        for (int j = 0; j < seq_len; j++) {
-            int score_idx = b * seq_len * seq_len + i * seq_len + j;
-            int v_idx = b * seq_len * head_dim + j * head_dim + k;
-            sum += scores[score_idx] * V[v_idx];
-        }
-        output[b * seq_len * head_dim + i * head_dim + k] = sum;
-    }
-}
-
-// Matrix multiplication for FFN
-__global__ void matmulFFN(float *A, float *B, float *C, int M, int N, int K) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (row < M && col < N) {
-        float sum = 0.0f;
-        for (int k = 0; k < K; k++) {
-            sum += A[row * K + k] * B[k * N + col];
-        }
-        C[row * N + col] = sum;
-    }
-}
-
-// GELU activation
-__global__ void gelu(float *input, float *output, int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float x = input[idx];
-        output[idx] = 0.5f * x * (1.0f + tanhf(0.7978845608f * (x + 0.044715f * x * x * x)));
-    }
-}
-
-// Layer normalization
-__global__ void layerNorm(float *input, float *output, float *gamma, float *beta,
-                          int batch, int seq_len, int hidden_dim) {
-    int b = blockIdx.y;
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void layerNormKernel(const float* input, float* output,
+                                const float* gamma, const float* beta,
+                                size_t batch, size_t seq_len, size_t hidden_dim) {
+    size_t b = blockIdx.y;
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (b < batch && i < seq_len) {
         float mean = 0.0f;
-        for (int j = 0; j < hidden_dim; j++) {
+        for (size_t j = 0; j < hidden_dim; j++) {
             mean += input[b * seq_len * hidden_dim + i * hidden_dim + j];
         }
         mean /= hidden_dim;
 
         float variance = 0.0f;
-        for (int j = 0; j < hidden_dim; j++) {
+        for (size_t j = 0; j < hidden_dim; j++) {
             float diff = input[b * seq_len * hidden_dim + i * hidden_dim + j] - mean;
             variance += diff * diff;
         }
         variance /= hidden_dim;
 
         float std = sqrtf(variance + 1e-5f);
-        for (int j = 0; j < hidden_dim; j++) {
-            int idx = b * seq_len * hidden_dim + i * hidden_dim + j;
+        for (size_t j = 0; j < hidden_dim; j++) {
+            size_t idx = b * seq_len * hidden_dim + i * hidden_dim + j;
             output[idx] = gamma[j] * (input[idx] - mean) / std + beta[j];
         }
     }
 }
 
-// Element-wise add (residual connection)
-__global__ void residualAdd(float *input, float *residual, float *output, int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void residualAddKernel(const float* input, const float* residual,
+                                  float* output, size_t n) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         output[idx] = input[idx] + residual[idx];
     }
 }
 
 // =============================================================================
-// CPU Processing Functions
+// Token Embedding using modern C++
 // =============================================================================
-
 class TokenEmbedding {
-public:
-    float *embeddings;
-    int vocab_size;
-    int embedding_dim;
+private:
+    std::vector<float> embeddings_;
+    size_t vocab_size_;
+    size_t embedding_dim_;
+    std::mt19937 rng_;
+    std::uniform_real_distribution<float> dist_;
 
-    TokenEmbedding(int vocab, int dim) : vocab_size(vocab), embedding_dim(dim) {
-        embeddings = (float*)malloc(vocab_size * embedding_dim * sizeof(float));
+public:
+    TokenEmbedding(size_t vocab_size, size_t embedding_dim)
+        : vocab_size_(vocab_size)
+        , embedding_dim_(embedding_dim)
+        , rng_(std::random_device{}())
+        , dist_(-1.0f, 1.0f) {
+
+        embeddings_.resize(vocab_size * embedding_dim);
+        std::cout << "[Init] Creating TokenEmbedding: "
+                  << (embeddings_.size() * sizeof(float)) / (1024.0 * 1024.0)
+                  << " MB" << std::endl;
+
         // Initialize with random values
-        for (int i = 0; i < vocab_size * embedding_dim; i++) {
-            embeddings[i] = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+        for (auto& val : embeddings_) {
+            val = dist_(rng_);
         }
     }
 
-    ~TokenEmbedding() {
-        free(embeddings);
-    }
+    void embed(const std::vector<int>& tokens, std::vector<float>& output) const {
+        // Output should be sized for full batch
+        size_t required_size = Config::BATCH_SIZE * Config::SEQ_LENGTH * embedding_dim_;
+        output.resize(required_size);
+        std::fill(output.begin(), output.end(), 0.0f);
 
-    void embed(int *tokens, float *output, int num_tokens) {
-        for (int i = 0; i < num_tokens; i++) {
-            int token_id = tokens[i] % vocab_size;
-            memcpy(output + i * embedding_dim,
-                   embeddings + token_id * embedding_dim,
-                   embedding_dim * sizeof(float));
-        }
-    }
-};
+        // Fill first sequence with actual embeddings
+        for (size_t i = 0; i < tokens.size() && i < Config::SEQ_LENGTH; ++i) {
+            int token_id = tokens[i] % vocab_size_;
+            size_t src_offset = token_id * embedding_dim_;
+            size_t dst_offset = i * embedding_dim_;
 
-class TextProcessor {
-public:
-    static void tokenize(const char *text, int *tokens, int max_tokens) {
-        int len = strlen(text);
-        for (int i = 0; i < max_tokens && i < len; i++) {
-            tokens[i] = (int)text[i];  // Simple char-level tokenization
+            std::copy_n(embeddings_.begin() + src_offset,
+                       embedding_dim_,
+                       output.begin() + dst_offset);
         }
     }
 
-    static void detokenize(int *tokens, char *text, int num_tokens) {
-        for (int i = 0; i < num_tokens; i++) {
-            text[i] = (char)(tokens[i] % 128);
-        }
-        text[num_tokens] = '\0';
-    }
+    size_t getEmbeddingDim() const { return embedding_dim_; }
 };
 
 // =============================================================================
-// Network I/O Simulation
+// Transformer Layer using RAII
 // =============================================================================
-
-class NetworkSimulator {
+class TransformerLayer {
 private:
-    int sock_fd;
-    struct sockaddr_in server_addr;
-    bool connected;
+    CudaDeviceMemory<float> d_Q_;
+    CudaDeviceMemory<float> d_K_;
+    CudaDeviceMemory<float> d_V_;
+    CudaDeviceMemory<float> d_attn_scores_;
+    CudaDeviceMemory<float> d_attn_probs_;
+    CudaDeviceMemory<float> d_attn_output_;
+    CudaDeviceMemory<float> d_ln_gamma_;
+    CudaDeviceMemory<float> d_ln_beta_;
+    CudaDeviceMemory<float> d_residual_;
+
+    std::vector<float> h_gamma_;
+    std::vector<float> h_beta_;
+    CudaStream stream_;
 
 public:
-    NetworkSimulator() : sock_fd(-1), connected(false) {}
+    TransformerLayer()
+        : d_Q_(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::HEAD_DIM)
+        , d_K_(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::HEAD_DIM)
+        , d_V_(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::HEAD_DIM)
+        , d_attn_scores_(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::SEQ_LENGTH)
+        , d_attn_probs_(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::SEQ_LENGTH)
+        , d_attn_output_(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::HEAD_DIM)
+        , d_ln_gamma_(Config::HIDDEN_DIM)
+        , d_ln_beta_(Config::HIDDEN_DIM)
+        , d_residual_(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::HIDDEN_DIM)
+        , h_gamma_(Config::HIDDEN_DIM, 1.0f)
+        , h_beta_(Config::HIDDEN_DIM, 0.0f) {
 
-    ~NetworkSimulator() {
-        disconnect();
+        std::cout << "[Init] Creating TransformerLayer" << std::endl;
+
+        d_ln_gamma_.copyFromHost(h_gamma_);
+        d_ln_beta_.copyFromHost(h_beta_);
     }
 
-    bool connect_to_server(const char *ip, int port) {
-        sock_fd = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock_fd < 0) {
-            printf("Warning: Could not create socket for network simulation\n");
-            return false;
+    void forward(const CudaDeviceMemory<float>& d_input,
+                 CudaDeviceMemory<float>& d_output) {
+
+        // Do multiple passes to increase GPU compute time
+        // Pass 1: Layer norm
+        dim3 ln_grid((Config::SEQ_LENGTH + 255) / 256, Config::BATCH_SIZE);
+        layerNormKernel<<<ln_grid, 256, 0, stream_.get()>>>(
+            d_input.get(), d_residual_.get(),
+            d_ln_gamma_.get(), d_ln_beta_.get(),
+            Config::BATCH_SIZE, Config::SEQ_LENGTH, Config::HIDDEN_DIM);
+
+        // Pass 2: Multiple softmax iterations to increase GPU compute
+        dim3 softmax_grid((Config::SEQ_LENGTH + 255) / 256, Config::BATCH_SIZE);
+        for (int i = 0; i < 22; ++i) {  // Tuned to 22 iterations for ~50% GPU
+            softmaxKernel<<<softmax_grid, 256, 0, stream_.get()>>>(
+                d_attn_scores_.get(), d_attn_probs_.get(),
+                Config::BATCH_SIZE, Config::SEQ_LENGTH);
         }
 
-        server_addr.sin_family = AF_INET;
-        server_addr.sin_port = htons(port);
-        server_addr.sin_addr.s_addr = inet_addr(ip);
-
-        // Try to connect (will fail if no server, that's ok for simulation)
-        if (connect(sock_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-            close(sock_fd);
-            sock_fd = -1;
-            return false;
+        // Pass 3: Residual add
+        size_t total_elements = Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::HIDDEN_DIM;
+        for (int i = 0; i < 2; ++i) {
+            residualAddKernel<<<(total_elements + 255) / 256, 256, 0, stream_.get()>>>(
+                d_residual_.get(), d_input.get(), d_output.get(), total_elements);
         }
 
-        connected = true;
-        return true;
-    }
-
-    void disconnect() {
-        if (sock_fd >= 0) {
-            close(sock_fd);
-            sock_fd = -1;
+        // Pass 4: Multiple layer norm passes
+        for (int i = 0; i < 2; ++i) {
+            layerNormKernel<<<ln_grid, 256, 0, stream_.get()>>>(
+                d_output.get(), d_residual_.get(),
+                d_ln_gamma_.get(), d_ln_beta_.get(),
+                Config::BATCH_SIZE, Config::SEQ_LENGTH, Config::HIDDEN_DIM);
         }
-        connected = false;
-    }
 
-    bool send_request(const char *data, size_t len) {
-        if (!connected) return false;
-        ssize_t sent = send(sock_fd, data, len, MSG_NOSIGNAL);
-        return sent > 0;
-    }
+        // Pass 5: Final residual
+        residualAddKernel<<<(total_elements + 255) / 256, 256, 0, stream_.get()>>>(
+            d_residual_.get(), d_input.get(), d_output.get(), total_elements);
 
-    bool receive_response(char *buffer, size_t max_len) {
-        if (!connected) return false;
-        ssize_t received = recv(sock_fd, buffer, max_len, MSG_DONTWAIT);
-        return received > 0;
-    }
-
-    // Simulate network activity
-    void simulate_activity(const char *prompt, int iteration) {
-        // Simulate sending prompt
-        char buffer[1024];
-        snprintf(buffer, sizeof(buffer), "Iteration %d: %s", iteration, prompt);
-        usleep(1000);  // Simulate network latency
-
-        // Simulate receiving response
-        usleep(2000);
+        stream_.synchronize();
     }
 };
 
 // =============================================================================
-// File I/O Operations - Simulating Prompt Prefix Cache
+// File Cache Manager
 // =============================================================================
-
-class PromptPrefixCache {
+class PromptCache {
 private:
-    static const int MAX_CACHE_ENTRIES = 100;
-    char cache_dir[256];
-    char cache_files[MAX_CACHE_ENTRIES][256];
-    int num_files;
+    std::string cache_dir_;
+    std::vector<std::string> cached_files_;
 
 public:
-    PromptPrefixCache() : num_files(0) {
-        snprintf(cache_dir, sizeof(cache_dir), "/tmp/llm_prefix_cache_%d", getpid());
-
-        // Create cache directory
-        char mkdir_cmd[512];
-        snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p %s", cache_dir);
-        system(mkdir_cmd);
+    PromptCache() {
+        cache_dir_ = "/tmp/llm_cache_" + std::to_string(getpid());
+        std::string cmd = "mkdir -p " + cache_dir_;
+        std::system(cmd.c_str());
+        std::cout << "[Init] Cache directory: " << cache_dir_ << std::endl;
     }
 
-    ~PromptPrefixCache() {
+    ~PromptCache() {
         cleanup();
     }
 
-    // Cache prompt prefix (KV cache simulation)
-    void cache_prefix(const char *prompt_hash, float *kv_cache, size_t size, int iteration) {
-        if (num_files >= MAX_CACHE_ENTRIES) return;
-
-        char filename[512];
-        snprintf(filename, sizeof(filename), "%s/prefix_%s_iter%d.cache",
-                cache_dir, prompt_hash, iteration);
-
-        FILE *fp = fopen(filename, "wb");
-        if (fp) {
-            // Write metadata
-            fprintf(fp, "PROMPT_CACHE_V1\n");
-            fprintf(fp, "SIZE=%zu\n", size);
-            fprintf(fp, "ITERATION=%d\n", iteration);
-
-            // Write cache data
-            fwrite(kv_cache, sizeof(float), size, fp);
-            fclose(fp);
-
-            strncpy(cache_files[num_files], filename, sizeof(cache_files[0]) - 1);
-            num_files++;
+    void writeCache(const std::string& key, const std::vector<float>& data, int iteration) {
+        std::string filename = cache_dir_ + "/cache_" + key + "_" + std::to_string(iteration) + ".bin";
+        std::ofstream file(filename, std::ios::binary);
+        if (file) {
+            file.write(reinterpret_cast<const char*>(data.data()),
+                      data.size() * sizeof(float));
+            cached_files_.push_back(filename);
         }
     }
 
-    // Load cached prefix
-    bool load_prefix(const char *prompt_hash, float *kv_cache, size_t size, int iteration) {
-        char filename[512];
-        snprintf(filename, sizeof(filename), "%s/prefix_%s_iter%d.cache",
-                cache_dir, prompt_hash, iteration);
+    bool readCache(const std::string& key, std::vector<float>& data, int iteration) {
+        std::string filename = cache_dir_ + "/cache_" + key + "_" + std::to_string(iteration) + ".bin";
+        std::ifstream file(filename, std::ios::binary);
+        if (!file) return false;
 
-        FILE *fp = fopen(filename, "rb");
-        if (fp) {
-            char line[256];
-            // Skip metadata lines
-            fgets(line, sizeof(line), fp);
-            fgets(line, sizeof(line), fp);
-            fgets(line, sizeof(line), fp);
+        file.seekg(0, std::ios::end);
+        size_t size = file.tellg() / sizeof(float);
+        file.seekg(0, std::ios::beg);
 
-            size_t read = fread(kv_cache, sizeof(float), size, fp);
-            fclose(fp);
-            return read == size;
-        }
-        return false;
+        data.resize(size);
+        file.read(reinterpret_cast<char*>(data.data()), size * sizeof(float));
+        return true;
     }
 
-    // Write inference log
-    void write_log(const char *filename, int iteration, float *output, int num_tokens) {
-        if (num_files >= MAX_CACHE_ENTRIES) return;
-
-        char full_path[512];
-        snprintf(full_path, sizeof(full_path), "%s/%s", cache_dir, filename);
-
-        FILE *fp = fopen(full_path, "a");
-        if (fp) {
-            fprintf(fp, "Iteration %d: ", iteration);
-            for (int i = 0; i < num_tokens && i < 10; i++) {
-                fprintf(fp, "%.4f ", output[i]);
-            }
-            fprintf(fp, "\n");
-            fclose(fp);
-
-            strncpy(cache_files[num_files], full_path, sizeof(cache_files[0]) - 1);
-            num_files++;
-        }
-    }
-
-    // Evict old cache entries (LRU simulation)
-    void evict_old_entries(int max_age) {
-        for (int i = 0; i < num_files; i++) {
-            struct stat st;
-            if (stat(cache_files[i], &st) == 0) {
-                time_t now = time(NULL);
-                if (difftime(now, st.st_mtime) > max_age) {
-                    remove(cache_files[i]);
-                }
-            }
-        }
-    }
-
-    // Cleanup all cache files
     void cleanup() {
-        // Remove all tracked files
-        for (int i = 0; i < num_files; i++) {
-            remove(cache_files[i]);
+        for (const auto& file : cached_files_) {
+            std::remove(file.c_str());
         }
-
-        // Remove cache directory
-        char rmdir_cmd[512];
-        snprintf(rmdir_cmd, sizeof(rmdir_cmd), "rm -rf %s", cache_dir);
-        system(rmdir_cmd);
-
-        num_files = 0;
+        std::string cmd = "rm -rf " + cache_dir_;
+        std::system(cmd.c_str());
     }
 };
 
 // =============================================================================
-// Transformer Layer
+// Performance Timing Statistics
 // =============================================================================
+struct RequestTimings {
+    double cpu_compute_ms = 0.0;
+    double gpu_compute_ms = 0.0;
+    double io_time_ms = 0.0;
 
-class TransformerLayer {
-public:
-    // Device pointers
-    float *d_Q, *d_K, *d_V;
-    float *d_attn_scores, *d_attn_probs, *d_attn_output;
-    float *d_ffn_intermediate, *d_ffn_output;
-    float *d_ln_gamma, *d_ln_beta;
-    float *d_residual;
-
-    // Host pointers
-    float *h_gamma, *h_beta;
-
-    cudaStream_t stream;
-
-    TransformerLayer() {
-        printf("[DEBUG] Creating TransformerLayer...\n");
-        // Allocate device memory
-        size_t qkv_size = BATCH_SIZE * SEQ_LENGTH * HEAD_DIM * sizeof(float);
-        size_t scores_size = BATCH_SIZE * SEQ_LENGTH * SEQ_LENGTH * sizeof(float);
-        size_t hidden_size = BATCH_SIZE * SEQ_LENGTH * HIDDEN_DIM * sizeof(float);
-        size_t ffn_size = BATCH_SIZE * SEQ_LENGTH * FFN_DIM * sizeof(float);
-
-        printf("[DEBUG] Allocating QKV (%.2f MB each)...\n", qkv_size / 1024.0 / 1024.0);
-        cudaMalloc(&d_Q, qkv_size);
-        cudaMalloc(&d_K, qkv_size);
-        cudaMalloc(&d_V, qkv_size);
-        printf("[DEBUG] Allocating attention scores (%.2f MB)...\n", scores_size / 1024.0 / 1024.0);
-        cudaMalloc(&d_attn_scores, scores_size);
-        cudaMalloc(&d_attn_probs, scores_size);
-        cudaMalloc(&d_attn_output, qkv_size);
-        printf("[DEBUG] Allocating FFN (%.2f MB)...\n", ffn_size / 1024.0 / 1024.0);
-        cudaMalloc(&d_ffn_intermediate, ffn_size);
-        cudaMalloc(&d_ffn_output, hidden_size);
-        cudaMalloc(&d_ln_gamma, HIDDEN_DIM * sizeof(float));
-        cudaMalloc(&d_ln_beta, HIDDEN_DIM * sizeof(float));
-        cudaMalloc(&d_residual, hidden_size);
-
-        // Initialize layer norm parameters
-        h_gamma = (float*)malloc(HIDDEN_DIM * sizeof(float));
-        h_beta = (float*)malloc(HIDDEN_DIM * sizeof(float));
-        for (int i = 0; i < HIDDEN_DIM; i++) {
-            h_gamma[i] = 1.0f;
-            h_beta[i] = 0.0f;
-        }
-        cudaMemcpy(d_ln_gamma, h_gamma, HIDDEN_DIM * sizeof(float), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_ln_beta, h_beta, HIDDEN_DIM * sizeof(float), cudaMemcpyHostToDevice);
-
-        cudaStreamCreate(&stream);
+    void add(const RequestTimings& other) {
+        cpu_compute_ms += other.cpu_compute_ms;
+        gpu_compute_ms += other.gpu_compute_ms;
+        io_time_ms += other.io_time_ms;
     }
 
-    ~TransformerLayer() {
-        cudaFree(d_Q);
-        cudaFree(d_K);
-        cudaFree(d_V);
-        cudaFree(d_attn_scores);
-        cudaFree(d_attn_probs);
-        cudaFree(d_attn_output);
-        cudaFree(d_ffn_intermediate);
-        cudaFree(d_ffn_output);
-        cudaFree(d_ln_gamma);
-        cudaFree(d_ln_beta);
-        cudaFree(d_residual);
-        free(h_gamma);
-        free(h_beta);
-        cudaStreamDestroy(stream);
-    }
-
-    void forward(float *d_input, float *d_output) {
-        // Self-attention
-        dim3 attn_block(16, 16);
-        dim3 attn_grid((SEQ_LENGTH + 15) / 16, (SEQ_LENGTH + 15) / 16, BATCH_SIZE);
-
-        attentionQKT<<<attn_grid, attn_block, 0, stream>>>(
-            d_Q, d_K, d_attn_scores, BATCH_SIZE, SEQ_LENGTH, HEAD_DIM);
-
-        dim3 softmax_grid((SEQ_LENGTH + 255) / 256, BATCH_SIZE);
-        softmax<<<softmax_grid, 256, 0, stream>>>(
-            d_attn_scores, d_attn_probs, BATCH_SIZE, SEQ_LENGTH);
-
-        attentionScoresV<<<attn_grid, attn_block, 0, stream>>>(
-            d_attn_probs, d_V, d_attn_output, BATCH_SIZE, SEQ_LENGTH, HEAD_DIM);
-
-        // Residual connection
-        int total_elements = BATCH_SIZE * SEQ_LENGTH * HIDDEN_DIM;
-        residualAdd<<<(total_elements + 255) / 256, 256, 0, stream>>>(
-            d_attn_output, d_input, d_residual, total_elements);
-
-        // Layer norm
-        dim3 ln_grid((SEQ_LENGTH + 255) / 256, BATCH_SIZE);
-        layerNorm<<<ln_grid, 256, 0, stream>>>(
-            d_residual, d_output, d_ln_gamma, d_ln_beta,
-            BATCH_SIZE, SEQ_LENGTH, HIDDEN_DIM);
-
-        cudaStreamSynchronize(stream);
+    double total_ms() const {
+        return cpu_compute_ms + gpu_compute_ms + io_time_ms;
     }
 };
 
 // =============================================================================
 // Main Inference Pipeline
 // =============================================================================
-
 class InferencePipeline {
 private:
-    TransformerLayer **layers;
-    TokenEmbedding *embedding;
-    NetworkSimulator *network;
-    PromptPrefixCache *prefix_cache;
+    std::unique_ptr<TokenEmbedding> embedding_;
+    std::vector<std::unique_ptr<TransformerLayer>> layers_;
+    std::unique_ptr<PromptCache> cache_;
 
-    float *d_input, *d_output;
-    float *h_input, *h_output;
-    float *h_kv_cache;  // For prefix caching
+    CudaDeviceMemory<float> d_input_;
+    CudaDeviceMemory<float> d_output_;
 
-    int num_layers;
+    std::vector<float> h_input_;
+    std::vector<float> h_output_;
+
+    // Performance tracking
+    std::vector<RequestTimings> request_timings_;
+    RequestTimings accumulated_timings_;
+    int request_count_ = 0;
+
+    std::array<std::string, 5> prompts_ = {
+        "What is artificial intelligence?",
+        "Explain transformer architectures",
+        "Describe deep learning techniques",
+        "What are neural networks?",
+        "How does machine learning work?"
+    };
 
 public:
-    InferencePipeline(int layers) : num_layers(layers) {
-        printf("[INIT] Creating InferencePipeline with %d layers...\n", layers);
-        // Initialize components
-        printf("[INIT] Creating TokenEmbedding (vocab=%d, dim=%d)...\n", VOCAB_SIZE, HIDDEN_DIM);
-        embedding = new TokenEmbedding(VOCAB_SIZE, HIDDEN_DIM);
-        printf("[INIT] Creating NetworkSimulator...\n");
-        network = new NetworkSimulator();
-        printf("[INIT] Creating PromptPrefixCache...\n");
-        prefix_cache = new PromptPrefixCache();
+    InferencePipeline()
+        : embedding_(std::make_unique<TokenEmbedding>(Config::VOCAB_SIZE, Config::HIDDEN_DIM))
+        , cache_(std::make_unique<PromptCache>())
+        , d_input_(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::HIDDEN_DIM)
+        , d_output_(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::HIDDEN_DIM) {
 
-        // Try to connect to a mock server (will fail gracefully)
-        network->connect_to_server("127.0.0.1", 8080);
+        std::cout << "[Init] Creating InferencePipeline with "
+                  << Config::NUM_LAYERS << " layers" << std::endl;
 
-        // Allocate transformer layers
-        this->layers = new TransformerLayer*[num_layers];
-        for (int i = 0; i < num_layers; i++) {
-            this->layers[i] = new TransformerLayer();
+        // Create transformer layers
+        for (size_t i = 0; i < Config::NUM_LAYERS; ++i) {
+            std::cout << "[Init] Creating layer " << (i + 1) << "/"
+                     << Config::NUM_LAYERS << std::endl;
+            layers_.push_back(std::make_unique<TransformerLayer>());
         }
 
-        // Allocate input/output buffers
-        size_t io_size = BATCH_SIZE * SEQ_LENGTH * HIDDEN_DIM * sizeof(float);
-        cudaMalloc(&d_input, io_size);
-        cudaMalloc(&d_output, io_size);
-        h_input = (float*)malloc(io_size);
-        h_output = (float*)malloc(io_size);
-        h_kv_cache = (float*)malloc(io_size);
+        h_input_.resize(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::HIDDEN_DIM);
+        h_output_.resize(Config::BATCH_SIZE * Config::SEQ_LENGTH * Config::HIDDEN_DIM);
+
+        std::cout << "[Init] Pipeline initialization complete" << std::endl;
     }
 
-    ~InferencePipeline() {
-        delete embedding;
-        delete network;
-        delete prefix_cache;  // This will cleanup all cache files
-        for (int i = 0; i < num_layers; i++) {
-            delete layers[i];
+    void runRequest(int request_id) {
+        RequestTimings timings;
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        // Select prompt
+        const auto& prompt = prompts_[request_id % prompts_.size()];
+
+        // ===== CPU COMPUTE: Tokenization =====
+        auto cpu_start = std::chrono::high_resolution_clock::now();
+        std::vector<int> tokens;
+        tokens.reserve(Config::SEQ_LENGTH);
+        for (size_t i = 0; i < Config::SEQ_LENGTH && i < prompt.length(); ++i) {
+            tokens.push_back(static_cast<int>(prompt[i]));
         }
-        delete[] layers;
-        cudaFree(d_input);
-        cudaFree(d_output);
-        free(h_input);
-        free(h_output);
-        free(h_kv_cache);
+        while (tokens.size() < Config::SEQ_LENGTH) {
+            tokens.push_back(0);  // Padding
+        }
+
+        // ===== CPU COMPUTE: Embedding lookup =====
+        embedding_->embed(tokens, h_input_);
+
+        // ===== CPU COMPUTE: Additional preprocessing (to increase CPU time) =====
+        // Simulate text preprocessing, normalization, etc.
+        std::vector<float> temp_buffer(Config::SEQ_LENGTH * 150);  // Increased buffer
+        for (size_t i = 0; i < temp_buffer.size(); ++i) {
+            temp_buffer[i] = std::sin(static_cast<float>(i)) * std::cos(static_cast<float>(request_id));
+        }
+
+        // Simulate some CPU-intensive work (sorting, searching, etc.)
+        for (int iter = 0; iter < 12; ++iter) {  // Tuned to 12 iterations for ~25% CPU
+            std::partial_sort(temp_buffer.begin(), temp_buffer.begin() + 1500, temp_buffer.end());
+        }
+
+        auto cpu_end = std::chrono::high_resolution_clock::now();
+        timings.cpu_compute_ms = std::chrono::duration<double, std::milli>(cpu_end - cpu_start).count();
+
+        // ===== I/O: Transfer to GPU =====
+        auto io_start = std::chrono::high_resolution_clock::now();
+        d_input_.copyFromHost(h_input_);
+        auto io_end = std::chrono::high_resolution_clock::now();
+        timings.io_time_ms += std::chrono::duration<double, std::milli>(io_end - io_start).count();
+
+        // ===== GPU COMPUTE: Forward pass through transformer layers =====
+        auto gpu_start = std::chrono::high_resolution_clock::now();
+        auto* current_input = &d_input_;
+        auto* current_output = &d_output_;
+
+        for (auto& layer : layers_) {
+            layer->forward(*current_input, *current_output);
+            std::swap(current_input, current_output);
+        }
+        auto gpu_end = std::chrono::high_resolution_clock::now();
+        timings.gpu_compute_ms = std::chrono::duration<double, std::milli>(gpu_end - gpu_start).count();
+
+        // ===== I/O: Transfer back to CPU =====
+        io_start = std::chrono::high_resolution_clock::now();
+        current_input->copyToHost(h_output_);
+        io_end = std::chrono::high_resolution_clock::now();
+        timings.io_time_ms += std::chrono::duration<double, std::milli>(io_end - io_start).count();
+
+        // ===== I/O: Cache results (file I/O) =====
+        if (request_id % 2 == 0) {
+            io_start = std::chrono::high_resolution_clock::now();
+            cache_->writeCache("prompt_" + std::to_string(request_id % prompts_.size()),
+                              h_output_, request_id);
+            io_end = std::chrono::high_resolution_clock::now();
+            timings.io_time_ms += std::chrono::duration<double, std::milli>(io_end - io_start).count();
+        }
+
+        // ===== I/O: Simulate network delay =====
+        io_start = std::chrono::high_resolution_clock::now();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));  // Reduced from 50ms to 10ms
+        io_end = std::chrono::high_resolution_clock::now();
+        timings.io_time_ms += std::chrono::duration<double, std::milli>(io_end - io_start).count();
+
+        // Track timings
+        request_timings_.push_back(timings);
+        accumulated_timings_.add(timings);
+        request_count_++;
+
+        // Report every 10 requests
+        if (request_count_ % 10 == 0) {
+            reportTimings(request_count_);
+        }
     }
 
-    // Generate simple hash for prompt (for cache key)
-    void generate_prompt_hash(const char *prompt, char *hash, size_t hash_len) {
-        unsigned long h = 5381;
-        int c;
-        const char *str = prompt;
+    void reportTimings(int last_request_id) {
+        // Calculate statistics for last 10 requests
+        size_t start_idx = request_timings_.size() >= 10 ? request_timings_.size() - 10 : 0;
+        RequestTimings last_10;
 
-        while ((c = *str++))
-            h = ((h << 5) + h) + c;
+        for (size_t i = start_idx; i < request_timings_.size(); ++i) {
+            last_10.add(request_timings_[i]);
+        }
 
-        snprintf(hash, hash_len, "%lx", h);
+        int count = request_timings_.size() - start_idx;
+        double avg_cpu = last_10.cpu_compute_ms / count;
+        double avg_gpu = last_10.gpu_compute_ms / count;
+        double avg_io = last_10.io_time_ms / count;
+        double avg_total = (avg_cpu + avg_gpu + avg_io);
+
+        std::cout << "\n[Performance Report] Requests " << (last_request_id - count + 1)
+                  << " - " << last_request_id << " (last " << count << " requests):" << std::endl;
+        std::cout << "  CPU Compute:  " << std::fixed << std::setprecision(2)
+                  << avg_cpu << " ms (" << (avg_cpu / avg_total * 100) << "%)" << std::endl;
+        std::cout << "  GPU Compute:  " << avg_gpu << " ms ("
+                  << (avg_gpu / avg_total * 100) << "%)" << std::endl;
+        std::cout << "  I/O (+ Net):  " << avg_io << " ms ("
+                  << (avg_io / avg_total * 100) << "%)" << std::endl;
+        std::cout << "  Total Time:   " << avg_total << " ms/request" << std::endl;
     }
 
-    void run_inference(const char *prompt, int iteration) {
-        // 1. Network I/O - Simulate receiving request
-        network->simulate_activity(prompt, iteration);
+    void printFinalReport() {
+        if (request_count_ == 0) return;
 
-        // 2. Generate prompt hash for caching
-        char prompt_hash[32];
-        generate_prompt_hash(prompt, prompt_hash, sizeof(prompt_hash));
+        std::cout << "\n=============================================================" << std::endl;
+        std::cout << "Final Performance Report (" << request_count_ << " total requests)" << std::endl;
+        std::cout << "=============================================================" << std::endl;
 
-        // 3. Try to load from prefix cache (every 3rd iteration reuses cache)
-        bool cache_hit = false;
-        if (iteration % 3 == 0 && iteration > 0) {
-            cache_hit = prefix_cache->load_prefix(prompt_hash, h_kv_cache,
-                                                  BATCH_SIZE * SEQ_LENGTH * HIDDEN_DIM,
-                                                  iteration - 3);
-        }
+        double avg_cpu = accumulated_timings_.cpu_compute_ms / request_count_;
+        double avg_gpu = accumulated_timings_.gpu_compute_ms / request_count_;
+        double avg_io = accumulated_timings_.io_time_ms / request_count_;
+        double avg_total = (avg_cpu + avg_gpu + avg_io);
 
-        // 4. CPU: Tokenization
-        int tokens[SEQ_LENGTH];
-        TextProcessor::tokenize(prompt, tokens, SEQ_LENGTH);
-
-        // 5. CPU: Embedding lookup
-        embedding->embed(tokens, h_input, SEQ_LENGTH);
-
-        // 6. Transfer to GPU
-        size_t io_size = BATCH_SIZE * SEQ_LENGTH * HIDDEN_DIM * sizeof(float);
-        cudaMemcpy(d_input, h_input, io_size, cudaMemcpyHostToDevice);
-
-        // 7. GPU: Forward pass through transformer layers
-        for (int i = 0; i < num_layers; i++) {
-            layers[i]->forward(d_input, d_output);
-            // Swap buffers for next layer
-            float *temp = d_input;
-            d_input = d_output;
-            d_output = temp;
-        }
-
-        // 8. Transfer back to CPU
-        cudaMemcpy(h_output, d_input, io_size, cudaMemcpyDeviceToHost);
-
-        // 9. Save to prefix cache (simulate KV cache storage)
-        if (iteration % 2 == 0) {
-            memcpy(h_kv_cache, h_output, io_size);
-            prefix_cache->cache_prefix(prompt_hash, h_kv_cache,
-                                      BATCH_SIZE * SEQ_LENGTH * HIDDEN_DIM,
-                                      iteration);
-        }
-
-        // 10. CPU: Post-processing
-        char output_text[256];
-        TextProcessor::detokenize(tokens, output_text, 100);
-
-        // 11. File I/O - Log results
-        if (iteration % 5 == 0) {
-            char log_filename[64];
-            snprintf(log_filename, sizeof(log_filename), "inference_%d.log", iteration);
-            prefix_cache->write_log(log_filename, iteration, h_output, SEQ_LENGTH);
-        }
-
-        // 12. Evict old cache entries (every 20 iterations)
-        if (iteration % 20 == 0) {
-            prefix_cache->evict_old_entries(60);  // Evict entries older than 60 seconds
-        }
-
-        // 13. Network I/O - Simulate sending response
-        network->simulate_activity(output_text, iteration);
+        std::cout << "Average per request:" << std::endl;
+        std::cout << "  CPU Compute:  " << std::fixed << std::setprecision(2)
+                  << avg_cpu << " ms (" << (avg_cpu / avg_total * 100) << "%)" << std::endl;
+        std::cout << "  GPU Compute:  " << avg_gpu << " ms ("
+                  << (avg_gpu / avg_total * 100) << "%)" << std::endl;
+        std::cout << "  I/O (+ Net):  " << avg_io << " ms ("
+                  << (avg_io / avg_total * 100) << "%)" << std::endl;
+        std::cout << "  Total Time:   " << avg_total << " ms/request" << std::endl;
+        std::cout << "\nTotal time breakdown:" << std::endl;
+        std::cout << "  CPU Compute:  " << accumulated_timings_.cpu_compute_ms << " ms" << std::endl;
+        std::cout << "  GPU Compute:  " << accumulated_timings_.gpu_compute_ms << " ms" << std::endl;
+        std::cout << "  I/O (+ Net):  " << accumulated_timings_.io_time_ms << " ms" << std::endl;
+        std::cout << "=============================================================" << std::endl;
     }
 };
 
 // =============================================================================
-// Global cleanup and signal handling
+// Global cleanup handler
 // =============================================================================
-
-InferencePipeline *g_pipeline = NULL;
+std::unique_ptr<InferencePipeline> g_pipeline;
 volatile sig_atomic_t g_interrupted = 0;
 
-void signal_handler(int signum) {
-    printf("\n\n[SIGNAL] Received signal %d, cleaning up...\n", signum);
+void signalHandler(int signum) {
+    std::cout << "\n[Signal] Received signal " << signum << ", cleaning up..." << std::endl;
     g_interrupted = 1;
-
-    // Cleanup pipeline (will clean all cache files)
-    if (g_pipeline) {
-        printf("[CLEANUP] Destroying inference pipeline and cache files...\n");
-        delete g_pipeline;
-        g_pipeline = NULL;
-    }
-
-    printf("[CLEANUP] Complete. Exiting.\n");
+    g_pipeline.reset();
+    std::cout << "[Cleanup] Complete. Exiting." << std::endl;
     exit(signum);
 }
 
-void setup_signal_handlers() {
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = signal_handler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-
-    sigaction(SIGINT, &sa, NULL);   // Ctrl+C
-    sigaction(SIGTERM, &sa, NULL);  // Termination signal
-    sigaction(SIGHUP, &sa, NULL);   // Hangup
-}
-
 // =============================================================================
-// Main Function
+// Main
 // =============================================================================
-
 int main() {
-    printf("=============================================================\n");
-    printf("LLM Inference Simulator with GPU/CPU/Network/IO Operations\n");
-    printf("=============================================================\n");
-    printf("Configuration:\n");
-    printf("  - Batch Size: %d\n", BATCH_SIZE);
-    printf("  - Sequence Length: %d\n", SEQ_LENGTH);
-    printf("  - Hidden Dimension: %d\n", HIDDEN_DIM);
-    printf("  - Number of Layers: %d\n", NUM_LAYERS);
-    printf("  - Number of Attention Heads: %d\n", NUM_HEADS);
-    printf("  - Duration: 10 seconds\n");
-    printf("  - Prefix Cache: Enabled (simulating KV cache)\n");
-    printf("=============================================================\n\n");
+    try {
+        std::cout << "=============================================================" << std::endl;
+        std::cout << "Modern C++ LLM Inference Simulator" << std::endl;
+        std::cout << "=============================================================" << std::endl;
+        std::cout << "Configuration:" << std::endl;
+        std::cout << "  - Batch Size: " << Config::BATCH_SIZE << std::endl;
+        std::cout << "  - Sequence Length: " << Config::SEQ_LENGTH << std::endl;
+        std::cout << "  - Hidden Dimension: " << Config::HIDDEN_DIM << std::endl;
+        std::cout << "  - Number of Layers: " << Config::NUM_LAYERS << std::endl;
+        std::cout << "  - Duration: " << Config::DURATION_SECONDS << " seconds" << std::endl;
+        std::cout << "=============================================================" << std::endl;
 
-    // Initialize CUDA device first
-    printf("[INIT] Initializing CUDA device...\n");
-    cudaError_t err = cudaSetDevice(0);
-    if (err != cudaSuccess) {
-        printf("[ERROR] Failed to set CUDA device: %s\n", cudaGetErrorString(err));
-        return 1;
-    }
+        // Initialize CUDA
+        CUDA_CHECK(cudaSetDevice(0));
+        std::cout << "[Init] CUDA device initialized" << std::endl;
 
-    // Force CUDA context creation with a dummy operation
-    float *dummy;
-    err = cudaMalloc(&dummy, sizeof(float));
-    if (err != cudaSuccess) {
-        printf("[ERROR] Failed initial cudaMalloc: %s\n", cudaGetErrorString(err));
-        return 1;
-    }
-    cudaFree(dummy);
-    printf("[INIT] CUDA device initialized successfully\n\n");
+        // Setup signal handlers
+        signal(SIGINT, signalHandler);
+        signal(SIGTERM, signalHandler);
 
-    // Setup signal handlers for cleanup
-    setup_signal_handlers();
+        // Create pipeline
+        g_pipeline = std::make_unique<InferencePipeline>();
 
-    // Initialize random seed
-    srand(time(NULL));
+        // Run request processing loop
+        auto start = std::chrono::steady_clock::now();
+        int request_id = 0;
 
-    // Create inference pipeline
-    printf("[INIT] Initializing inference pipeline...\n");
-    g_pipeline = new InferencePipeline(NUM_LAYERS);
-    printf("[INIT] Cache directory created: /tmp/llm_prefix_cache_%d\n", getpid());
+        std::cout << "\n[Starting] Processing requests for " << Config::DURATION_SECONDS
+                  << " seconds..." << std::endl;
 
-    // Test prompts
-    const char *prompts[] = {
-        "What is the meaning of artificial intelligence?",
-        "Explain how transformers work in deep learning",
-        "Generate a summary of recent advances in AI",
-        "Describe the impact of large language models",
-        "What are the ethical considerations in AI development?"
-    };
-    int num_prompts = 5;
+        while (!g_interrupted) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
 
-    // Main inference loop
-    printf("Starting inference loop (will run for ~30 seconds)...\n");
-    printf("Press Ctrl+C to stop and cleanup...\n\n");
-    time_t start_time = time(NULL);
-    int iteration = 0;
+            if (elapsed >= Config::DURATION_SECONDS) {
+                break;
+            }
 
-    while (difftime(time(NULL), start_time) < 10.0 && !g_interrupted) {
-        iteration++;
-
-        // Select a prompt
-        const char *prompt = prompts[iteration % num_prompts];
-
-        // Run inference
-        g_pipeline->run_inference(prompt, iteration);
-
-        // Progress reporting
-        if (iteration % 5 == 0) {
-            double elapsed = difftime(time(NULL), start_time);
-            printf("[%.1fs] Completed %d inference iterations (cache activity ongoing)\n",
-                   elapsed, iteration);
+            g_pipeline->runRequest(request_id);
+            request_id++;
         }
 
-        // Small delay to allow profiler sampling
-        usleep(50000);  // 50ms between iterations
+        std::cout << "\n=============================================================" << std::endl;
+        std::cout << "Completed " << request_id << " requests in "
+                  << Config::DURATION_SECONDS << " seconds" << std::endl;
+        std::cout << "Average throughput: "
+                  << (request_id / static_cast<double>(Config::DURATION_SECONDS))
+                  << " requests/second" << std::endl;
+        std::cout << "=============================================================" << std::endl;
+
+        // Print final performance report
+        g_pipeline->printFinalReport();
+
+        g_pipeline.reset();
+
+        return 0;
+
+    } catch (const std::exception& e) {
+        std::cerr << "[ERROR] " << e.what() << std::endl;
+        return 1;
     }
-
-    // Cleanup
-    printf("\n=============================================================\n");
-    if (g_interrupted) {
-        printf("Inference interrupted by user after %d iterations\n", iteration);
-    } else {
-        printf("Inference completed: %d iterations in 10 seconds\n", iteration);
-        printf("Average throughput: %.2f iterations/second\n", iteration / 10.0);
-    }
-    printf("=============================================================\n");
-
-    printf("[CLEANUP] Cleaning up pipeline and cache files...\n");
-    delete g_pipeline;
-    g_pipeline = NULL;
-    printf("[CLEANUP] All cache files removed successfully.\n");
-
-    return 0;
 }
