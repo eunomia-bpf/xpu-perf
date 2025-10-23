@@ -62,8 +62,13 @@ ifneq ($(TARGET_ARCH), $(HOST_ARCH))
     endif
 endif
 
-all: cupti_trace_injection
+all: cupti_trace_injection test_cupti
+
 cupti_trace_injection: cupti_trace_injection.cpp
 	$(NVCC) $(NVCC_COMPILER) $(NVCCFLAGS) $(INCLUDES) -o $(LIBNAME) -shared $< $(LIBS) --no-device-link
+
+test_cupti: test_cupti.cu
+	$(NVCC) $(NVCC_COMPILER) $(INCLUDES) -o test_cupti test_cupti.cu -L $(LIB_PATH) -lcudart -Wno-deprecated-gpu-targets --no-device-link
+
 clean:
-	rm -f $(LIBNAME) cupti_trace_injection.o
+	rm -f $(LIBNAME) cupti_trace_injection.o test_cupti

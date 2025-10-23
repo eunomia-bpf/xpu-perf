@@ -7,4 +7,6 @@ __pycache__/
 *.svg
 *.folded
 *.txt
+/*.json
 test_cupti
+venv/

@@ -23,7 +23,8 @@ class GPUPerf:
         self.parser = CuptiTraceParser()  # Initialize the parser
         
         # Path to CPU profiler
-        self.cpu_profiler = Path("/root/yunwei37/xpu-perf/profiler/target/release/profile")
+        script_dir = Path(__file__).parent.resolve()
+        self.cpu_profiler = script_dir / "../../profiler/target/release/profile"
         if not self.cpu_profiler.exists():
             print(f"Warning: CPU profiler not found at {self.cpu_profiler}", file=sys.stderr)
             self.cpu_profiler = None
@@ -63,7 +64,7 @@ class GPUPerf:
         
         try:
             self.profiler_proc = subprocess.Popen(
-                [str(self.cpu_profiler), "-p", str(pid), "-E", "-f", "200"],
+                [str(self.cpu_profiler), "-p", str(pid), "-E", "-f", "999"],
                 stdout=open(cpu_output_file, 'w'),
                 stderr=subprocess.DEVNULL
             )
