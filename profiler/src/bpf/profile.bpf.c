@@ -14,13 +14,12 @@ struct {
 	__uint(max_entries, 256 * 1024);
 } events SEC(".maps");
 
-SEC("perf_event")
-int profile(void *ctx)
+// Shared helper to collect stack trace
+static __always_inline int collect_stack_trace(void *ctx, u64 cookie)
 {
 	int pid = bpf_get_current_pid_tgid() >> 32;
 	int cpu_id = bpf_get_smp_processor_id();
 	struct stacktrace_event *event;
-	int cp;
 
 	event = bpf_ringbuf_reserve(&events, sizeof(*event), 0);
 	if (!event)
@@ -33,6 +32,13 @@ int profile(void *ctx)
 	if (bpf_get_current_comm(event->comm, sizeof(event->comm)))
 		event->comm[0] = 0;
 
+	// Store probe_id in cpu_id field when in probe mode
+	// In perf mode: cpu_id is actual CPU
+	// In probe mode: cpu_id is probe_id, actual CPU stored in pid high bits if needed
+	if (cookie != 0) {
+		event->cpu_id = (u32)cookie;  // probe_id from bpf_get_attach_cookie
+	}
+
 	event->kstack_sz = bpf_get_stack(ctx, event->kstack, sizeof(event->kstack), 0);
 
 	event->ustack_sz =
@@ -41,4 +47,42 @@ int profile(void *ctx)
 	bpf_ringbuf_submit(event, 0);
 
 	return 0;
+}
+
+SEC("perf_event")
+int profile(void *ctx)
+{
+	return collect_stack_trace(ctx, 0);
+}
+
+// Generic kprobe handler
+SEC("kprobe")
+int kprobe_handler(struct pt_regs *ctx)
+{
+	u64 probe_id = bpf_get_attach_cookie(ctx);
+	return collect_stack_trace(ctx, probe_id);
+}
+
+// Generic kretprobe handler
+SEC("kretprobe")
+int kretprobe_handler(struct pt_regs *ctx)
+{
+	u64 probe_id = bpf_get_attach_cookie(ctx);
+	return collect_stack_trace(ctx, probe_id);
+}
+
+// Generic uprobe handler
+SEC("uprobe")
+int uprobe_handler(struct pt_regs *ctx)
+{
+	u64 probe_id = bpf_get_attach_cookie(ctx);
+	return collect_stack_trace(ctx, probe_id);
+}
+
+// Generic uretprobe handler
+SEC("uretprobe")
+int uretprobe_handler(struct pt_regs *ctx)
+{
+	u64 probe_id = bpf_get_attach_cookie(ctx);
+	return collect_stack_trace(ctx, probe_id);
 }
