@@ -2,7 +2,7 @@
 
 A wall-clock profiler that combines on-CPU, off-CPU, and GPU profiling to provide complete visibility into application performance. Built using eBPF technology for zero-instrumentation profiling with minimal overhead.
 
-> WIP
+**WIP， not finished yet!!!**
 
 ## Features
 
