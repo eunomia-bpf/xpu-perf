@@ -3,15 +3,13 @@
 #include <unistd.h>
 
 int main() {
-    printf("Starting malloc test (PID: %d)\n", getpid());
-    printf("Press Ctrl+C to stop\n");
+    printf("Starting malloc/free test (PID: %d)\n", getpid());
 
-    while (1) {
-        // Allocate and free memory repeatedly
+    for (int i = 0; i < 5; i++) {
         void *ptr = malloc(1024);
-        if (ptr) {
-            free(ptr);
-        }
+        printf("Allocated: %p\n", ptr);
+        free(ptr);
+        printf("Freed: %p\n", ptr);
         sleep(1);
     }
 

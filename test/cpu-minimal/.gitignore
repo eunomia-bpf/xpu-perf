@@ -1,0 +1,10 @@
+# Compiled binaries
+test_malloc
+
+# Object files
+*.o
+
+# Editor files
+*.swp
+*.swo
+*~

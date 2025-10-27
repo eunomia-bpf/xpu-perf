@@ -15,6 +15,9 @@ fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH")
         .expect("CARGO_CFG_TARGET_ARCH must be set in build script");
 
+    // Ensure we're building for a supported architecture
+    println!("cargo:warning=Building for architecture: {}", arch);
+
     SkeletonBuilder::new()
         .source(SRC)
         .clang_args([

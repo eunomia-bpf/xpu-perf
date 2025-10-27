@@ -1,5 +1,5 @@
 #
-# Copyright 2021 NVIDIA Corporation. All rights reserved
+# Makefile for mock LLM inference application
 #
 ifndef OS
     OS   := $(shell uname)
@@ -8,34 +8,16 @@ endif
 
 CUDA_INSTALL_PATH ?= /usr/local/cuda-12.9
 NVCC := "$(CUDA_INSTALL_PATH)/bin/nvcc"
-CUPTI_INSTALL_PATH ?= $(CUDA_INSTALL_PATH)/targets/x86_64-linux
-CUPTI_SAMPLES_PATH ?= $(CUDA_INSTALL_PATH)/extras/CUPTI/samples/common
-INCLUDES := -I"$(CUDA_INSTALL_PATH)/include" -I$(CUPTI_INSTALL_PATH)/include -I$(CUPTI_SAMPLES_PATH)
+INCLUDES := -I"$(CUDA_INSTALL_PATH)/include"
 
 ifeq ($(OS),Windows_NT)
     LIB_PATH ?= ..\..\lib64
 else
-    EXTRAS_LIB_PATH := $(CUPTI_INSTALL_PATH)/lib
     LIB_PATH ?= $(CUDA_INSTALL_PATH)/lib64
 endif
 
 # Point to the necessary cross-compiler.
 NVCCFLAGS :=
-ifeq ($(OS),Windows_NT)
-    export PATH := $(PATH):$(LIB_PATH)
-    LIBS= -L $(LIB_PATH) -lcuda -lcupti -ldetours
-    LIBNAME := libcupti_trace_injection.dll
-else
-    ifeq ($(OS), Darwin)
-        export DYLD_LIBRARY_PATH := $(DYLD_LIBRARY_PATH):$(LIB_PATH)
-        LIBS= -Xlinker -framework -Xlinker cuda -L $(EXTRAS_LIB_PATH) -L $(LIB_PATH) -lcupti
-    else
-        export LD_LIBRARY_PATH := $(LD_LIBRARY_PATH):$(LIB_PATH)
-        LIBS = -L $(LIB_PATH) -lcuda -L $(EXTRAS_LIB_PATH) -lcupti
-    endif
-    LIBNAME := libcupti_trace_injection.so
-    NVCCFLAGS += -Xcompiler -fPIC
-endif
 
 ifneq ($(TARGET_ARCH), $(HOST_ARCH))
     ifeq ($(TARGET_ARCH), aarch64)
@@ -62,10 +44,10 @@ ifneq ($(TARGET_ARCH), $(HOST_ARCH))
     endif
 endif
 
-all: cupti_trace_injection
+all: llm-inference
 
-cupti_trace_injection: cupti_trace_injection.cpp
-	$(NVCC) $(NVCC_COMPILER) $(NVCCFLAGS) $(INCLUDES) -o $(LIBNAME) -shared $< $(LIBS) --no-device-link
+llm-inference: llm-inference.cu
+	$(NVCC) $(NVCC_COMPILER) $(INCLUDES) -o llm-inference llm-inference.cu -L $(LIB_PATH) -lcudart -std=c++17 -Wno-deprecated-gpu-targets --no-device-link
 
 clean:
-	rm -f $(LIBNAME) cupti_trace_injection.o *.o *.bak
+	rm -f llm-inference *.o *.bak
