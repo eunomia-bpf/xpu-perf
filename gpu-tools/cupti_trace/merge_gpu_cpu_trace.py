@@ -38,15 +38,17 @@ class CudaLaunchEvent:
 
 
 class CPUStack:
-    """Represents a CPU stack trace from cudaLaunchKernel uprobe"""
-    def __init__(self, timestamp_ns: int, pid: int, comm: str, stack: List[str]):
+    """Represents a CPU stack trace from cudaLaunchKernel uprobe in extended folded format"""
+    def __init__(self, timestamp_ns: int, comm: str, pid: int, tid: int, cpu: int, stack: List[str]):
         self.timestamp_ns = timestamp_ns
-        self.pid = pid
         self.comm = comm
+        self.pid = pid
+        self.tid = tid
+        self.cpu = cpu
         self.stack = stack  # List of function names from bottom to top
 
     def __repr__(self):
-        return f"CPUStack({self.timestamp_ns}, pid={self.pid}, depth={len(self.stack)})"
+        return f"CPUStack({self.timestamp_ns}, pid={self.pid}, tid={self.tid}, depth={len(self.stack)})"
 
 
 class TraceMerger:
@@ -55,80 +57,57 @@ class TraceMerger:
     def __init__(self, timestamp_tolerance_ms=10.0):
         self.gpu_kernels = []  # List of GPUKernelEvent
         self.cuda_launches = {}  # correlation_id -> CudaLaunchEvent
-        self.cpu_stacks = []  # List of CPUStack from uprobe
+        self.cpu_stacks = []  # List of CPUStack from uprobe (extended folded format)
         self.merged_stacks = defaultdict(int)  # stack_string -> count
         self.timestamp_tolerance_ns = int(timestamp_tolerance_ms * 1_000_000)
 
     def parse_cpu_trace(self, cpu_file: str):
-        """Parse CPU trace file from cudaLaunchKernel uprobe output"""
-        print(f"Parsing CPU uprobe trace: {cpu_file}")
+        """Parse CPU trace file in extended folded format from Rust profiler"""
+        print(f"Parsing CPU uprobe trace (extended folded format): {cpu_file}")
 
         with open(cpu_file, 'r') as f:
-            content = f.read()
-
-        # Split by individual stack traces
-        # Format: [timestamp] COMM: name (pid=X) @ CPU Y
-        #         No Kernel Stack / Kernel Stack
-        #         Userspace:
-        #         address: function @ offset file:line
+            lines = f.readlines()
 
         stack_count = 0
-        current_stack = None
-        current_timestamp = None
-        current_pid = None
-        current_comm = None
-        stack_frames = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
 
-        lines = content.split('\n')
-        i = 0
+            # Extended folded format: timestamp_ns comm pid tid cpu stack1;stack2;stack3
+            parts = line.split(None, 5)  # Split on whitespace, max 6 parts
+            if len(parts) < 6:
+                continue
 
-        while i < len(lines):
-            line = lines[i].strip()
+            try:
+                timestamp_ns = int(parts[0])
+                comm = parts[1]
+                pid = int(parts[2])
+                tid = int(parts[3])
+                cpu = int(parts[4])
+                stack_str = parts[5]
 
-            # Match header line: [timestamp] COMM: name (pid=X) @ CPU Y
-            match = re.match(r'\[(\d+\.\d+)\]\s+COMM:\s+(\S+)\s+\(pid=(\d+)\)', line)
-            if match:
-                # Save previous stack if exists
-                if current_timestamp and stack_frames:
+                # Parse stack frames (separated by semicolons)
+                stack_frames = []
+                if stack_str:
+                    frames = stack_str.split(';')
+                    for frame in frames:
+                        frame = frame.strip()
+                        if frame and frame not in ['<no-symbol>', '_start', '__libc_start_main']:
+                            # Clean up cudaLaunchKernel variations
+                            if 'cudaLaunchKernel' in frame:
+                                frame = 'cudaLaunchKernel'
+                            stack_frames.append(frame)
+
+                if stack_frames:
                     self.cpu_stacks.append(CPUStack(
-                        current_timestamp, current_pid, current_comm, stack_frames.copy()
+                        timestamp_ns, comm, pid, tid, cpu, stack_frames
                     ))
                     stack_count += 1
 
-                # Start new stack
-                current_timestamp = int(float(match.group(1)) * 1_000_000_000)  # Convert to ns
-                current_comm = match.group(2)
-                current_pid = int(match.group(3))
-                stack_frames = []
-
-            # Match stack frame: 0xADDRESS: function @ offset file:line
-            elif line.startswith('0x') and ':' in line:
-                parts = line.split(':', 1)
-                if len(parts) == 2:
-                    frame_info = parts[1].strip()
-
-                    # Extract function name
-                    # Format: "function @ offset file:line" or "function @ offset"
-                    func_match = re.match(r'([^@]+)\s*@', frame_info)
-                    if func_match:
-                        func_name = func_match.group(1).strip()
-
-                        # Skip generic/unhelpful frames
-                        if func_name and func_name not in ['<no-symbol>', '_start', '__libc_start_main']:
-                            # Clean up cudaLaunchKernel symbol
-                            if 'cudaLaunchKernel' in func_name:
-                                func_name = 'cudaLaunchKernel'
-
-                            stack_frames.append(func_name)
-
-            i += 1
-
-        # Don't forget the last stack
-        if current_timestamp and stack_frames:
-            self.cpu_stacks.append(CPUStack(
-                current_timestamp, current_pid, current_comm, stack_frames.copy()
-            ))
-            stack_count += 1
+            except (ValueError, IndexError) as e:
+                print(f"Warning: Failed to parse line: {line[:100]}... Error: {e}")
+                continue
 
         print(f"Parsed {stack_count} CPU stack traces from cudaLaunchKernel hooks")
 
@@ -297,7 +276,7 @@ def main():
     parser.add_argument(
         '-c', '--cpu',
         default='cpu_results.txt',
-        help='CPU uprobe trace file (default: cpu_results.txt)'
+        help='CPU uprobe trace file (extended folded format, default: cpu_results.txt)'
     )
     parser.add_argument(
         '-g', '--gpu',

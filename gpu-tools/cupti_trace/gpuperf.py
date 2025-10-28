@@ -83,10 +83,11 @@ class GPUPerf:
         print(f"  Output: {cpu_output_file}")
 
         try:
-            # Run profiler with cudaLaunchKernel uprobe
-            # Use sudo for uprobe attachment
+            # Run profiler with cudaLaunchKernel uprobe in extended folded format
+            # Format: timestamp_ns comm pid tid cpu stack1;stack2;stack3
             cmd = ["sudo", str(self.cpu_profiler),
-                   "--uprobe", f"{cuda_lib_path}:cudaLaunchKernel"]
+                   "--uprobe", f"{cuda_lib_path}:cudaLaunchKernel",
+                   "-E"]  # -E for extended folded format with timestamps
 
             self.profiler_proc = subprocess.Popen(
                 cmd,
@@ -94,7 +95,7 @@ class GPUPerf:
                 stderr=subprocess.PIPE
             )
             # Give it a moment to attach
-            time.sleep(0.5)
+            time.sleep(1.0)
             return self.profiler_proc
         except Exception as e:
             print(f"Warning: Failed to start CPU profiler: {e}", file=sys.stderr)
