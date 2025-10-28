@@ -20,9 +20,13 @@ __global__ void vectorAdd(const float *A, const float *B, float *C, int numEleme
 
 int main(void)
 {
-    int numElements = 50000;
+    // Increase size and add iterations to run for ~30 seconds
+    int numElements = 10000000;  // 10M elements (40MB per array)
+    int iterations = 15000;       // Run many iterations for ~30s
     size_t size = numElements * sizeof(float);
-    printf("[Vector addition of %d elements]\n", numElements);
+
+    printf("[Vector addition of %d elements, %d iterations]\n", numElements, iterations);
+    printf("Target runtime: ~30 seconds\n");
 
     float *h_A = (float *)malloc(size);
     float *h_B = (float *)malloc(size);
@@ -34,6 +38,8 @@ int main(void)
         exit(EXIT_FAILURE);
     }
 
+    // Initialize input vectors
+    printf("Initializing input vectors...\n");
     for (int i = 0; i < numElements; ++i)
     {
         h_A[i] = rand() / (float)RAND_MAX;
@@ -43,7 +49,8 @@ int main(void)
     float *d_A = NULL;
     float *d_B = NULL;
     float *d_C = NULL;
-    
+
+    printf("Allocating device memory...\n");
     cudaMalloc((void **)&d_A, size);
     cudaMalloc((void **)&d_B, size);
     cudaMalloc((void **)&d_C, size);
@@ -54,14 +61,32 @@ int main(void)
 
     int threadsPerBlock = 256;
     int blocksPerGrid = (numElements + threadsPerBlock - 1) / threadsPerBlock;
-    printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
-    
-    vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
+    printf("CUDA kernel config: %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
+
+    printf("Starting %d iterations...\n", iterations);
+
+    // Run many iterations to increase runtime
+    for (int iter = 0; iter < iterations; iter++) {
+        vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
+
+        // Print progress every 1500 iterations
+        if ((iter + 1) % 1500 == 0) {
+            cudaDeviceSynchronize();
+            printf("Completed iteration %d/%d\n", iter + 1, iterations);
+        }
+    }
+
+    // Synchronize to ensure all kernels complete
+    cudaDeviceSynchronize();
+    printf("All iterations completed\n");
 
     printf("Copy output data from the CUDA device to the host memory\n");
     cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);
 
-    for (int i = 0; i < numElements; ++i)
+    // Verify results (check first 1000 elements to save time)
+    printf("Verifying results...\n");
+    int checkElements = (numElements < 1000) ? numElements : 1000;
+    for (int i = 0; i < checkElements; ++i)
     {
         if (fabs(h_A[i] + h_B[i] - h_C[i]) > 1e-5)
         {

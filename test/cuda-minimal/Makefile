@@ -1,16 +1,20 @@
 # Auto-detect CUDA installation
 CUDA_PATH_12_8 := /usr/local/cuda-12.8
+CUDA_PATH_12_9 := /usr/local/cuda-12.9
 CUDA_PATH_13_0 := /usr/local/cuda-13.0
 
 # Check which CUDA version exists and set CUDA_PATH accordingly
 ifneq ($(wildcard $(CUDA_PATH_13_0)/bin/nvcc),)
     CUDA_PATH ?= $(CUDA_PATH_13_0)
     CUDA_VERSION := 13.0
+else ifneq ($(wildcard $(CUDA_PATH_12_9)/bin/nvcc),)
+    CUDA_PATH ?= $(CUDA_PATH_12_9)
+    CUDA_VERSION := 12.9
 else ifneq ($(wildcard $(CUDA_PATH_12_8)/bin/nvcc),)
     CUDA_PATH ?= $(CUDA_PATH_12_8)
     CUDA_VERSION := 12.8
 else
-    $(error No CUDA installation found. Please install CUDA 12.8 or 13.0)
+    $(error No CUDA installation found. Please install CUDA 12.8, 12.9 or 13.0)
 endif
 
 NVCC := $(CUDA_PATH)/bin/nvcc
@@ -23,8 +27,8 @@ LIBRARIES := -L$(CUDA_PATH)/lib64
 NVCC_FLAGS := -O2 -g -lineinfo -Xcompiler "-fno-omit-frame-pointer -g"
 LDFLAGS := -lcudart
 
-# Add flag for CUDA 12.8 with newer GCC
-ifeq ($(CUDA_VERSION),12.8)
+# Add flag for CUDA 12.x with newer GCC
+ifneq (,$(filter 12.8 12.9,$(CUDA_VERSION)))
     NVCC_FLAGS += -allow-unsupported-compiler
 endif
 
@@ -72,7 +76,10 @@ run: all
 cuda12.8:
 	@$(MAKE) CUDA_PATH=$(CUDA_PATH_12_8) CUDA_VERSION=12.8 all
 
+cuda12.9:
+	@$(MAKE) CUDA_PATH=$(CUDA_PATH_12_9) CUDA_VERSION=12.9 all
+
 cuda13.0:
 	@$(MAKE) CUDA_PATH=$(CUDA_PATH_13_0) CUDA_VERSION=13.0 all
 
-.PHONY: all clean run cuda12.8 cuda13.0
+.PHONY: all clean run cuda12.8 cuda12.9 cuda13.0

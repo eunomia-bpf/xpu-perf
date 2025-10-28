@@ -51,23 +51,50 @@ class GPUPerf:
         """Parse CUPTI trace data using the parser module"""
         return self.parser.parse_file(filename)
     
-    def start_cpu_profiler(self, pid, cpu_output_file=None):
-        """Start CPU profiler in background for given PID"""
+    def start_cpu_profiler(self, pid=None, cpu_output_file=None, cuda_lib_path=None):
+        """Start CPU profiler with cudaLaunchKernel uprobe"""
         if not self.cpu_profiler:
             return None
-            
+
         if not cpu_output_file:
-            cpu_output_file = f"cpu_profile_{pid}.txt"
-            
+            cpu_output_file = f"cpu_profile_{pid if pid else 'cuda'}.txt"
+
         self.profiler_output = cpu_output_file
-        print(f"Starting CPU profiler for PID {pid}, output: {cpu_output_file}")
-        
+
+        # Find CUDA runtime library if not specified
+        if not cuda_lib_path:
+            cuda_paths = [
+                "/usr/local/cuda-12.9/lib64/libcudart.so.12",
+                "/usr/local/cuda-13.0/lib64/libcudart.so.12",
+                "/usr/local/cuda/lib64/libcudart.so.12",
+                "/usr/local/cuda-12.8/lib64/libcudart.so.12",
+            ]
+            for path in cuda_paths:
+                if Path(path).exists():
+                    cuda_lib_path = path
+                    break
+
+        if not cuda_lib_path:
+            print("Warning: Could not find CUDA runtime library for uprobe", file=sys.stderr)
+            return None
+
+        print(f"Starting CPU profiler with cudaLaunchKernel hook")
+        print(f"  CUDA library: {cuda_lib_path}")
+        print(f"  Output: {cpu_output_file}")
+
         try:
+            # Run profiler with cudaLaunchKernel uprobe
+            # Use sudo for uprobe attachment
+            cmd = ["sudo", str(self.cpu_profiler),
+                   "--uprobe", f"{cuda_lib_path}:cudaLaunchKernel"]
+
             self.profiler_proc = subprocess.Popen(
-                [str(self.cpu_profiler), "-p", str(pid), "-E", "-f", "999"],
+                cmd,
                 stdout=open(cpu_output_file, 'w'),
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.PIPE
             )
+            # Give it a moment to attach
+            time.sleep(0.5)
             return self.profiler_proc
         except Exception as e:
             print(f"Warning: Failed to start CPU profiler: {e}", file=sys.stderr)
@@ -128,18 +155,17 @@ class GPUPerf:
         
         # Start the target process
         target_proc = None
-        
+
         try:
-            # Start the target process
+            # Start CPU profiler FIRST if available and requested
+            if cpu_profile and self.cpu_profiler:
+                # Start profiler BEFORE target process to catch all kernel launches
+                self.start_cpu_profiler(cpu_output_file=cpu_profile)
+
+            # Then start the target process
             target_proc = subprocess.Popen(command, env=env)
             target_pid = target_proc.pid
             print(f"Started target process with PID: {target_pid}")
-            
-            # Start CPU profiler if available and requested
-            if cpu_profile and self.cpu_profiler:
-                # Give the process a moment to start
-                time.sleep(0.1)
-                self.start_cpu_profiler(target_pid, cpu_profile)
             
             # Wait for the target process to complete
             return_code = target_proc.wait()
