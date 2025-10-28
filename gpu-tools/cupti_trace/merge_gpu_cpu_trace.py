@@ -89,15 +89,20 @@ class TraceMerger:
 
                 # Parse stack frames (separated by semicolons)
                 stack_frames = []
+                seen_cuda_launch = False
                 if stack_str:
                     frames = stack_str.split(';')
                     for frame in frames:
                         frame = frame.strip()
                         if frame and frame not in ['<no-symbol>', '_start', '__libc_start_main']:
-                            # Clean up cudaLaunchKernel variations
-                            if 'cudaLaunchKernel' in frame:
-                                frame = 'cudaLaunchKernel'
-                            stack_frames.append(frame)
+                            # Clean up cudaLaunchKernel variations - keep only first occurrence
+                            if 'cudaLaunchKernel' in frame or '__device_stub__' in frame:
+                                if not seen_cuda_launch:
+                                    frame = 'cudaLaunchKernel'
+                                    stack_frames.append(frame)
+                                    seen_cuda_launch = True
+                            else:
+                                stack_frames.append(frame)
 
                 if stack_frames:
                     self.cpu_stacks.append(CPUStack(
