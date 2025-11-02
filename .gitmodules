@@ -22,3 +22,6 @@
 [submodule "src/third_party/spdlog"]
 	path = src/third_party/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "profiler/opentelemetry-ebpf-profiler"]
+	path = profiler/opentelemetry-ebpf-profiler
+	url = https://github.com/open-telemetry/opentelemetry-ebpf-profiler
