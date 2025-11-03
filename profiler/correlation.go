@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
 	"go.opentelemetry.io/ebpf-profiler/libpf"
+	"go.opentelemetry.io/ebpf-profiler/libpf/pfelf"
 	"go.opentelemetry.io/ebpf-profiler/reporter/samples"
 )
 
@@ -233,11 +235,100 @@ func (c *TraceCorrelator) WriteFoldedOutput(filename string) error {
 	return nil
 }
 
+// symbolCache caches ELF symbol maps to avoid repeated parsing
+var symbolCache = struct {
+	sync.RWMutex
+	cache map[string]*libpf.SymbolMap
+}{
+	cache: make(map[string]*libpf.SymbolMap),
+}
+
+// pidExeCache caches PID -> executable path mappings
+var pidExeCache = struct {
+	sync.RWMutex
+	cache map[int]string
+}{
+	cache: make(map[int]string),
+}
+
+// resolveExecutablePath resolves a basename to full path using /proc/<pid>/exe
+func resolveExecutablePath(pid int, basename string) string {
+	pidExeCache.RLock()
+	cached, found := pidExeCache.cache[pid]
+	pidExeCache.RUnlock()
+
+	if found {
+		if filepath.Base(cached) == basename {
+			return cached
+		}
+	}
+
+	// Read /proc/<pid>/exe symlink
+	exePath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+	if err == nil {
+		pidExeCache.Lock()
+		pidExeCache.cache[pid] = exePath
+		pidExeCache.Unlock()
+
+		if filepath.Base(exePath) == basename {
+			return exePath
+		}
+	}
+
+	// Fall back to basename (will fail to open)
+	return basename
+}
+
+// lookupSymbol tries to resolve an address to a function name using ELF symbols
+func lookupSymbol(fileName string, fileOffset uint64, debugInfo string) string {
+	// Try to get from cache first
+	symbolCache.RLock()
+	symmap, cached := symbolCache.cache[fileName]
+	symbolCache.RUnlock()
+
+	if !cached {
+		// Load ELF file using pfelf
+		elfFile, err := pfelf.Open(fileName)
+		if err != nil {
+			return ""
+		}
+		defer elfFile.Close()
+
+		// Try regular symbol table first (for non-stripped binaries)
+		symmap, err = elfFile.ReadSymbols()
+		if err != nil || symmap == nil || symmap.Len() == 0 {
+			// Fall back to dynamic symbols
+			symmap, err = elfFile.ReadDynamicSymbols()
+			if err != nil || symmap == nil {
+				return ""
+			}
+		}
+
+		// Cache the symbol map
+		symbolCache.Lock()
+		symbolCache.cache[fileName] = symmap
+		symbolCache.Unlock()
+	}
+
+	// Use SymbolMap's LookupByAddress for efficient symbol resolution
+	symbolName, offset, found := symmap.LookupByAddress(libpf.SymbolValue(fileOffset))
+	if found && symbolName != "" {
+		if offset == 0 {
+			return string(symbolName)
+		}
+		return fmt.Sprintf("%s+0x%x", symbolName, offset)
+	}
+
+	return ""
+}
+
 // ExtractStackFromTrace extracts function names from a libpf.Trace
 func ExtractStackFromTrace(trace *libpf.Trace, meta *samples.TraceEventMeta) []string {
 	stack := make([]string, 0, len(trace.Frames))
 
-	for i := 0; i < len(trace.Frames); i++ {
+	// Iterate in reverse order: frames are stored innermost-first,
+	// but flamegraph format needs outermost-first (root to leaf)
+	for i := len(trace.Frames) - 1; i >= 0; i-- {
 		frame := trace.Frames[i].Value()
 
 		functionName := frame.FunctionName.String()
@@ -247,16 +338,33 @@ func ExtractStackFromTrace(trace *libpf.Trace, meta *samples.TraceEventMeta) []s
 		if functionName != "" && functionName != "<unknown>" {
 			frameName = functionName
 		} else if frame.MappingFile.Valid() {
-			// Use file+offset when function name is unknown
 			fileData := frame.MappingFile.Value()
 			fileName := fileData.FileName.String()
 			if fileName != "" {
-				// Extract just the basename
-				lastSlash := strings.LastIndex(fileName, "/")
-				if lastSlash >= 0 {
-					fileName = fileName[lastSlash+1:]
+				baseName := filepath.Base(fileName)
+
+				// AddressOrLineno already contains the file offset (relative to segment base)
+				// For PIE binaries, this matches the ELF symbol values directly
+				symbolAddress := uint64(frame.AddressOrLineno)
+
+				// Resolve basename to full path using PID
+				fullPath := resolveExecutablePath(int(meta.PID), baseName)
+
+				// Try to resolve symbol from ELF using the address
+				debugInfo := fmt.Sprintf("addr=0x%x,start=0x%x",
+					frame.AddressOrLineno, frame.MappingStart)
+				symbol := lookupSymbol(fullPath, symbolAddress, debugInfo)
+				if symbol != "" {
+					frameName = symbol
+				} else {
+					// Fall back to file+offset
+					// For display, show offset from mapping start
+					displayOffset := symbolAddress
+					if frame.MappingStart > 0 {
+						displayOffset = uint64(libpf.Address(frame.AddressOrLineno) - frame.MappingStart)
+					}
+					frameName = fmt.Sprintf("%s+0x%x", baseName, displayOffset)
 				}
-				frameName = fmt.Sprintf("%s+0x%x", fileName, frame.AddressOrLineno)
 			}
 		}
 

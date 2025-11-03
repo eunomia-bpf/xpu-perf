@@ -25,11 +25,20 @@ A performance profiler that combines CUPTI GPU tracing with eBPF uprobe CPU prof
 
 ## Building
 
+The profiler uses a Makefile to build both the CUPTI library and the Go profiler binary with the embedded CUPTI library:
+
 ```bash
 cd /home/yunwei37/workspace/xpu-perf/profiler
-go mod tidy
-go build -o xpu-perf .
+make        # Build everything (CUPTI library + profiler)
 ```
+
+Available Makefile targets:
+- `make` or `make build` - Build the profiler with embedded CUPTI library
+- `make cupti` - Build only the CUPTI library
+- `make clean` - Clean all build artifacts
+- `make test` - Run basic functionality test
+- `make install` - Install binary to /usr/local/bin
+- `make help` - Show help message
 
 ## Usage
 
@@ -57,8 +66,7 @@ flamegraph.pl merged_trace.folded > flamegraph.svg
     Output file for folded stack traces (default "merged_trace.folded")
 
 -cupti-lib string
-    Path to CUPTI trace injection library
-    (default "/home/yunwei37/workspace/xpu-perf/cupti_trace/libcupti_trace_injection.so")
+    Path to CUPTI trace injection library (uses embedded library if not specified)
 
 -cuda-lib string
     Path to CUDA runtime library (auto-detected if not specified)
@@ -117,9 +125,12 @@ flamegraph.pl llm_profile.folded > llm_flamegraph.svg
 ## Requirements
 
 - Root privileges (for eBPF and uprobes)
-- CUDA Toolkit installed
-- CUPTI trace injection library built (`/home/yunwei37/workspace/xpu-perf/cupti_trace/libcupti_trace_injection.so`)
-- Linux kernel with eBPF support
+- CUDA Toolkit installed (for building the CUPTI library)
+- Linux kernel with eBPF support (kernel 5.10+)
+- Go 1.19+ (for building the profiler)
+- Make (for build automation)
+
+**Note:** The CUPTI trace library is embedded in the profiler binary, so no additional runtime dependencies are needed beyond CUDA.
 
 ## Architecture
 

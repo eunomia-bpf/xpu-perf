@@ -1,6 +1,8 @@
 xpu-perf
 profile
 uprobe-profiler
+libcupti_trace_injection.so
 *.folded
 *.svg
 test_*
+*.log
