@@ -69,8 +69,8 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 	if r.correlator != nil {
 		shouldProcess := false
 
-		if meta.Origin == support.TraceOriginUProbe && r.correlator.gpuOnly {
-			// Process uprobes only in GPU-only mode (for correlation)
+		if meta.Origin == support.TraceOriginUProbe && (r.correlator.gpuOnly || r.correlator.mergeMode) {
+			// Process uprobes in GPU-only mode and merge mode (for correlation)
 			shouldProcess = true
 		} else if meta.Origin == support.TraceOriginSampling && (r.correlator.cpuOnly || r.correlator.mergeMode) {
 			// In merge mode, only process traces from the target PID
@@ -86,6 +86,7 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 
 		if shouldProcess {
 			stack := ExtractStackFromTrace(trace, meta)
+			isUprobe := (meta.Origin == support.TraceOriginUProbe)
 			r.correlator.AddCPUTrace(
 				int64(meta.Timestamp),
 				int(meta.PID),
@@ -93,6 +94,7 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 				int(meta.CPU),
 				meta.Comm,
 				stack,
+				isUprobe,
 			)
 		}
 	}

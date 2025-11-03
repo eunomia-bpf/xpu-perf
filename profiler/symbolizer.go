@@ -102,11 +102,11 @@ func (s *Symbolizer) getSymbolMap(path string) (*libpf.SymbolMap, error) {
 		return nil, err
 	}
 
-	// Try dynamic symbols first (works with stripped binaries)
-	symmap, err := ef.ReadDynamicSymbols()
+	// Try regular symbol table first (contains all symbols including weak/template)
+	symmap, err := ef.ReadSymbols()
 	if err != nil || symmap == nil || symmap.Len() == 0 {
-		// Fall back to regular symbol table
-		symmap, err = ef.ReadSymbols()
+		// Fall back to dynamic symbols (for stripped binaries)
+		symmap, err = ef.ReadDynamicSymbols()
 		if err != nil || symmap == nil {
 			return nil, fmt.Errorf("no symbols available")
 		}

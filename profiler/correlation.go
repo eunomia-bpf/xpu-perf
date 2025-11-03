@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/ebpf-profiler/reporter/samples"
 )
 
-// CPUStackTrace represents a CPU stack trace from uprobe
+// CPUStackTrace represents a CPU stack trace from uprobe or sampling
 type CPUStackTrace struct {
 	Timestamp int64
 	PID       int
@@ -24,6 +24,7 @@ type CPUStackTrace struct {
 	CPU       int
 	Comm      string
 	Stack     []string
+	IsUprobe  bool // true if from uprobe, false if from sampling
 }
 
 // MergedTrace represents a correlated CPU+GPU stack trace
@@ -61,7 +62,7 @@ func NewTraceCorrelator(gpuParser *CUPTIParser, toleranceMs float64, samplesPerS
 }
 
 // AddCPUTrace adds a CPU stack trace for correlation
-func (c *TraceCorrelator) AddCPUTrace(timestamp int64, pid, tid, cpu int, comm string, stack []string) {
+func (c *TraceCorrelator) AddCPUTrace(timestamp int64, pid, tid, cpu int, comm string, stack []string, isUprobe bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -72,6 +73,7 @@ func (c *TraceCorrelator) AddCPUTrace(timestamp int64, pid, tid, cpu int, comm s
 		CPU:       cpu,
 		Comm:      comm,
 		Stack:     stack,
+		IsUprobe:  isUprobe,
 	})
 }
 
@@ -89,48 +91,48 @@ func (c *TraceCorrelator) CorrelateTraces() error {
 		return nil
 	}
 
-	// Merge mode: Correlate CPU sampling traces with GPU kernels using timestamps
-	// This shows what the CPU was doing during GPU execution
+	// Merge mode: Separate uprobe and sampling traces, then merge
+	// - Uprobe traces: correlate with GPU kernels (shows CPU→GPU causality)
+	// - Sampling traces: keep as pure CPU activity
 	if c.mergeMode {
-		kernels := c.gpuParser.GetKernels()
+		// Separate uprobes from sampling
+		var uprobeTraces []CPUStackTrace
+		var samplingTraces []CPUStackTrace
 
-		if len(c.cpuTraces) == 0 {
-			return fmt.Errorf("no CPU traces collected in merge mode")
-		}
-
-		if len(kernels) == 0 {
-			return fmt.Errorf("no GPU kernels found in CUPTI trace")
-		}
-
-		// Sort CPU traces by timestamp
-		sort.Slice(c.cpuTraces, func(i, j int) bool {
-			return c.cpuTraces[i].Timestamp < c.cpuTraces[j].Timestamp
-		})
-
-		// For each GPU kernel, find CPU samples during its execution
-		for _, kernel := range kernels {
-			kernelStart := kernel.StartNs
-			kernelEnd := kernel.EndNs
-
-			// Find all CPU samples that occurred during this kernel's execution
-			for _, cpuTrace := range c.cpuTraces {
-				if cpuTrace.Timestamp >= kernelStart && cpuTrace.Timestamp <= kernelEnd {
-					// Merge the CPU stack with the GPU kernel
-					merged := cpuTrace.Stack
-					merged = append(merged, fmt.Sprintf("[GPU_Kernel]%s", kernel.Name))
-					stackStr := strings.Join(merged, ";")
-					c.mergedStacks[stackStr] += 1 // Count as 1 sample
-				}
+		for _, trace := range c.cpuTraces {
+			if trace.IsUprobe {
+				uprobeTraces = append(uprobeTraces, trace)
+			} else {
+				samplingTraces = append(samplingTraces, trace)
 			}
 		}
+
+		// Add pure CPU sampling traces (no GPU kernel)
+		for _, cpuTrace := range samplingTraces {
+			stackStr := strings.Join(cpuTrace.Stack, ";")
+			c.mergedStacks[stackStr] += 1
+		}
+
+		// Correlate uprobes with GPU kernels (reuse gpu-only logic)
+		if len(uprobeTraces) > 0 {
+			c.correlateUprobesToGPU(uprobeTraces)
+		}
+
 		return nil
 	}
 
 	// GPU-only mode: correlate CPU uprobe stacks with GPU kernels
+	c.correlateUprobesToGPU(c.cpuTraces)
+	return nil
+}
+
+// correlateUprobesToGPU correlates CPU uprobe traces with GPU kernels
+// This is used by both gpu-only and merge modes
+func (c *TraceCorrelator) correlateUprobesToGPU(cpuTraces []CPUStackTrace) error {
 	runtimes := c.gpuParser.GetRuntimes()
 	kernels := c.gpuParser.GetKernels()
 
-	if len(c.cpuTraces) == 0 {
+	if len(cpuTraces) == 0 {
 		return fmt.Errorf("no CPU traces collected")
 	}
 
@@ -151,8 +153,8 @@ func (c *TraceCorrelator) CorrelateTraces() error {
 	}
 
 	// Sort CPU traces by timestamp
-	sort.Slice(c.cpuTraces, func(i, j int) bool {
-		return c.cpuTraces[i].Timestamp < c.cpuTraces[j].Timestamp
+	sort.Slice(cpuTraces, func(i, j int) bool {
+		return cpuTraces[i].Timestamp < cpuTraces[j].Timestamp
 	})
 
 	// Sort runtimes by timestamp
@@ -165,9 +167,9 @@ func (c *TraceCorrelator) CorrelateTraces() error {
 	unmatched := 0
 
 	// Try sequential matching with time window validation
-	if len(c.cpuTraces) == len(runtimes) {
+	if len(cpuTraces) == len(runtimes) {
 		// Perfect 1:1 correspondence
-		for i, cpuTrace := range c.cpuTraces {
+		for i, cpuTrace := range cpuTraces {
 			runtime := &runtimes[i]
 			kernel := kernelByCorr[runtime.CorrelationID]
 
@@ -191,7 +193,7 @@ func (c *TraceCorrelator) CorrelateTraces() error {
 		// More events on one side - use time-based matching
 		gpuIdx := 0
 
-		for _, cpuTrace := range c.cpuTraces {
+		for _, cpuTrace := range cpuTraces {
 			// Skip GPU events too far behind
 			for gpuIdx < len(runtimes) {
 				timeDiff := cpuTrace.Timestamp - runtimes[gpuIdx].StartNs
@@ -300,25 +302,26 @@ func ExtractStackFromTrace(trace *libpf.Trace, meta *samples.TraceEventMeta) []s
 			if fileName != "" {
 				baseName := filepath.Base(fileName)
 
-				// AddressOrLineno already contains the file offset (relative to segment base)
-				// For PIE binaries, this matches the ELF symbol values directly
-				symbolAddress := uint64(frame.AddressOrLineno)
+				// For PIE binaries, we need to calculate the file offset
+				// The frame contains:
+				// - AddressOrLineno: Could be runtime VA or file offset depending on eBPF unwinder
+				// - MappingStart: Base address where the file is mapped in memory
+				// - MappingFileOffset: Offset within the file where this mapping starts
+
+				// The correct file offset calculation depends on whether this is a PIE binary
+				// For now, try AddressOrLineno directly (it might already be a file offset)
+				fileOffset := uint64(frame.AddressOrLineno)
 
 				// Resolve basename to full path using PID
 				fullPath := ResolveExecutablePath(int(meta.PID), baseName)
 
-				// Try to resolve symbol from ELF using the address
-				symbol := symbolizer.Symbolize(fullPath, symbolAddress)
+				// Try to resolve symbol from ELF using the file offset
+				symbol := symbolizer.Symbolize(fullPath, fileOffset)
 				if symbol != "" {
 					frameName = symbol
 				} else {
 					// Fall back to file+offset
-					// For display, show offset from mapping start
-					displayOffset := symbolAddress
-					if frame.MappingStart > 0 {
-						displayOffset = uint64(libpf.Address(frame.AddressOrLineno) - frame.MappingStart)
-					}
-					frameName = fmt.Sprintf("%s+0x%x", baseName, displayOffset)
+					frameName = fmt.Sprintf("%s+0x%x", baseName, fileOffset)
 				}
 			}
 		}

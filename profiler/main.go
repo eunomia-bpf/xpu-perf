@@ -58,8 +58,8 @@ func main() {
 
 	// Determine uprobes based on mode
 	var uprobes []string
-	if cfg.gpuOnly {
-		// GPU-only mode uses uprobes for CPU/GPU correlation
+	if cfg.gpuOnly || (!cfg.cpuOnly && !cfg.gpuOnly) {
+		// GPU-only and merge mode use uprobes for CPU/GPU correlation
 		// Default to CUDA runtime library for kernel launch tracing
 		if cfg.cudaLibPath == "" {
 			cfg.cudaLibPath = findCudaLibrary()
@@ -365,11 +365,11 @@ func parseFlags() *Config {
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nModes:\n")
-		fmt.Fprintf(os.Stderr, "  Default: CPU sampling + GPU kernel samples merged (no correlation)\n")
+		fmt.Fprintf(os.Stderr, "  Default: Merge CPU sampling + GPU time (converted to sample counts)\n")
 		fmt.Fprintf(os.Stderr, "  -cpu-only: Only CPU sampling traces (no GPU)\n")
-		fmt.Fprintf(os.Stderr, "  -gpu-only: CPU/GPU correlated stacks via uprobes at cudaLaunchKernel\n")
+		fmt.Fprintf(os.Stderr, "  -gpu-only: CPU→GPU causality via uprobes (shows which CPU code launched which GPU kernel)\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  # Full CPU+GPU profiling (merged CPU sampling + GPU samples)\n")
+		fmt.Fprintf(os.Stderr, "  # Full CPU+GPU profiling (merged view with correct time proportions)\n")
 		fmt.Fprintf(os.Stderr, "  %s -o trace.folded ./my_cuda_app\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # CPU only sampling (no GPU)\n")
 		fmt.Fprintf(os.Stderr, "  %s -cpu-only -o cpu_trace.folded ./my_cuda_app\n\n", os.Args[0])
