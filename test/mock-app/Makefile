@@ -44,10 +44,13 @@ ifneq ($(TARGET_ARCH), $(HOST_ARCH))
     endif
 endif
 
-all: llm-inference
+all: llm-inference vectorAdd
 
 llm-inference: llm-inference.cu
 	$(NVCC) $(NVCC_COMPILER) $(INCLUDES) -o llm-inference llm-inference.cu -L $(LIB_PATH) -lcudart -std=c++17 -Wno-deprecated-gpu-targets --no-device-link
 
+vectorAdd: vectorAdd.cu
+	$(NVCC) $(NVCC_COMPILER) $(INCLUDES) -o vectorAdd vectorAdd.cu -L $(LIB_PATH) -lcudart -Wno-deprecated-gpu-targets --no-device-link
+
 clean:
-	rm -f llm-inference *.o *.bak
+	rm -f llm-inference vectorAdd *.o *.bak
