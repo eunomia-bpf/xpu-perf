@@ -107,6 +107,11 @@ static void CUPTIAPI BufferCompleted(CUcontext ctx, uint32_t streamId, uint8_t *
             fprintf(g_state.outputFile, "Warning: Dropped %llu activity records\n",
                     (unsigned long long)dropped);
         }
+
+        // Flush the file to ensure continuous writing
+        if (g_state.outputFile) {
+            fflush(g_state.outputFile);
+        }
     }
 
     free(buffer);

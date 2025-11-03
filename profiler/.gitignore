@@ -1,0 +1,6 @@
+xpu-perf
+profile
+uprobe-profiler
+*.folded
+*.svg
+test_*

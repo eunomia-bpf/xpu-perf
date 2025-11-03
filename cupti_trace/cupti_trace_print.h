@@ -92,37 +92,40 @@ static void PrintActivity(CUpti_Activity *record, FILE *out) {
         case CUPTI_ACTIVITY_KIND_KERNEL:
         case CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL: {
             CUpti_ActivityKernel9 *kernel = (CUpti_ActivityKernel9 *)record;
-            fprintf(out, "%s [%llu, %llu] duration=%llu ns, name=\"%s\", correlationId=%u\n",
+            fprintf(out, "{\"type\":\"%s\",\"start\":%llu,\"end\":%llu,\"duration\":%llu,"
+                    "\"name\":\"%s\",\"correlationId\":%u,",
                     GetActivityKindString(kernel->kind),
                     (unsigned long long)kernel->start,
                     (unsigned long long)kernel->end,
                     (unsigned long long)(kernel->end - kernel->start),
-                    kernel->name ? kernel->name : "<unknown>",
+                    kernel->name ? kernel->name : "unknown",
                     kernel->correlationId);
-            fprintf(out, "  grid=[%u,%u,%u], block=[%u,%u,%u], "
-                    "sharedMem(static=%u,dynamic=%u), deviceId=%u, streamId=%u",
+            fprintf(out, "\"grid\":[%u,%u,%u],\"block\":[%u,%u,%u],"
+                    "\"sharedMemory\":{\"static\":%u,\"dynamic\":%u},"
+                    "\"deviceId\":%u,\"streamId\":%u",
                     kernel->gridX, kernel->gridY, kernel->gridZ,
                     kernel->blockX, kernel->blockY, kernel->blockZ,
                     kernel->staticSharedMemory, kernel->dynamicSharedMemory,
                     kernel->deviceId, kernel->streamId);
             if (kernel->graphNodeId != 0) {
-                fprintf(out, ", graphId=%u, graphNodeId=%llu",
+                fprintf(out, ",\"graphId\":%u,\"graphNodeId\":%llu",
                         kernel->graphId, (unsigned long long)kernel->graphNodeId);
                 // Check if we have API info for this graph node
                 NodeIdApiDataMap::iterator it = nodeIdCorrelationMap.find(kernel->graphNodeId);
                 if (it != nodeIdCorrelationMap.end()) {
-                    fprintf(out, "\n  Graph node created by API: %s (correlationId=%u)",
+                    fprintf(out, ",\"graphNodeCreatedBy\":\"%s\",\"graphNodeCreatorCorrelationId\":%u",
                             it->second.pFunctionName, it->second.correlationId);
                 }
             }
-            fprintf(out, "\n");
+            fprintf(out, "}\n");
             break;
         }
 
         case CUPTI_ACTIVITY_KIND_MEMCPY: {
             CUpti_ActivityMemcpy6 *memcpy = (CUpti_ActivityMemcpy6 *)record;
-            fprintf(out, "%s \"%s\" [%llu, %llu] duration=%llu ns, size=%llu bytes, "
-                    "srcKind=%s, dstKind=%s, correlationId=%u\n",
+            fprintf(out, "{\"type\":\"%s\",\"copyKind\":\"%s\",\"start\":%llu,\"end\":%llu,"
+                    "\"duration\":%llu,\"size\":%llu,\"srcKind\":\"%s\",\"dstKind\":\"%s\","
+                    "\"correlationId\":%u,\"deviceId\":%u,\"streamId\":%u",
                     GetActivityKindString(memcpy->kind),
                     GetMemcpyKindString(memcpy->copyKind),
                     (unsigned long long)memcpy->start,
@@ -131,43 +134,42 @@ static void PrintActivity(CUpti_Activity *record, FILE *out) {
                     (unsigned long long)memcpy->bytes,
                     GetMemoryKindString(memcpy->srcKind),
                     GetMemoryKindString(memcpy->dstKind),
-                    memcpy->correlationId);
-            fprintf(out, "  deviceId=%u, streamId=%u",
+                    memcpy->correlationId,
                     memcpy->deviceId, memcpy->streamId);
             if (memcpy->graphNodeId != 0) {
-                fprintf(out, ", graphId=%u, graphNodeId=%llu",
+                fprintf(out, ",\"graphId\":%u,\"graphNodeId\":%llu",
                         memcpy->graphId, (unsigned long long)memcpy->graphNodeId);
-                // Check if we have API info for this graph node
                 NodeIdApiDataMap::iterator it = nodeIdCorrelationMap.find(memcpy->graphNodeId);
                 if (it != nodeIdCorrelationMap.end()) {
-                    fprintf(out, "\n  Graph node created by API: %s (correlationId=%u)",
+                    fprintf(out, ",\"graphNodeCreatedBy\":\"%s\",\"graphNodeCreatorCorrelationId\":%u",
                             it->second.pFunctionName, it->second.correlationId);
                 }
             }
-            fprintf(out, "\n");
+            fprintf(out, "}\n");
             break;
         }
 
         case CUPTI_ACTIVITY_KIND_MEMSET: {
             CUpti_ActivityMemset4 *memset = (CUpti_ActivityMemset4 *)record;
-            fprintf(out, "%s [%llu, %llu] duration=%llu ns, size=%llu bytes, "
-                    "value=%u, correlationId=%u\n",
+            fprintf(out, "{\"type\":\"%s\",\"start\":%llu,\"end\":%llu,\"duration\":%llu,"
+                    "\"size\":%llu,\"value\":%u,\"correlationId\":%u,\"deviceId\":%u,\"streamId\":%u}\n",
                     GetActivityKindString(memset->kind),
                     (unsigned long long)memset->start,
                     (unsigned long long)memset->end,
                     (unsigned long long)(memset->end - memset->start),
                     (unsigned long long)memset->bytes,
                     memset->value,
-                    memset->correlationId);
-            fprintf(out, "  deviceId=%u, streamId=%u\n",
+                    memset->correlationId,
                     memset->deviceId, memset->streamId);
             break;
         }
 
         case CUPTI_ACTIVITY_KIND_MEMCPY2: {
             CUpti_ActivityMemcpyPtoP4 *memcpy2 = (CUpti_ActivityMemcpyPtoP4 *)record;
-            fprintf(out, "%s \"%s\" [%llu, %llu] duration=%llu ns, size=%llu bytes, "
-                    "srcKind=%s, dstKind=%s, correlationId=%u\n",
+            fprintf(out, "{\"type\":\"%s\",\"copyKind\":\"%s\",\"start\":%llu,\"end\":%llu,"
+                    "\"duration\":%llu,\"size\":%llu,\"srcKind\":\"%s\",\"dstKind\":\"%s\","
+                    "\"correlationId\":%u,\"deviceId\":%u,\"streamId\":%u,"
+                    "\"srcDeviceId\":%u,\"dstDeviceId\":%u}\n",
                     GetActivityKindString(memcpy2->kind),
                     GetMemcpyKindString(memcpy2->copyKind),
                     (unsigned long long)memcpy2->start,
@@ -176,8 +178,7 @@ static void PrintActivity(CUpti_Activity *record, FILE *out) {
                     (unsigned long long)memcpy2->bytes,
                     GetMemoryKindString(memcpy2->srcKind),
                     GetMemoryKindString(memcpy2->dstKind),
-                    memcpy2->correlationId);
-            fprintf(out, "  deviceId=%u, streamId=%u, srcDeviceId=%u, dstDeviceId=%u\n",
+                    memcpy2->correlationId,
                     memcpy2->deviceId, memcpy2->streamId,
                     memcpy2->srcDeviceId, memcpy2->dstDeviceId);
             break;
@@ -185,27 +186,28 @@ static void PrintActivity(CUpti_Activity *record, FILE *out) {
 
         case CUPTI_ACTIVITY_KIND_MEMORY2: {
             CUpti_ActivityMemory4 *memory2 = (CUpti_ActivityMemory4 *)record;
-            fprintf(out, "%s [%llu] memoryOperation=%s, memoryKind=%s, size=%llu bytes, "
-                    "address=0x%llx, correlationId=%u\n",
+            fprintf(out, "{\"type\":\"%s\",\"timestamp\":%llu,\"memoryOperation\":\"%s\","
+                    "\"memoryKind\":\"%s\",\"size\":%llu,\"address\":%llu,\"correlationId\":%u,"
+                    "\"deviceId\":%u,\"contextId\":%u,\"streamId\":%u,\"processId\":%u,\"isAsync\":%u,",
                     GetActivityKindString(memory2->kind),
                     (unsigned long long)memory2->timestamp,
                     GetMemoryOperationTypeString(memory2->memoryOperationType),
                     GetMemoryKindString(memory2->memoryKind),
                     (unsigned long long)memory2->bytes,
                     (unsigned long long)memory2->address,
-                    memory2->correlationId);
-            fprintf(out, "  deviceId=%u, contextId=%u, streamId=%u, processId=%u, isAsync=%u\n",
+                    memory2->correlationId,
                     memory2->deviceId, memory2->contextId, memory2->streamId,
                     memory2->processId, memory2->isAsync);
-            fprintf(out, "  memoryPool=%s, poolAddress=0x%llx, poolThreshold=%llu\n",
+            fprintf(out, "\"memoryPool\":{\"type\":\"%s\",\"address\":%llu,\"releaseThreshold\":%llu",
                     GetMemoryPoolTypeString(memory2->memoryPoolConfig.memoryPoolType),
                     (unsigned long long)memory2->memoryPoolConfig.address,
                     (unsigned long long)memory2->memoryPoolConfig.releaseThreshold);
             if (memory2->memoryPoolConfig.memoryPoolType == CUPTI_ACTIVITY_MEMORY_POOL_TYPE_LOCAL) {
-                fprintf(out, "  poolSize=%llu, poolUtilizedSize=%llu\n",
+                fprintf(out, ",\"size\":%llu,\"utilizedSize\":%llu",
                         (unsigned long long)memory2->memoryPoolConfig.pool.size,
                         (unsigned long long)memory2->memoryPoolConfig.utilizedSize);
             }
+            fprintf(out, "}}\n");
             break;
         }
 
@@ -218,13 +220,13 @@ static void PrintActivity(CUpti_Activity *record, FILE *out) {
             } else {
                 cuptiGetCallbackName(CUPTI_CB_DOMAIN_DRIVER_API, api->cbid, &name);
             }
-            fprintf(out, "%s [%llu, %llu] duration=%llu ns, \"%s\", "
-                    "correlationId=%u, processId=%u, threadId=%u\n",
+            fprintf(out, "{\"type\":\"%s\",\"start\":%llu,\"end\":%llu,\"duration\":%llu,"
+                    "\"name\":\"%s\",\"correlationId\":%u,\"processId\":%u,\"threadId\":%u}\n",
                     GetActivityKindString(api->kind),
                     (unsigned long long)api->start,
                     (unsigned long long)api->end,
                     (unsigned long long)(api->end - api->start),
-                    name ? name : "<unknown>",
+                    name ? name : "unknown",
                     api->correlationId,
                     api->processId,
                     api->threadId);
@@ -232,7 +234,7 @@ static void PrintActivity(CUpti_Activity *record, FILE *out) {
         }
 
         default:
-            fprintf(out, "%s (kind=%d) - detailed info not implemented\n",
+            fprintf(out, "{\"type\":\"%s\",\"kind\":%d,\"error\":\"not implemented\"}\n",
                     GetActivityKindString(record->kind), record->kind);
             break;
     }
