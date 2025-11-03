@@ -26,6 +26,8 @@ type SimpleReporter struct {
 	symbolMisses map[string]bool
 	// Correlator for merging CPU and GPU traces
 	correlator *TraceCorrelator
+	// Target PID to filter sampling traces (0 = all PIDs)
+	targetPID int
 }
 
 // NewSimpleReporter creates a new simple reporter
@@ -34,7 +36,15 @@ func NewSimpleReporter(correlator *TraceCorrelator) *SimpleReporter {
 		symbolCache:  make(map[string]*libpf.SymbolMap),
 		symbolMisses: make(map[string]bool),
 		correlator:   correlator,
+		targetPID:    0, // Will be set later
 	}
+}
+
+// SetTargetPID sets the target PID for filtering sampling traces
+func (r *SimpleReporter) SetTargetPID(pid int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.targetPID = pid
 }
 
 // ReportTraceEvent processes and prints trace information
@@ -52,22 +62,39 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 		r.samplingCount++
 	}
 
-	// Only process uprobe traces
-	if meta.Origin != support.TraceOriginUProbe {
-		return nil
-	}
-
 	// Extract stack for correlation
+	// - CPU-only mode: process all sampling traces
+	// - Merge mode: process sampling traces from target PID only (correlate with GPU)
+	// - GPU-only mode: process uprobe traces (for CPU/GPU correlation)
 	if r.correlator != nil {
-		stack := ExtractStackFromTrace(trace, meta)
-		r.correlator.AddCPUTrace(
-			int64(meta.Timestamp),
-			int(meta.PID),
-			int(meta.TID),
-			int(meta.CPU),
-			meta.Comm,
-			stack,
-		)
+		shouldProcess := false
+
+		if meta.Origin == support.TraceOriginUProbe && r.correlator.gpuOnly {
+			// Process uprobes only in GPU-only mode (for correlation)
+			shouldProcess = true
+		} else if meta.Origin == support.TraceOriginSampling && (r.correlator.cpuOnly || r.correlator.mergeMode) {
+			// In merge mode, only process traces from the target PID
+			if r.correlator.mergeMode {
+				if r.targetPID > 0 && int(meta.PID) == r.targetPID {
+					shouldProcess = true
+				}
+			} else {
+				// CPU-only mode: process all sampling traces
+				shouldProcess = true
+			}
+		}
+
+		if shouldProcess {
+			stack := ExtractStackFromTrace(trace, meta)
+			r.correlator.AddCPUTrace(
+				int64(meta.Timestamp),
+				int(meta.PID),
+				int(meta.TID),
+				int(meta.CPU),
+				meta.Comm,
+				stack,
+			)
+		}
 	}
 
 	return nil

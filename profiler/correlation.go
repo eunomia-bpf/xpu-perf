@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"go.opentelemetry.io/ebpf-profiler/libpf"
-	"go.opentelemetry.io/ebpf-profiler/libpf/pfelf"
 	"go.opentelemetry.io/ebpf-profiler/reporter/samples"
 )
 
@@ -38,22 +37,26 @@ type MergedTrace struct {
 type TraceCorrelator struct {
 	cpuTraces       []CPUStackTrace
 	gpuParser       *CUPTIParser
-	mergedStacks    map[string]int64 // folded stack -> duration sum (microseconds)
+	mergedStacks    map[string]int64 // folded stack -> sample count
 	toleranceMs     float64
+	samplesPerSec   int              // CPU sampling frequency (Hz)
 	mu              sync.Mutex
 	cpuOnly         bool
-	gpuOnly         bool
+	gpuOnly         bool // Now means: use uprobes for correlation
+	mergeMode       bool // Merge CPU sampling + GPU samples
 }
 
 // NewTraceCorrelator creates a new trace correlator
-func NewTraceCorrelator(gpuParser *CUPTIParser, toleranceMs float64, cpuOnly, gpuOnly bool) *TraceCorrelator {
+func NewTraceCorrelator(gpuParser *CUPTIParser, toleranceMs float64, samplesPerSec int, cpuOnly, gpuOnly, mergeMode bool) *TraceCorrelator {
 	return &TraceCorrelator{
-		cpuTraces:    make([]CPUStackTrace, 0),
-		gpuParser:    gpuParser,
-		mergedStacks: make(map[string]int64),
-		toleranceMs:  toleranceMs,
-		cpuOnly:      cpuOnly,
-		gpuOnly:      gpuOnly,
+		cpuTraces:     make([]CPUStackTrace, 0),
+		gpuParser:     gpuParser,
+		mergedStacks:  make(map[string]int64),
+		toleranceMs:   toleranceMs,
+		samplesPerSec: samplesPerSec,
+		cpuOnly:       cpuOnly,
+		gpuOnly:       gpuOnly,
+		mergeMode:     mergeMode,
 	}
 }
 
@@ -86,18 +89,44 @@ func (c *TraceCorrelator) CorrelateTraces() error {
 		return nil
 	}
 
-	// GPU-only mode: output GPU kernels only
-	if c.gpuOnly {
+	// Merge mode: Correlate CPU sampling traces with GPU kernels using timestamps
+	// This shows what the CPU was doing during GPU execution
+	if c.mergeMode {
 		kernels := c.gpuParser.GetKernels()
+
+		if len(c.cpuTraces) == 0 {
+			return fmt.Errorf("no CPU traces collected in merge mode")
+		}
+
+		if len(kernels) == 0 {
+			return fmt.Errorf("no GPU kernels found in CUPTI trace")
+		}
+
+		// Sort CPU traces by timestamp
+		sort.Slice(c.cpuTraces, func(i, j int) bool {
+			return c.cpuTraces[i].Timestamp < c.cpuTraces[j].Timestamp
+		})
+
+		// For each GPU kernel, find CPU samples during its execution
 		for _, kernel := range kernels {
-			stackStr := fmt.Sprintf("[GPU_Kernel]%s", kernel.Name)
-			durationUs := (kernel.EndNs - kernel.StartNs) / 1000
-			c.mergedStacks[stackStr] += durationUs
+			kernelStart := kernel.StartNs
+			kernelEnd := kernel.EndNs
+
+			// Find all CPU samples that occurred during this kernel's execution
+			for _, cpuTrace := range c.cpuTraces {
+				if cpuTrace.Timestamp >= kernelStart && cpuTrace.Timestamp <= kernelEnd {
+					// Merge the CPU stack with the GPU kernel
+					merged := cpuTrace.Stack
+					merged = append(merged, fmt.Sprintf("[GPU_Kernel]%s", kernel.Name))
+					stackStr := strings.Join(merged, ";")
+					c.mergedStacks[stackStr] += 1 // Count as 1 sample
+				}
+			}
 		}
 		return nil
 	}
 
-	// Merged mode: correlate CPU stacks with GPU kernels
+	// GPU-only mode: correlate CPU uprobe stacks with GPU kernels
 	runtimes := c.gpuParser.GetRuntimes()
 	kernels := c.gpuParser.GetKernels()
 
@@ -147,7 +176,12 @@ func (c *TraceCorrelator) CorrelateTraces() error {
 				merged = append(merged, fmt.Sprintf("[GPU_Kernel]%s", kernel.Name))
 				stackStr := strings.Join(merged, ";")
 				durationUs := (kernel.EndNs - kernel.StartNs) / 1000
-				c.mergedStacks[stackStr] += durationUs
+				// Convert GPU duration to sample count using CPU sampling frequency
+				samples := (durationUs * int64(c.samplesPerSec)) / 1000000
+				if samples < 1 {
+					samples = 1
+				}
+				c.mergedStacks[stackStr] += samples
 				matched++
 			} else {
 				unmatched++
@@ -184,7 +218,12 @@ func (c *TraceCorrelator) CorrelateTraces() error {
 					merged = append(merged, fmt.Sprintf("[GPU_Kernel]%s", kernel.Name))
 					stackStr := strings.Join(merged, ";")
 					durationUs := (kernel.EndNs - kernel.StartNs) / 1000
-					c.mergedStacks[stackStr] += durationUs
+					// Convert GPU duration to sample count using CPU sampling frequency
+					samples := (durationUs * int64(c.samplesPerSec)) / 1000000
+					if samples < 1 {
+						samples = 1
+					}
+					c.mergedStacks[stackStr] += samples
 					matched++
 					gpuIdx++
 				} else {
@@ -235,96 +274,13 @@ func (c *TraceCorrelator) WriteFoldedOutput(filename string) error {
 	return nil
 }
 
-// symbolCache caches ELF symbol maps to avoid repeated parsing
-var symbolCache = struct {
-	sync.RWMutex
-	cache map[string]*libpf.SymbolMap
-}{
-	cache: make(map[string]*libpf.SymbolMap),
-}
-
-// pidExeCache caches PID -> executable path mappings
-var pidExeCache = struct {
-	sync.RWMutex
-	cache map[int]string
-}{
-	cache: make(map[int]string),
-}
-
-// resolveExecutablePath resolves a basename to full path using /proc/<pid>/exe
-func resolveExecutablePath(pid int, basename string) string {
-	pidExeCache.RLock()
-	cached, found := pidExeCache.cache[pid]
-	pidExeCache.RUnlock()
-
-	if found {
-		if filepath.Base(cached) == basename {
-			return cached
-		}
-	}
-
-	// Read /proc/<pid>/exe symlink
-	exePath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
-	if err == nil {
-		pidExeCache.Lock()
-		pidExeCache.cache[pid] = exePath
-		pidExeCache.Unlock()
-
-		if filepath.Base(exePath) == basename {
-			return exePath
-		}
-	}
-
-	// Fall back to basename (will fail to open)
-	return basename
-}
-
-// lookupSymbol tries to resolve an address to a function name using ELF symbols
-func lookupSymbol(fileName string, fileOffset uint64, debugInfo string) string {
-	// Try to get from cache first
-	symbolCache.RLock()
-	symmap, cached := symbolCache.cache[fileName]
-	symbolCache.RUnlock()
-
-	if !cached {
-		// Load ELF file using pfelf
-		elfFile, err := pfelf.Open(fileName)
-		if err != nil {
-			return ""
-		}
-		defer elfFile.Close()
-
-		// Try regular symbol table first (for non-stripped binaries)
-		symmap, err = elfFile.ReadSymbols()
-		if err != nil || symmap == nil || symmap.Len() == 0 {
-			// Fall back to dynamic symbols
-			symmap, err = elfFile.ReadDynamicSymbols()
-			if err != nil || symmap == nil {
-				return ""
-			}
-		}
-
-		// Cache the symbol map
-		symbolCache.Lock()
-		symbolCache.cache[fileName] = symmap
-		symbolCache.Unlock()
-	}
-
-	// Use SymbolMap's LookupByAddress for efficient symbol resolution
-	symbolName, offset, found := symmap.LookupByAddress(libpf.SymbolValue(fileOffset))
-	if found && symbolName != "" {
-		if offset == 0 {
-			return string(symbolName)
-		}
-		return fmt.Sprintf("%s+0x%x", symbolName, offset)
-	}
-
-	return ""
-}
+// Use the global symbolizer for all symbol resolution
+// (symbolCache, pidExeCache, lookupSymbol removed - now using symbolizer.go)
 
 // ExtractStackFromTrace extracts function names from a libpf.Trace
 func ExtractStackFromTrace(trace *libpf.Trace, meta *samples.TraceEventMeta) []string {
 	stack := make([]string, 0, len(trace.Frames))
+	symbolizer := GetSymbolizer()
 
 	// Iterate in reverse order: frames are stored innermost-first,
 	// but flamegraph format needs outermost-first (root to leaf)
@@ -336,7 +292,8 @@ func ExtractStackFromTrace(trace *libpf.Trace, meta *samples.TraceEventMeta) []s
 
 		// Try to get a meaningful frame identifier
 		if functionName != "" && functionName != "<unknown>" {
-			frameName = functionName
+			// Demangle if needed
+			frameName = symbolizer.demangle(functionName)
 		} else if frame.MappingFile.Valid() {
 			fileData := frame.MappingFile.Value()
 			fileName := fileData.FileName.String()
@@ -348,12 +305,10 @@ func ExtractStackFromTrace(trace *libpf.Trace, meta *samples.TraceEventMeta) []s
 				symbolAddress := uint64(frame.AddressOrLineno)
 
 				// Resolve basename to full path using PID
-				fullPath := resolveExecutablePath(int(meta.PID), baseName)
+				fullPath := ResolveExecutablePath(int(meta.PID), baseName)
 
 				// Try to resolve symbol from ELF using the address
-				debugInfo := fmt.Sprintf("addr=0x%x,start=0x%x",
-					frame.AddressOrLineno, frame.MappingStart)
-				symbol := lookupSymbol(fullPath, symbolAddress, debugInfo)
+				symbol := symbolizer.Symbolize(fullPath, symbolAddress)
 				if symbol != "" {
 					frameName = symbol
 				} else {

@@ -29,8 +29,7 @@ type Config struct {
 	outputFile   string
 	cudaLibPath  string
 	cpuOnly      bool
-	gpuOnly      bool
-	mergeMode    bool
+	gpuOnly      bool // Now means: use uprobes for CPU/GPU correlation
 	targetBinary string
 	targetArgs   []string
 }
@@ -59,7 +58,8 @@ func main() {
 
 	// Determine uprobes based on mode
 	var uprobes []string
-	if !cfg.gpuOnly {
+	if cfg.gpuOnly {
+		// GPU-only mode uses uprobes for CPU/GPU correlation
 		// Default to CUDA runtime library for kernel launch tracing
 		if cfg.cudaLibPath == "" {
 			cfg.cudaLibPath = findCudaLibrary()
@@ -73,7 +73,13 @@ func main() {
 		FullTimestamp: true,
 	})
 
-	log.Info("Starting GPU+CPU Performance Profiler...")
+	if cfg.cpuOnly {
+		log.Info("Starting CPU-only Performance Profiler...")
+	} else if cfg.gpuOnly {
+		log.Info("Starting GPU-only Performance Profiler (CPU/GPU correlation via uprobes)...")
+	} else {
+		log.Info("Starting Full CPU+GPU Performance Profiler (merged sampling)...")
+	}
 
 	// Create named pipe for CUPTI trace
 	var cuptiPipe string
@@ -107,8 +113,14 @@ func main() {
 		// NOTE: Target process will be started AFTER uprobes are attached (or immediately in GPU-only mode)
 	}
 
-	// Create correlator
-	correlator := NewTraceCorrelator(cuptiParser, 10.0, cfg.cpuOnly, cfg.gpuOnly)
+	// Create correlator (samplesPerSec=50 matches the CPU profiling frequency)
+	const samplesPerSec = 50
+	// Modes:
+	// - cpuOnly=true, gpuOnly=false: Only CPU sampling
+	// - cpuOnly=false, gpuOnly=true: CPU/GPU correlation via uprobes
+	// - cpuOnly=false, gpuOnly=false: Merged CPU sampling + GPU samples
+	mergeMode := !cfg.cpuOnly && !cfg.gpuOnly
+	correlator := NewTraceCorrelator(cuptiParser, 10.0, samplesPerSec, cfg.cpuOnly, cfg.gpuOnly, mergeMode)
 
 	// Create context with signal handling
 	ctx, cancel := signal.NotifyContext(context.Background(),
@@ -118,9 +130,15 @@ func main() {
 	var trc *tracer.Tracer
 	var reporter *SimpleReporter
 
-	// Only set up eBPF profiler if not GPU-only mode
-	if !cfg.gpuOnly {
-		log.Infof("Attaching uprobes to: %v", uprobes)
+	// Always set up eBPF profiler (for sampling or uprobes)
+	if true {
+		if len(uprobes) > 0 {
+			log.Infof("GPU-only mode: will attach uprobes to %v for CPU/GPU correlation", uprobes)
+		} else if mergeMode {
+			log.Info("Merged mode: using CPU sampling + GPU kernel sampling (no correlation)")
+		} else {
+			log.Info("CPU-only mode: using regular sampling (no GPU)")
+		}
 
 		// Initialize metrics (using noop meter)
 		metrics.Start(noop.Meter{})
@@ -154,7 +172,7 @@ func main() {
 			TraceReporter:          reporter,
 			Intervals:              intervals,
 			IncludeTracers:         includeTracers,
-			SamplesPerSecond:       20,
+			SamplesPerSecond:       50,
 			MapScaleFactor:         0,
 			FilterErrorFrames:      true,
 			KernelVersionCheck:     true,
@@ -189,12 +207,14 @@ func main() {
 			log.Fatalf("Failed to enable profiling: %v", err)
 		}
 
-		// Attach uprobes - This is the key part!
-		log.Info("Attaching uprobes...")
-		if err := trc.AttachUProbes(uprobes); err != nil {
-			log.Fatalf("Failed to attach uprobes: %v", err)
+		// Attach uprobes only in merged mode for correlation
+		if len(uprobes) > 0 {
+			log.Info("Attaching uprobes for CPU/GPU correlation...")
+			if err := trc.AttachUProbes(uprobes); err != nil {
+				log.Fatalf("Failed to attach uprobes: %v", err)
+			}
+			log.Info("Uprobes attached successfully!")
 		}
-		log.Info("Uprobes attached successfully!")
 
 		// Attach scheduler monitor
 		if err := trc.AttachSchedMonitor(); err != nil {
@@ -223,20 +243,26 @@ func main() {
 			}
 		}()
 
-		// NOW start the target process after uprobes are attached
-		if !cfg.gpuOnly {
-			log.Infof("Starting target binary: %s %v", cfg.targetBinary, cfg.targetArgs)
-			if cfg.cpuOnly {
-				targetCmd = exec.Command(cfg.targetBinary, cfg.targetArgs...)
-				targetCmd.Stdout = os.Stdout
-				targetCmd.Stderr = os.Stderr
-			} else {
-				targetCmd = startTargetWithCUPTI(cfg, cuptiPipe)
-			}
-			if err := targetCmd.Start(); err != nil {
-				log.Fatalf("Failed to start target process: %v", err)
-			}
-			log.Infof("Target process PID: %d", targetCmd.Process.Pid)
+		// Start the target process
+		log.Infof("Starting target binary: %s %v", cfg.targetBinary, cfg.targetArgs)
+		if cfg.cpuOnly {
+			// CPU-only: no CUPTI injection
+			targetCmd = exec.Command(cfg.targetBinary, cfg.targetArgs...)
+			targetCmd.Stdout = os.Stdout
+			targetCmd.Stderr = os.Stderr
+		} else {
+			// Merged mode: with CUPTI injection
+			targetCmd = startTargetWithCUPTI(cfg, cuptiPipe)
+		}
+		if err := targetCmd.Start(); err != nil {
+			log.Fatalf("Failed to start target process: %v", err)
+		}
+		log.Infof("Target process PID: %d", targetCmd.Process.Pid)
+
+		// In merge mode, set target PID for filtering
+		if mergeMode && reporter != nil {
+			reporter.SetTargetPID(targetCmd.Process.Pid)
+			log.Infof("Merge mode: filtering CPU samples for PID %d", targetCmd.Process.Pid)
 		}
 
 		log.Info("Profiler is running. Press Ctrl+C to stop...")
@@ -306,6 +332,9 @@ func main() {
 		log.Infof("Final stats - Total: %d, Uprobe: %d, Sampling: %d", total, uprobe, sampling)
 	}
 
+	// Close symbolizer
+	GetSymbolizer().Close()
+
 	// Correlate traces and write output
 	log.Info("Correlating CPU and GPU traces...")
 	if err := correlator.CorrelateTraces(); err != nil {
@@ -327,22 +356,25 @@ func parseFlags() *Config {
 	flag.StringVar(&cfg.cuptiLibPath, "cupti-lib", "", "Path to CUPTI trace injection library (uses embedded library if not specified)")
 	flag.StringVar(&cfg.outputFile, "o", "merged_trace.folded", "Output file for folded stack traces")
 	flag.StringVar(&cfg.cudaLibPath, "cuda-lib", "", "Path to CUDA runtime library (auto-detected if not specified)")
-	flag.BoolVar(&cfg.cpuOnly, "cpu-only", false, "Only collect CPU traces (no GPU profiling)")
-	flag.BoolVar(&cfg.gpuOnly, "gpu-only", false, "Only collect GPU traces (no CPU profiling)")
-	flag.BoolVar(&cfg.mergeMode, "merge", true, "Merge CPU and GPU traces (default: true)")
+	flag.BoolVar(&cfg.cpuOnly, "cpu-only", false, "Only collect CPU sampling traces (no GPU profiling)")
+	flag.BoolVar(&cfg.gpuOnly, "gpu-only", false, "Correlate CPU stacks with GPU kernels via uprobes")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] <target_binary> [args...]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "GPU+CPU Performance Profiler\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nModes:\n")
+		fmt.Fprintf(os.Stderr, "  Default: CPU sampling + GPU kernel samples merged (no correlation)\n")
+		fmt.Fprintf(os.Stderr, "  -cpu-only: Only CPU sampling traces (no GPU)\n")
+		fmt.Fprintf(os.Stderr, "  -gpu-only: CPU/GPU correlated stacks via uprobes at cudaLaunchKernel\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  # Profile both GPU and CPU, merge output\n")
+		fmt.Fprintf(os.Stderr, "  # Full CPU+GPU profiling (merged CPU sampling + GPU samples)\n")
 		fmt.Fprintf(os.Stderr, "  %s -o trace.folded ./my_cuda_app\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  # CPU only profiling\n")
+		fmt.Fprintf(os.Stderr, "  # CPU only sampling (no GPU)\n")
 		fmt.Fprintf(os.Stderr, "  %s -cpu-only -o cpu_trace.folded ./my_cuda_app\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  # GPU only profiling\n")
-		fmt.Fprintf(os.Stderr, "  %s -gpu-only -o gpu_trace.folded ./my_cuda_app\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  # CPU/GPU correlation (shows full call path to GPU kernels)\n")
+		fmt.Fprintf(os.Stderr, "  %s -gpu-only -o correlated_trace.folded ./my_cuda_app\n\n", os.Args[0])
 	}
 
 	flag.Parse()
