@@ -39,6 +39,12 @@ Enable via environment variables:
 - `CUPTI_ACTIVITY_KIND_MARKER`: NVTX markers
 - `CUPTI_ACTIVITY_KIND_MARKER_DATA`: NVTX marker data
 
+**CUDA Graph Tracking** (`CUPTI_ENABLE_GRAPH=1`):
+- Tracks graph node creation and cloning
+- Correlates graph nodes with the API calls that created them
+- Shows `graphId` and `graphNodeId` in kernel/memcpy records
+- Displays which API created each graph node (e.g., `cudaGraphAddKernelNode`)
+
 **PC Sampling** (`CUPTI_ENABLE_PC_SAMPLING=1`):
 - Requires additional configuration for kernel-level sampling
 
@@ -84,6 +90,7 @@ your_cuda_app.exe
 | `CUPTI_ENABLE_DRIVER` | Enable driver API tracing (0/1) | `0` |
 | `CUPTI_ENABLE_MEMORY` | Enable memory operation tracing (0/1) | `0` |
 | `CUPTI_ENABLE_NVTX` | Enable NVTX annotation tracing (0/1) | `0` |
+| `CUPTI_ENABLE_GRAPH` | Enable CUDA graph node tracking (0/1) | `0` |
 | `CUPTI_ENABLE_PC_SAMPLING` | Enable PC sampling (0/1) | `0` |
 
 ## Build
@@ -148,9 +155,11 @@ RUNTIME [ start_ns, end_ns ] duration ns, "cudaMemcpy", cbid N, processId N, thr
 
 ### Key Components
 
-- `cupti_trace_injection.cpp`: Main injection logic, callback handlers, activity selection
-- `helper_cupti_activity.h`: Activity buffer management, record printing, CUPTI initialization
-- `helper_cupti.h`: Error handling macros for CUPTI/CUDA APIs
+- `cupti_trace.cpp`: Main injection logic, callback handlers, activity selection, buffer management
+- `cupti_trace_print.h`: Activity record printing functions with CUDA graph support
+  - String conversion utilities for activity types, memory kinds, etc.
+  - Comprehensive PrintActivity function for all supported activity types
+  - Graph node tracking and correlation with API calls
 
 ## Example: CUDA Graph Tracing
 
@@ -172,11 +181,12 @@ env CUDA_INJECTION64_PATH=/path/to/libcupti_trace_injection.so \
     CUPTI_TRACE_OUTPUT_FILE=/tmp/cuda_graph_trace.txt \
     ./cuda_graph_simple
 
-# Enable all tracing features
+# Enable all tracing features including graph tracking
 env CUDA_INJECTION64_PATH=/path/to/libcupti_trace_injection.so \
     CUPTI_TRACE_OUTPUT_FILE=/tmp/cuda_graph_trace.txt \
     CUPTI_ENABLE_DRIVER=1 \
     CUPTI_ENABLE_MEMORY=1 \
+    CUPTI_ENABLE_GRAPH=1 \
     ./cuda_graph_simple 5 100000
 ```
 

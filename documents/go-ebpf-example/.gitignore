@@ -1,5 +1,6 @@
 # Binaries
 ebpf-demo
+example
 *.exe
 *.exe~
 *.dll

@@ -1,12 +1,14 @@
 # Go eBPF Uprobe Example
 
-A minimal example demonstrating how to write eBPF programs in Go using the Cilium eBPF library. This example uses a uprobe to monitor the `readline` function in bash.
+A minimal example demonstrating how to write eBPF programs in Go using the Cilium eBPF library. This example includes:
+- A simple C++ program with USDT probes
+- A Go eBPF program that attaches uprobes to monitor function calls
 
 ## What it does
 
-- Attaches a **uprobe** to the `readline` function in `/usr/bin/bash`
-- Tracks the number of readline calls per process ID
-- Displays real-time statistics every 2 seconds
+- **example.cpp**: A simple C++ program that runs in a loop, calling `add_numbers()` function with USDT probes
+- **counter.c**: eBPF program with uprobe handlers
+- **main.go**: Go program that attaches uprobes to the example program and monitors function calls
 
 ## Prerequisites
 
@@ -14,70 +16,75 @@ A minimal example demonstrating how to write eBPF programs in Go using the Ciliu
 - Go 1.19 or later
 - Root/sudo privileges (required for loading eBPF programs)
 - Clang/LLVM (for compiling eBPF C code)
+- systemtap-sdt-dev (for USDT probe support)
 - Kernel headers installed
 
 ### Install dependencies on Ubuntu/Debian:
 
 ```bash
-sudo apt-get install -y clang llvm libbpf-dev linux-headers-$(uname -r)
+sudo apt-get install -y clang llvm libbpf-dev linux-headers-$(uname -r) systemtap-sdt-dev g++
 ```
 
 ## Building
 
-1. Install Go dependencies:
+Use the provided Makefile:
+
 ```bash
-go mod tidy
+# Build everything (C++ example + Go eBPF program)
+make all
+
+# Or build separately
+make example  # Build C++ example program
+make ebpf     # Build Go eBPF program
 ```
 
-2. Generate eBPF code from C:
+Manual build:
 ```bash
+# Build the C++ example
+g++ -o example example.cpp
+
+# Build the Go eBPF program
 go generate
-```
-
-3. Build the program:
-```bash
-go build
-```
-
-Or do all steps at once:
-```bash
-go generate && go build
+go build -o ebpf-demo
 ```
 
 ## Running
 
-Run with sudo (eBPF programs require root privileges):
+**Terminal 1** - Run the example program:
+```bash
+./example
+```
 
+Output:
+```
+Starting example program with USDT probes...
+PID: 12345
+Running in a loop, press Ctrl+C to exit
+
+Iteration 1: add_numbers(1, 2) = 3
+Iteration 2: add_numbers(2, 4) = 6
+...
+```
+
+**Terminal 2** - Run the eBPF monitor (requires sudo):
 ```bash
 sudo ./ebpf-demo
 ```
 
-You should see output like:
+Output:
 ```
-Successfully attached uprobe to bash readline function
-Monitoring function calls per process...
-Open a bash shell and run commands to see activity
+Successfully attached uprobe to add_numbers function in ./example
+Monitoring function calls...
 Press Ctrl+C to exit
 
-=== Function Call Stats ===
+=== Uprobe Stats ===
+PID 12345: 10 calls
+
+=== USDT Stats ===
 No activity yet...
 ```
 
-## Testing
-
-To see the uprobe in action:
-
-1. Keep the program running in one terminal
-2. Open a new bash shell in another terminal
-3. Run some commands (each command triggers readline)
-4. Watch the first terminal display the PID and call counts
-
-Example output:
-```
-=== Function Call Stats ===
-PID 12345: 5 calls
-PID 67890: 3 calls
-```
+The uprobe successfully captures calls to the `add_numbers()` function!
 
 ## How it works
 
