@@ -38,9 +38,9 @@ type MergedTrace struct {
 type TraceCorrelator struct {
 	cpuTraces       []CPUStackTrace
 	gpuParser       *CUPTIParser
-	mergedStacks    map[string]int64 // folded stack -> sample count
+	mergedStacks    map[string]float64 // folded stack -> sample count (float to avoid rounding)
 	toleranceMs     float64
-	samplesPerSec   int              // CPU sampling frequency (Hz)
+	samplesPerSec   int                // CPU sampling frequency (Hz)
 	mu              sync.Mutex
 	cpuOnly         bool
 	gpuOnly         bool // Now means: use uprobes for correlation
@@ -52,7 +52,7 @@ func NewTraceCorrelator(gpuParser *CUPTIParser, toleranceMs float64, samplesPerS
 	return &TraceCorrelator{
 		cpuTraces:     make([]CPUStackTrace, 0),
 		gpuParser:     gpuParser,
-		mergedStacks:  make(map[string]int64),
+		mergedStacks:  make(map[string]float64),
 		toleranceMs:   toleranceMs,
 		samplesPerSec: samplesPerSec,
 		cpuOnly:       cpuOnly,
@@ -177,12 +177,10 @@ func (c *TraceCorrelator) correlateUprobesToGPU(cpuTraces []CPUStackTrace) error
 				merged := cpuTrace.Stack
 				merged = append(merged, fmt.Sprintf("[GPU_Kernel]%s", kernel.Name))
 				stackStr := strings.Join(merged, ";")
-				durationUs := (kernel.EndNs - kernel.StartNs) / 1000
-				// Convert GPU duration to sample count using CPU sampling frequency
-				samples := (durationUs * int64(c.samplesPerSec)) / 1000000
-				if samples < 1 {
-					samples = 1
-				}
+				// Convert GPU duration (nanoseconds) to sample count using CPU sampling frequency
+				// samples = (durationNs / 1e9) * samplesPerSec
+				durationNs := float64(kernel.EndNs - kernel.StartNs)
+				samples := durationNs * float64(c.samplesPerSec) / 1e9
 				c.mergedStacks[stackStr] += samples
 				matched++
 			} else {
@@ -219,12 +217,10 @@ func (c *TraceCorrelator) correlateUprobesToGPU(cpuTraces []CPUStackTrace) error
 					merged := cpuTrace.Stack
 					merged = append(merged, fmt.Sprintf("[GPU_Kernel]%s", kernel.Name))
 					stackStr := strings.Join(merged, ";")
-					durationUs := (kernel.EndNs - kernel.StartNs) / 1000
-					// Convert GPU duration to sample count using CPU sampling frequency
-					samples := (durationUs * int64(c.samplesPerSec)) / 1000000
-					if samples < 1 {
-						samples = 1
-					}
+					// Convert GPU duration (nanoseconds) to sample count using CPU sampling frequency
+					// samples = (durationNs / 1e9) * samplesPerSec
+					durationNs := float64(kernel.EndNs - kernel.StartNs)
+					samples := durationNs * float64(c.samplesPerSec) / 1e9
 					c.mergedStacks[stackStr] += samples
 					matched++
 					gpuIdx++
@@ -255,7 +251,7 @@ func (c *TraceCorrelator) WriteFoldedOutput(filename string) error {
 	// Sort stacks for consistent output
 	type stackEntry struct {
 		stack string
-		count int64
+		count float64
 	}
 	entries := make([]stackEntry, 0, len(c.mergedStacks))
 	for stack, count := range c.mergedStacks {
@@ -266,10 +262,14 @@ func (c *TraceCorrelator) WriteFoldedOutput(filename string) error {
 	})
 
 	// Write folded format: stack1;stack2;stack3 count
+	// Round float counts to integers for flamegraph compatibility
 	totalSamples := int64(0)
 	for _, entry := range entries {
-		fmt.Fprintf(file, "%s %d\n", entry.stack, entry.count)
-		totalSamples += entry.count
+		roundedCount := int64(entry.count + 0.5) // Round to nearest integer
+		if roundedCount > 0 {
+			fmt.Fprintf(file, "%s %d\n", entry.stack, roundedCount)
+			totalSamples += roundedCount
+		}
 	}
 
 	fmt.Printf("Wrote %d unique stacks (%d total samples) to %s\n", len(entries), totalSamples, filename)

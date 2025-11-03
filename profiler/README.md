@@ -1,35 +1,44 @@
 # GPU+CPU Performance Profiler
 
-A performance profiler that combines CUPTI GPU tracing with eBPF uprobe CPU profiling to generate unified flamegraphs showing complete CPU→GPU execution flows.
+A performance profiler that combines CUPTI GPU tracing with eBPF CPU profiling to generate unified flamegraphs showing complete CPU→GPU execution flows with accurate time attribution.
 
 ## Features
 
-- **Integrated CPU+GPU profiling**: Correlates CPU stack traces with GPU kernel executions
-- **CUPTI integration**: Uses named pipes to collect GPU kernel launches and memory events in real-time
-- **eBPF uprobes**: Captures CPU call stacks at `cudaLaunchKernel` invocation points
-- **Timestamp correlation**: Matches CPU and GPU events with configurable tolerance windows
 - **Three profiling modes**:
-  - **CPU-only**: Captures CPU stack traces without GPU overhead
-  - **GPU-only**: Records GPU kernel execution times
-  - **Merged** (default): Correlates and combines CPU+GPU traces
+  - **Default (Merge)**: CPU sampling + GPU kernels with CPU call stacks (shows both CPU activity and GPU causality)
+  - **GPU-only**: CPU→GPU causality via uprobes (shows which CPU code launched which GPU kernel)
+  - **CPU-only**: Pure CPU sampling without GPU overhead
+- **CUPTI integration**: Real-time GPU kernel launch and execution tracking via named pipes
+- **eBPF uprobes + sampling**: Captures CPU call stacks at `cudaLaunchKernel` and periodic sampling
+- **Accurate time attribution**: Converts GPU kernel duration to sample counts using CPU sampling frequency
+- **Symbol resolution**: Resolves function names from ELF symbol tables with C++ demangling
 - **Flamegraph-compatible output**: Generates folded stack format for visualization
 
 ## How It Works
 
-1. Creates a named pipe for CUPTI trace output
-2. Starts CUPTI parser in background to read GPU events (JSON format)
-3. Attaches eBPF uprobe to `cudaLaunchKernel` in CUDA runtime library
-4. Launches target CUDA application with CUPTI injection
-5. Correlates CPU stacks with GPU kernels using timestamps and correlation IDs
-6. Outputs merged stacks in folded format weighted by GPU kernel duration
+### Default (Merge) Mode
+1. Attaches eBPF uprobe to `cudaLaunchKernel` to capture kernel launch call stacks
+2. Enables eBPF-based CPU sampling at 50 Hz to capture CPU activity
+3. Creates named pipe for CUPTI to output GPU kernel execution events (JSON format)
+4. Starts target CUDA application with CUPTI injection library
+5. Correlates uprobes with GPU kernels using correlation IDs and timestamps
+6. Converts GPU kernel durations to equivalent sample counts: `samples = (durationNs * samplesPerSec) / 1e9`
+7. Outputs merged stacks: CPU sampling (pure) + GPU kernels with CPU context (causality)
+
+### GPU-only Mode
+- Only collects uprobes at `cudaLaunchKernel` (no CPU sampling)
+- Shows full CPU call path leading to each GPU kernel launch
+- Sample counts represent GPU kernel execution time
+
+### CPU-only Mode
+- Only collects CPU sampling traces
+- No GPU overhead, no CUPTI injection
 
 ## Building
 
-The profiler uses a Makefile to build both the CUPTI library and the Go profiler binary with the embedded CUPTI library:
-
 ```bash
 cd /home/yunwei37/workspace/xpu-perf/profiler
-make        # Build everything (CUPTI library + profiler)
+make        # Build everything (CUPTI library + profiler with embedded library)
 ```
 
 Available Makefile targets:
@@ -43,17 +52,17 @@ Available Makefile targets:
 ## Usage
 
 ```bash
-# Full CPU+GPU profiling (default mode)
-sudo ./xpu-perf -o merged_trace.folded ./my_cuda_app [args...]
+# Default: Merge CPU sampling + GPU kernels with call stacks
+sudo ./profile -o merged_trace.folded ./my_cuda_app [args...]
 
-# GPU-only profiling
-sudo ./xpu-perf -gpu-only -o gpu_trace.folded ./my_cuda_app [args...]
+# GPU-only: CPU→GPU causality (shows which CPU code launched kernels)
+sudo ./profile -gpu-only -o gpu_trace.folded ./my_cuda_app [args...]
 
-# CPU-only profiling
-sudo ./xpu-perf -cpu-only -o cpu_trace.folded ./my_cuda_app [args...]
+# CPU-only: Pure CPU sampling
+sudo ./profile -cpu-only -o cpu_trace.folded ./my_cuda_app [args...]
 
 # Custom CUDA library path
-sudo ./xpu-perf -cuda-lib /usr/local/cuda/lib64/libcudart.so.12 -o trace.folded ./app
+sudo ./profile -cuda-lib /usr/local/cuda-12.9/lib64/libcudart.so.12 -o trace.folded ./app
 
 # Generate flamegraph
 flamegraph.pl merged_trace.folded > flamegraph.svg
@@ -72,60 +81,81 @@ flamegraph.pl merged_trace.folded > flamegraph.svg
     Path to CUDA runtime library (auto-detected if not specified)
 
 -cpu-only
-    Only collect CPU traces (no GPU profiling)
+    Only collect CPU sampling traces (no GPU)
 
 -gpu-only
-    Only collect GPU traces (no CPU profiling)
-
--merge
-    Merge CPU and GPU traces (default: true)
+    CPU→GPU causality via uprobes (shows which CPU code launched which GPU kernel)
 ```
 
 ## Output Format
 
-The profiler generates folded stack traces compatible with flamegraph.pl:
+The profiler generates folded stack traces compatible with flamegraph.pl. Sample counts are scaled to match CPU sampling frequency (50 Hz).
 
 ### CPU-only mode
 ```
-libcudart.so.12+0x7ce80;app+0x4d05;app+0x472c;libc.so.6+0x2a1c9 3781
+main;InferencePipeline::runRequest;TokenEmbedding::embed 42
+main;InferencePipeline::runRequest;TransformerLayer::forward 156
 ```
+Sample count = number of times this stack was captured during sampling
 
 ### GPU-only mode
 ```
-[GPU_Kernel]_Z13softmaxKernelPKfPfmm 2616491
-[GPU_Kernel]_Z15layerNormKernelPKfPfS0_S0_mmm 621123
+main;InferencePipeline::runRequest;TransformerLayer::forward;cudaLaunchKernel;[GPU_Kernel]_Z13softmaxKernelPKfPfmm 181
+main;InferencePipeline::runRequest;TransformerLayer::forward;cudaLaunchKernel;[GPU_Kernel]_Z15layerNormKernelPKfPfS0_S0_mmm 52
 ```
+Sample count = GPU kernel duration converted to samples at 50 Hz (e.g., 181 samples = 3.62 seconds GPU time)
 
-### Merged CPU+GPU mode
+### Default (Merge) mode
 ```
-libcudart.so.12+0x7ce80;app+0x4d05;app+0x472c;libc.so.6+0x2a1c9;[GPU_Kernel]_Z13softmaxKernelPKfPfmm 2543061
-libcudart.so.12+0x7ce80;app+0x4d05;app+0x4929;libc.so.6+0x2a1c9;[GPU_Kernel]_Z15layerNormKernelPKfPfS0_S0_mmm 244659
-```
+# CPU sampling stacks (no GPU kernel)
+main;InferencePipeline::runRequest;TokenEmbedding::embed 42
+main;cudaSetDevice;cuDevicePrimaryCtxRetain 15
 
-The numbers at the end represent:
-- **CPU-only**: Sample count (number of times this stack was captured)
-- **GPU-only**: Total GPU kernel duration in microseconds
-- **Merged**: Total GPU kernel duration in microseconds for this CPU→GPU call path
+# GPU kernel stacks (with CPU context from uprobe)
+main;InferencePipeline::runRequest;TransformerLayer::forward;cudaLaunchKernel;[GPU_Kernel]_Z13softmaxKernelPKfPfmm 181
+main;InferencePipeline::runRequest;TransformerLayer::forward;cudaLaunchKernel;[GPU_Kernel]_Z15layerNormKernelPKfPfS0_S0_mmm 52
+```
+Shows both CPU activity and GPU execution with proper time attribution
 
 ## Example
 
 ```bash
-# Profile an LLM inference workload
-sudo ./xpu-perf -o llm_profile.folded ./llm-inference
+# Profile an LLM inference workload (10 seconds)
+sudo ./profile -o llm_profile.folded ./llm-inference
 
 # Output:
-# Final stats - Total: 5580, Uprobe: 5372, Sampling: 208
-# Correlation complete: matched=5372, unmatched=0
-# Wrote 8 unique stacks (3358594 total samples) to llm_profile.folded
+# Final stats - Total: 8529, Uprobe: 7728, Sampling: 801
+# Correlation complete: matched=7728, unmatched=0
+# Wrote 184 unique stacks (769 total samples) to llm_profile.folded
+
+# Analysis:
+# - 769 samples over ~10 seconds at 50 Hz ≈ expected
+# - GPU samples: 243 (31.6% of time)
+# - CPU samples: 526 (68.4% of time)
 
 # Generate flamegraph
 flamegraph.pl llm_profile.folded > llm_flamegraph.svg
 ```
 
+## Sample Count Calculation
+
+GPU kernel durations are converted to sample counts to match CPU sampling frequency:
+
+```
+samples = (kernel_duration_ns * samplesPerSec) / 1e9
+```
+
+Example:
+- Kernel duration: 36.2 ms = 36,200,000 ns
+- Sampling rate: 50 Hz
+- Samples: (36,200,000 * 50) / 1,000,000,000 = 1.81 samples ≈ 2 samples
+
+This ensures the flamegraph correctly shows time proportions between CPU and GPU work.
+
 ## Requirements
 
 - Root privileges (for eBPF and uprobes)
-- CUDA Toolkit installed (for building the CUPTI library)
+- CUDA Toolkit installed (for building CUPTI library)
 - Linux kernel with eBPF support (kernel 5.10+)
 - Go 1.19+ (for building the profiler)
 - Make (for build automation)
@@ -136,45 +166,64 @@ flamegraph.pl llm_profile.folded > llm_flamegraph.svg
 
 ### Components
 
-1. **main.go**: Orchestrates the profiler, manages target process lifecycle
+1. **main.go**: Orchestrates profiler, manages target process lifecycle
 2. **cupti_parser.go**: Parses JSON-formatted CUPTI trace events from named pipe
-3. **correlation.go**: Correlates CPU stacks with GPU kernels using timestamp matching
-4. **simple_reporter.go**: Implements TraceReporter interface to capture uprobe events
+3. **correlation.go**: Correlates CPU stacks with GPU kernels; converts GPU time to samples
+4. **symbolizer.go**: Resolves symbols from ELF files with C++ demangling
+5. **simple_reporter.go**: Implements TraceReporter interface to capture traces
 
 ### Correlation Strategy
 
-The profiler uses a two-step correlation:
+**Merge mode:**
+1. Separates uprobe traces (kernel launches) from CPU sampling traces
+2. Matches uprobes with GPU kernels using correlation IDs (1:1 or time-based)
+3. Converts each kernel's duration to sample count: `samples = durationNs * 50 / 1e9`
+4. Accumulates samples per unique stack using `float64` to avoid rounding errors
+5. Rounds to integers only when writing final output
 
-1. **Correlation ID matching**: CUPTI provides correlation IDs linking runtime API calls to kernel executions
-2. **Timestamp matching**: Matches CPU uprobe events (nanosecond timestamps) with GPU runtime API calls
+**GPU-only mode:**
+- Sequential or time-based matching of uprobes to GPU kernels
+- Sample count represents total GPU execution time for that call path
 
-If CPU and GPU event counts match, sequential 1:1 matching is used. Otherwise, time-based matching with a configurable tolerance window (default 10ms) is applied.
+### Symbol Resolution
+
+1. Parses ELF symbol tables (`.symtab` preferred over `.dynsym`)
+2. Calculates file offset: `fileOffset = runtimeAddress - mappingStart` (for PIE executables)
+3. Looks up symbol by file offset using binary search
+4. Demangles C++ symbols using `github.com/ianlancetaylor/demangle`
 
 ## Limitations
 
-- Requires longer-running applications for reliable uprobe capture (>1 second)
-- Very short CUDA applications may complete before uprobes fully attach
-- Stack symbol resolution limited to available symbols and file+offset information
+- Requires root privileges for eBPF
+- Symbol resolution requires unstripped binaries or dynamic symbols
 - CUPTI overhead typically <5% for most workloads
+- Very short applications (<1 second) may not capture enough samples
 
 ## Troubleshooting
 
 **No CPU traces captured:**
-- Ensure target application runs long enough for uprobes to attach (add delay if needed)
-- Verify CUDA library path is correct (`ldd ./your_app | grep cudart`)
-- Check that `cudaLaunchKernel` symbol exists (`nm -D /path/to/libcudart.so.12 | grep LaunchKernel`)
+- Ensure target application runs long enough for uprobes to attach
+- Verify CUDA library path: `ldd ./your_app | grep cudart`
+- Check uprobe symbol exists: `nm -D /path/to/libcudart.so.12 | grep LaunchKernel`
 
 **No GPU traces captured:**
-- Verify CUPTI injection library path is correct
-- Check that target application is using CUDA
-- Ensure CUPTI_TRACE_OUTPUT_FILE environment variable is being set
+- Verify target application uses CUDA
+- Check CUPTI pipe was created: `ls -l /tmp/cupti_trace_*.pipe`
+- Ensure CUPTI library loaded: check app output for "CUPTI trace injection"
 
-**Correlation errors:**
-- Increase tolerance window in correlation.go if timestamps are misaligned
-- Check clock synchronization between CPU and GPU timers
+**Symbols not resolved:**
+- Verify binary is not fully stripped: `file ./your_app` (should show "not stripped")
+- For PIE executables, ensure proper address calculation in symbolizer.go
+- Check symbol table exists: `nm ./your_app | wc -l` (should show >0)
+
+**Sample counts seem wrong:**
+- Verify GPU kernel durations in CUPTI trace are in nanoseconds
+- Check sampling frequency matches: default is 50 Hz
+- Ensure float64 arithmetic is used (no premature rounding)
 
 ## References
 
 - [CUPTI Documentation](https://docs.nvidia.com/cupti/)
-- [eBPF Profiler](https://github.com/elastic/otel-profiling-agent)
+- [OpenTelemetry eBPF Profiler](https://github.com/open-telemetry/opentelemetry-ebpf-profiler)
 - [Flamegraph](https://github.com/brendangregg/FlameGraph)
+- [ELF Symbol Tables](https://refspecs.linuxfoundation.org/elf/elf.pdf)

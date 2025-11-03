@@ -1,178 +1,129 @@
-# xpu-perf: eBPF Wall Clock Profiler for CPU & GPU
+# xpu-perf: eBPF Performance Profiler for CPU & GPU
 
-A wall-clock profiler that combines on-CPU, off-CPU, and GPU profiling to provide complete visibility into application performance. Built using eBPF technology for zero-instrumentation profiling with minimal overhead.
+A performance profiler that combines eBPF CPU tracing with CUPTI GPU monitoring to provide complete visibility into CUDA application performance. Built using eBPF technology for zero-instrumentation profiling with minimal overhead.
 
 **WIP， not finished yet!!!**
 
 ## Features
 
-- **Combined Wall-Clock Profiling**: Simultaneously tracks both on-CPU execution time and off-CPU blocking time
-- **Multi-threaded Support**: Automatically detects and profiles multi-threaded applications with per-thread analysis
-- **Visual Flamegraphs**: Generates interactive SVG flamegraphs with color-coded on-CPU (red) and off-CPU (blue) frames
-- **Low Overhead**: Less than 1% CPU overhead using eBPF-based profiling
+- **GPU+CPU Unified Profiling**: Three modes - merge (CPU+GPU), GPU-only causality, CPU-only sampling
+- **eBPF-based Tracing**: Uprobes and CPU sampling for complete execution visibility
+- **CUPTI Integration**: Real-time GPU kernel tracking with accurate timing
+- **Symbol Resolution**: Automatic function name resolution with C++ demangling
+- **Visual Flamegraphs**: Generates interactive SVG flamegraphs showing CPU→GPU causality
+- **Low Overhead**: < 1% CPU overhead, < 5% GPU overhead using eBPF profiling
 - **Zero Instrumentation**: No modifications needed to target applications
 
 ## Examples
 
-Wall-clock profiler:
-
-![flamegraph](./cpu-tools/tests/example.svg)
-
 CPU & GPU mixed profiling:
 
-![flamegraph](./gpu-tools/test/merged_flamegraph.svg)
+![flamegraph](./documents/examples/mock-cpu-gpu_flamegraph.svg)
+
+GPU only causality profiling:
+
+![gpu_only_flamegraph](./documents/examples/mock-gpu-only.svg)
 
 ## Quick Start
 
 ### Prerequisites
 
-- Linux kernel 4.9+ with eBPF support
-- Python 3.6+
+- Linux kernel 5.10+ with eBPF support
+- Go 1.19+ (for building the profiler)
+- CUDA Toolkit (for GPU profiling)
 - Root privileges (for eBPF)
+- Perl (for flamegraph generation)
 
 ### Installation
 
 ```bash
-# Install dependencies and build tools
-make install
+# Install dependencies
+sudo apt-get install -y libelf1 libelf-dev zlib1g-dev make clang llvm git perl golang-go
 
-# Or manually install dependencies
-sudo apt-get install -y libelf1 libelf-dev zlib1g-dev make clang llvm python3 git perl
+# Build the profiler
+cd profiler && make
 ```
 
 ### Basic Usage
 
 ```bash
-sudo python3 cpu-tools/wallclock_profiler.py 1234 -d 30 -f 49 -m 1000
+# Profile a CUDA application (merge mode: CPU + GPU)
+sudo ./profiler/xpu-perf -o output.folded ./your_cuda_app
+
+# Generate flamegraph
+flamegraph.pl output.folded > output.svg
 ```
-
-## Command-Line Options
-
-```
-Usage: python3 cpu-tools/wallclock_profiler.py <PID> [OPTIONS]
-
-Arguments:
-  PID                   Process ID to profile
-
-Options:
-  -d, --duration        Profiling duration in seconds (default: 30)
-  -f, --frequency       On-CPU sampling frequency in Hz (default: 49)
-  -m, --min-block-us    Minimum off-CPU block time in microseconds (default: 1000)
-  -o, --output          Output file prefix (default: combined_profile_pid<PID>_<timestamp>)
-```
-
-## Output Files
-
-The profiler generates several output files:
-
-### Single-threaded Applications
-- `combined_profile_pid<PID>_<timestamp>.svg` - Interactive flamegraph
-- `combined_profile_pid<PID>_<timestamp>.folded` - Folded stack format data
-- `combined_profile_pid<PID>_<timestamp>_single_thread_analysis.txt` - Time analysis report
-
-### Multi-threaded Applications
-- `multithread_combined_profile_pid<PID>_<timestamp>/` - Directory containing:
-  - `thread_<TID>_<role>.svg` - Per-thread flamegraph
-  - `thread_<TID>_<role>.folded` - Per-thread folded data
-  - `thread_<TID>_<role>_analysis.txt` - Per-thread analysis
-  - `<base>_thread_analysis.txt` - Overall thread analysis summary
 
 ## Understanding the Flamegraphs
 
-- **Red frames (_[c])**: On-CPU execution time - shows where CPU cycles are spent
-- **Blue frames (_[o])**: Off-CPU blocking time - shows I/O wait, sleep, locks, etc.
+- **CPU stacks**: Show where CPU time is spent during execution
+- **GPU kernel stacks**: Show GPU execution with CPU call context
 - **Width**: Represents relative time spent in each function
 - **Height**: Shows call stack depth
 - **Interactive**: Click on frames to zoom, search for functions
 
+## GPU+CPU Profiling
 
-
-
-
-
-## GPU Profiling
-
-For CUDA applications, use the CUPTI trace tools:
+For CUDA applications, use the integrated profiler with three modes:
 
 ```bash
-# Build CUPTI library
-cd gpu-tools/cupti_trace && make
+# Build the profiler
+cd profiler && make
 
-# Profile a CUDA application
-python3 gpuperf.py ./your_cuda_app
+# Default (Merge): CPU sampling + GPU kernels with call stacks
+sudo ./xpu-perf -o merged_trace.folded ./your_cuda_app
 
-# Combined CPU+GPU profiling
-python3 gpuperf.py --cpu ./your_cuda_app
+# GPU-only: CPU→GPU causality (shows which CPU code launched kernels)
+sudo ./xpu-perf -gpu-only -o gpu_trace.folded ./your_cuda_app
+
+# CPU-only: Pure CPU sampling without GPU overhead
+sudo ./xpu-perf -cpu-only -o cpu_trace.folded ./your_cuda_app
+
+# Generate flamegraph
+flamegraph.pl merged_trace.folded > flamegraph.svg
 
 # View detailed documentation
-cat gpu-tools/cupti_trace/README.md
+cat profiler/README.md
 ```
 
 
 ## Architecture
 
-The wall clock profiler combines two eBPF-based tools:
+The profiler combines eBPF-based tracing with CUPTI GPU monitoring:
 
-1. **oncputime**: Samples on-CPU execution using perf events
-   - Captures stack traces at specified frequency
-   - Tracks actual CPU consumption
+1. **eBPF uprobes**: Captures CPU call stacks at `cudaLaunchKernel`
+   - Tracks which CPU code launches GPU kernels
+   - Provides CPU→GPU causality chain
 
-2. **offcputime**: Tracks off-CPU blocking events
-   - Records when threads block and for how long
-   - Captures blocking reasons (I/O, locks, sleep)
+2. **eBPF CPU sampling**: Periodic stack trace sampling at 50 Hz
+   - Captures CPU execution activity
+   - Low overhead profiling
 
-3. **wallclock_profiler.py**: Orchestrates profiling
-   - Runs both tools simultaneously
-   - Normalizes and combines results
-   - Generates unified flamegraphs
-   - Handles multi-threaded applications
+3. **CUPTI integration**: Real-time GPU kernel tracking
+   - Monitors GPU kernel launches and execution
+   - Provides accurate GPU timing via named pipes
+   - JSON-formatted event stream
+
+4. **Correlation engine**: Matches CPU stacks with GPU kernels
+   - Uses correlation IDs and timestamps
+   - Converts GPU duration to sample counts
+   - Generates unified folded stack output
 
 ## Performance Considerations
 
-- **Sampling Frequency**: Default 49 Hz balances overhead vs accuracy
-  - Increase for short-lived events (up to 999 Hz)
-  - Decrease for long-running production profiling
+- **Sampling Frequency**: Default 50 Hz for CPU sampling
+  - Balanced overhead vs accuracy
+  - GPU time converted to equivalent samples
 
-- **Min Block Time**: Default 1000 μs (1ms) filters short blocks
-  - Increase to reduce data volume
-  - Decrease to catch micro-contentions
+- **Overhead**:
+  - CPU sampling: < 1% overhead
+  - CUPTI tracing: < 5% overhead for most workloads
+  - Zero instrumentation required
 
-- **Overhead**: Typically < 1% CPU at default settings
-  - Scales with sampling frequency and stack depth
-
-
-### Low Coverage Warning
-This indicates the process was mostly idle during profiling. Try:
-- Increasing duration
-- Profiling during active workload
-- Checking if the process is actually running
-
-## Building from Source
-
-The profiling tools (oncputime and offcputime) need to be built:
-
-```bash
-# Build the eBPF tools
-cd cpu-tools
-make
-
-# Or use the main Makefile
-make install
-```
-
-## Time Analysis
-
-The profiler provides detailed time accounting:
-
-- **On-CPU Time**: Actual CPU execution time (samples / frequency)
-- **Off-CPU Time**: Blocking time from offcputime tool
-- **Total Time**: Sum of on-CPU and off-CPU
-- **Wall Clock Coverage**: Percentage of profiling duration covered
-
-Coverage interpretation:
-- < 50%: Process mostly idle or sleeping
-- 50-100%: Normal active process
-- \> 100%: Multi-threaded or measurement overlap
+- **Profiling modes**:
+  - Merge mode: Best for understanding complete CPU+GPU workflow
+  - GPU-only: Minimal overhead, shows GPU causality
+  - CPU-only: No GPU overhead, pure CPU profiling
 
 ## License
 
