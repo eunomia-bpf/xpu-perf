@@ -1,0 +1,29 @@
+# Binaries
+ebpf-demo
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Generated eBPF files
+*_bpfel.go
+*_bpfel.o
+*_bpfeb.go
+*_bpfeb.o
+
+# Go workspace file
+go.work
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

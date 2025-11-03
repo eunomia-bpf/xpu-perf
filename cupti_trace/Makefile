@@ -62,10 +62,10 @@ ifneq ($(TARGET_ARCH), $(HOST_ARCH))
     endif
 endif
 
-all: cupti_trace_injection
+all: cupti_trace
 
-cupti_trace_injection: cupti_trace_injection.cpp
+cupti_trace: cupti_trace.cpp
 	$(NVCC) $(NVCC_COMPILER) $(NVCCFLAGS) $(INCLUDES) -o $(LIBNAME) -shared $< $(LIBS) --no-device-link
 
 clean:
-	rm -f $(LIBNAME) cupti_trace_injection.o *.o *.bak
+	rm -f $(LIBNAME) *.o *.bak

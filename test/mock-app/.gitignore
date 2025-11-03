@@ -2,3 +2,4 @@ llm-inference
 *.o
 *.bak
 vectorAdd
+cuda_graph_simple
