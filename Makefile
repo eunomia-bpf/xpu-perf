@@ -1,27 +1,15 @@
-.PHONY: all run clean install deps flamegraph
+.PHONY: all build clean install deps test help
 
-PID ?= 
-DURATION ?= 30
-FREQ ?= 49
-MIN_BLOCK ?= 1000
+all: build
 
-all: install run
+build:
+	@echo "Building xpu-perf profiler..."
+	$(MAKE) -C profiler
+	@echo "Build complete: profiler/xpu-perf"
 
-run:
-	@if [ -z "$(PID)" ]; then \
-		echo "Error: Please specify PID=<process_id>"; \
-		echo "Usage: make run PID=1234 [DURATION=30] [FREQ=49] [MIN_BLOCK=1000]"; \
-		exit 1; \
-	fi
-	@echo "Starting wall-clock profiling for PID $(PID)..."
-	sudo python3 cpu-tools/wallclock_profiler.py $(PID) -d $(DURATION) -f $(FREQ) -m $(MIN_BLOCK)
-
-install: deps
-	@echo "Checking for required tools..."
-	@if [ ! -f cpu-tools/oncputime ] || [ ! -f cpu-tools/offcputime ]; then \
-		echo "Building profiling tools..."; \
-		$(MAKE) -C cpu-tools; \
-	fi
+install: deps build
+	@echo "Installing xpu-perf to /usr/local/bin..."
+	sudo $(MAKE) -C profiler install
 	@echo "Installation complete."
 
 deps:
@@ -29,15 +17,29 @@ deps:
 	sudo apt update
 	sudo apt-get install -y --no-install-recommends \
 		libelf1 libelf-dev zlib1g-dev \
-		make clang llvm python3 python3-pip git perl
+		make clang llvm git perl golang-go
 
-flamegraph:
-	@if [ ! -d cpu-tools/FlameGraph ]; then \
-		echo "Cloning FlameGraph tools..."; \
-		git clone https://github.com/brendangregg/FlameGraph.git cpu-tools/FlameGraph --depth=1; \
-	fi
+test: build
+	@echo "Running profiler tests..."
+	$(MAKE) -C profiler test
 
 clean:
-	rm -rf build
-	rm -f combined_profile_*.folded combined_profile_*.svg
-	rm -rf multithread_combined_profile_*
+	@echo "Cleaning build artifacts..."
+	$(MAKE) -C profiler clean
+	$(MAKE) -C cupti_trace clean
+	@echo "Clean complete."
+
+help:
+	@echo "XPU Performance Profiler - Main Makefile"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  make           - Build the profiler"
+	@echo "  make build     - Build the profiler"
+	@echo "  make install   - Install dependencies and profiler to /usr/local/bin"
+	@echo "  make deps      - Install system dependencies"
+	@echo "  make test      - Run profiler tests"
+	@echo "  make clean     - Clean all build artifacts"
+	@echo "  make help      - Show this help message"
+	@echo ""
+	@echo "Usage example:"
+	@echo "  make && sudo ./profiler/xpu-perf -o trace.folded ./my_cuda_app"

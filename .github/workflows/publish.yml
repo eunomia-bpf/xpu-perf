@@ -49,21 +49,26 @@ jobs:
           
           return tag ? tag.name : increase_v(latest_release_tag)
 
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
     - name: install deps
       run: |
         sudo apt-get install -y --no-install-recommends \
         libelf1 libelf-dev zlib1g-dev libclang-dev \
-        make git clang llvm pkg-config build-essential
+        make git clang llvm pkg-config build-essential perl
 
     - name: build package
-      run:  make build
+      run: cd profiler && make
 
     - name: Publish
       if:   github.event_name == 'push' && github.ref == 'refs/heads/master'
       uses: softprops/action-gh-release@v1
       with:
           files: |
-            src/bootstrap
+            profiler/xpu-perf
           prerelease: false
           tag_name: ${{ steps.set_version.outputs.result }}
           generate_release_notes: true

@@ -16,6 +16,11 @@ jobs:
         with:
           submodules: 'recursive'
 
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
       - name: install deps
         run: |
           sudo apt-get install -y --no-install-recommends \
@@ -23,7 +28,7 @@ jobs:
           make git clang llvm pkg-config build-essential
 
       - name: build package
-        run:  make build
+        run: cd profiler && make
 
       # setup Docker buld action
       - name: Set up Docker Buildx
