@@ -263,9 +263,16 @@ func (c *TraceCorrelator) WriteFoldedOutput(filename string) error {
 
 	// Write folded format: stack1;stack2;stack3 count
 	// Round float counts to integers for flamegraph compatibility
+	// Ensure entries with any samples (even fractional) appear with at least 1 count
 	totalSamples := int64(0)
 	for _, entry := range entries {
-		roundedCount := int64(entry.count + 0.5) // Round to nearest integer
+		var roundedCount int64
+		if entry.count > 0 {
+			roundedCount = int64(entry.count + 0.5) // Round to nearest integer
+			if roundedCount == 0 {
+				roundedCount = 1 // Ensure at least 1 if any samples were recorded
+			}
+		}
 		if roundedCount > 0 {
 			fmt.Fprintf(file, "%s %d\n", entry.stack, roundedCount)
 			totalSamples += roundedCount
