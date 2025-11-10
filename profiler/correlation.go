@@ -45,10 +45,11 @@ type TraceCorrelator struct {
 	cpuOnly         bool
 	gpuOnly         bool // Now means: use uprobes for correlation
 	mergeMode       bool // Merge CPU sampling + GPU samples
+	debugDir        string // Directory to save debug output files
 }
 
 // NewTraceCorrelator creates a new trace correlator
-func NewTraceCorrelator(gpuParser *CUPTIParser, toleranceMs float64, samplesPerSec int, cpuOnly, gpuOnly, mergeMode bool) *TraceCorrelator {
+func NewTraceCorrelator(gpuParser *CUPTIParser, toleranceMs float64, samplesPerSec int, cpuOnly, gpuOnly, mergeMode bool, debugDir string) *TraceCorrelator {
 	return &TraceCorrelator{
 		cpuTraces:     make([]CPUStackTrace, 0),
 		gpuParser:     gpuParser,
@@ -58,6 +59,7 @@ func NewTraceCorrelator(gpuParser *CUPTIParser, toleranceMs float64, samplesPerS
 		cpuOnly:       cpuOnly,
 		gpuOnly:       gpuOnly,
 		mergeMode:     mergeMode,
+		debugDir:      debugDir,
 	}
 }
 
@@ -81,6 +83,13 @@ func (c *TraceCorrelator) AddCPUTrace(timestamp int64, pid, tid, cpu int, comm s
 func (c *TraceCorrelator) CorrelateTraces() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// Save debug output if requested
+	if c.debugDir != "" {
+		if err := c.writeDebugOutput(); err != nil {
+			fmt.Printf("Warning: Failed to write debug output: %v\n", err)
+		}
+	}
 
 	// CPU-only mode: just output CPU stacks with sample count
 	if c.cpuOnly {

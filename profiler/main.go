@@ -32,6 +32,7 @@ type Config struct {
 	gpuOnly      bool // Now means: use uprobes for CPU/GPU correlation
 	targetBinary string
 	targetArgs   []string
+	debugDir     string // Directory to save debug output files
 }
 
 func main() {
@@ -62,9 +63,14 @@ func main() {
 		// GPU-only and merge mode use uprobes for CPU/GPU correlation
 		// Default to CUDA runtime library for kernel launch tracing
 		if cfg.cudaLibPath == "" {
-			cfg.cudaLibPath = findCudaLibrary()
+			// Try to detect CUDA library from target binary first
+			cfg.cudaLibPath = detectCudaLibraryFromBinary(cfg.targetBinary)
+			if cfg.cudaLibPath == "" {
+				cfg.cudaLibPath = findCudaLibrary()
+			}
 		}
-		uprobes = []string{cfg.cudaLibPath + ":cudaLaunchKernel"}
+		// Attach to CUDA launch kernel symbols actually used by the target binary
+		uprobes = buildUprobeList(cfg.cudaLibPath, cfg.targetBinary)
 	}
 
 	// Set up logging
@@ -120,7 +126,7 @@ func main() {
 	// - cpuOnly=false, gpuOnly=true: CPU/GPU correlation via uprobes
 	// - cpuOnly=false, gpuOnly=false: Merged CPU sampling + GPU samples
 	mergeMode := !cfg.cpuOnly && !cfg.gpuOnly
-	correlator := NewTraceCorrelator(cuptiParser, 10.0, samplesPerSec, cfg.cpuOnly, cfg.gpuOnly, mergeMode)
+	correlator := NewTraceCorrelator(cuptiParser, 10.0, samplesPerSec, cfg.cpuOnly, cfg.gpuOnly, mergeMode, cfg.debugDir)
 
 	// Create context with signal handling
 	ctx, cancel := signal.NotifyContext(context.Background(),
@@ -133,7 +139,10 @@ func main() {
 	// Always set up eBPF profiler (for sampling or uprobes)
 	if true {
 		if len(uprobes) > 0 {
-			log.Infof("GPU-only mode: will attach uprobes to %v for CPU/GPU correlation", uprobes)
+			log.Infof("Will attach %d uprobes for CPU/GPU correlation:", len(uprobes))
+			for _, probe := range uprobes {
+				log.Infof("  - %s", probe)
+			}
 		} else if mergeMode {
 			log.Info("Merged mode: using CPU sampling + GPU kernel sampling (no correlation)")
 		} else {
@@ -176,8 +185,8 @@ func main() {
 			MapScaleFactor:         0,
 			FilterErrorFrames:      true,
 			KernelVersionCheck:     true,
-			VerboseMode:            false,
-			BPFVerifierLogLevel:    0,
+			VerboseMode:            true, // Enable verbose mode for debugging
+			BPFVerifierLogLevel:    1,   // Enable BPF verifier logs
 			ProbabilisticInterval:  1 * time.Minute,
 			ProbabilisticThreshold: 100,
 			OffCPUThreshold:        0,
@@ -185,6 +194,9 @@ func main() {
 			UProbeLinks:            uprobes,
 			LoadProbe:              true, // Important: must be true for uprobes
 		}
+
+		log.Infof("Tracer config: VerboseMode=%v BPFVerifierLogLevel=%d UProbeLinks=%d",
+			tracerCfg.VerboseMode, tracerCfg.BPFVerifierLogLevel, len(tracerCfg.UProbeLinks))
 
 		// Create and load the eBPF tracer
 		log.Info("Loading eBPF tracer...")
@@ -209,11 +221,17 @@ func main() {
 
 		// Attach uprobes only in merged mode for correlation
 		if len(uprobes) > 0 {
-			log.Info("Attaching uprobes for CPU/GPU correlation...")
+			log.Infof("Attaching %d uprobes globally (will trigger on any process using CUDA library)", len(uprobes))
+			for i, probe := range uprobes {
+				log.Infof("  [%d] Attaching to: %s", i+1, probe)
+			}
 			if err := trc.AttachUProbes(uprobes); err != nil {
 				log.Fatalf("Failed to attach uprobes: %v", err)
 			}
-			log.Info("Uprobes attached successfully!")
+			log.Info("Uprobes attached successfully! They will fire when any process calls cudaLaunchKernel.")
+			// Give uprobes time to become active in the kernel
+			log.Info("Waiting 100ms for uprobes to become fully active...")
+			time.Sleep(100 * time.Millisecond)
 		}
 
 		// Attach scheduler monitor
@@ -242,6 +260,10 @@ func main() {
 				}
 			}
 		}()
+
+		// Give the trace processing goroutine and eBPF map monitors time to fully start
+		log.Info("Waiting 500ms for trace processing to fully initialize...")
+		time.Sleep(500 * time.Millisecond)
 
 		// Start the target process
 		log.Infof("Starting target binary: %s %v", cfg.targetBinary, cfg.targetArgs)
@@ -312,6 +334,9 @@ func main() {
 			log.Errorf("Target process exited with error: %v", err)
 		} else {
 			log.Info("Target process completed successfully")
+			// Give eBPF time to process any pending events
+			log.Info("Waiting 200ms for eBPF to process pending events...")
+			time.Sleep(200 * time.Millisecond)
 		}
 		cancel()
 	case <-ctx.Done():
@@ -358,6 +383,7 @@ func parseFlags() *Config {
 	flag.StringVar(&cfg.cudaLibPath, "cuda-lib", "", "Path to CUDA runtime library (auto-detected if not specified)")
 	flag.BoolVar(&cfg.cpuOnly, "cpu-only", false, "Only collect CPU sampling traces (no GPU profiling)")
 	flag.BoolVar(&cfg.gpuOnly, "gpu-only", false, "Correlate CPU stacks with GPU kernels via uprobes")
+	flag.StringVar(&cfg.debugDir, "debug-dir", "", "Directory to save debug output files (CUPTI, eBPF traces, correlation details)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] <target_binary> [args...]\n\n", os.Args[0])
@@ -388,26 +414,6 @@ func parseFlags() *Config {
 	cfg.targetArgs = flag.Args()[1:]
 
 	return cfg
-}
-
-func findCudaLibrary() string {
-	// Search for CUDA runtime library in common locations
-	cudaPaths := []string{
-		"/usr/local/cuda-12.9/lib64/libcudart.so.12",
-		"/usr/local/cuda-13.0/lib64/libcudart.so.12",
-		"/usr/local/cuda/lib64/libcudart.so.12",
-		"/usr/local/cuda-12.8/lib64/libcudart.so.12",
-		"/usr/local/cuda/lib64/libcudart.so",
-	}
-
-	for _, path := range cudaPaths {
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-
-	log.Fatal("Could not find CUDA runtime library. Please specify with -cuda-lib")
-	return ""
 }
 
 func createNamedPipe() (string, error) {

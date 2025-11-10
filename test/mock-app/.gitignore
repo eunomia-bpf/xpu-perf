@@ -3,3 +3,4 @@ llm-inference
 *.bak
 vectorAdd
 cuda_graph_simple
+*.dat

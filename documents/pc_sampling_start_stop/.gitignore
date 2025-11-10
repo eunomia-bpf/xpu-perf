@@ -1,0 +1,36 @@
+# Build artifacts
+pc_sampling_start_stop
+pc_sampling_continuous
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+libpc_sampling_continuous.so
+pc_sampling_continuous.dll
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Profiling outputs
+*.folded
+*.svg
+*_output.folded
+*_flamegraph.svg
+*.dat
+*_pcsampling.dat
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
