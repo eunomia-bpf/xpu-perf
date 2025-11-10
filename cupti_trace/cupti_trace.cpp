@@ -182,7 +182,22 @@ static void AtExitHandler() {
 // CUPTI Callbacks
 // ============================================================================
 
-static void CUPTIAPI CallbackHandler(void *userdata, CUpti_CallbackDomain domain,
+// Global counter to prevent optimization
+static volatile uint64_t g_correlationCallCounter = 0;
+
+// Non-inline function for eBPF attachment
+// This function is specifically designed to be attached to by eBPF probes
+// The __attribute__((noinline)) and volatile counter ensure it's not optimized away
+extern "C" __attribute__((noinline, used)) uint32_t XpuPerfGetCorrelationId(uint32_t correlationId) {
+    // Increment global counter to prevent optimization
+    g_correlationCallCounter++;
+
+    // Return the correlation ID
+    // eBPF can read the parameter or return value
+    return correlationId;
+}
+
+static void CUPTIAPI XpuPerfCallbackHandler(void *userdata, CUpti_CallbackDomain domain,
                                       CUpti_CallbackId cbid, void *cbdata) {
     static const char *s_pFunctionName = NULL;
     static uint32_t s_correlationId = 0;
@@ -192,6 +207,12 @@ static void CUPTIAPI CallbackHandler(void *userdata, CUpti_CallbackDomain domain
     // Clear any previous errors
     cuptiGetLastError();
 
+    
+    // Call non-inline function for eBPF attachment point
+    // This allows eBPF to capture the correlation ID
+    if (callbackData) {
+        XpuPerfGetCorrelationId(callbackData->correlationId);
+    }
     switch (domain) {
         case CUPTI_CB_DOMAIN_RUNTIME_API: {
             // Store API name and correlation ID for graph node tracking
@@ -280,12 +301,21 @@ static void SetupCupti() {
 
     // Subscribe to CUPTI callbacks
     CUPTI_CALL(cuptiSubscribe(&g_state.subscriberHandle,
-                              (CUpti_CallbackFunc)CallbackHandler, NULL));
+                              (CUpti_CallbackFunc)XpuPerfCallbackHandler, NULL));
 
     // Enable callback for cudaDeviceReset
     CUPTI_CALL(cuptiEnableCallback(1, g_state.subscriberHandle,
                                    CUPTI_CB_DOMAIN_RUNTIME_API,
                                    CUPTI_RUNTIME_TRACE_CBID_cudaDeviceReset_v3020));
+
+    // Optional: Enable eBPF correlation ID tracking via CUPTI_ENABLE_CORRELATION_UPROBE=1
+    const char *enableCorrelation = getenv("CUPTI_ENABLE_CORRELATION_UPROBE");
+    if (enableCorrelation && atoi(enableCorrelation) == 1) {
+        // Enable all runtime API callbacks for correlation ID capture
+        CUPTI_CALL(cuptiEnableDomain(1, g_state.subscriberHandle,
+                                     CUPTI_CB_DOMAIN_RUNTIME_API));
+        printf("Correlation ID uprobe tracking: ENABLED\n");
+    }
 
     // Optional: Enable CUDA graph node tracking via CUPTI_ENABLE_GRAPH=1
     const char *enableGraph = getenv("CUPTI_ENABLE_GRAPH");
@@ -297,8 +327,11 @@ static void SetupCupti() {
                                        CUPTI_CB_DOMAIN_RESOURCE,
                                        CUPTI_CBID_RESOURCE_GRAPHNODE_CLONED));
         // Enable all runtime API callbacks to track function names for graph nodes
-        CUPTI_CALL(cuptiEnableDomain(1, g_state.subscriberHandle,
-                                     CUPTI_CB_DOMAIN_RUNTIME_API));
+        if (!enableCorrelation || atoi(enableCorrelation) != 1) {
+            // Only enable if not already enabled by correlation tracking
+            CUPTI_CALL(cuptiEnableDomain(1, g_state.subscriberHandle,
+                                         CUPTI_CB_DOMAIN_RUNTIME_API));
+        }
         printf("CUDA graph tracking: ENABLED\n");
     } else {
         printf("CUDA graph tracking: DISABLED (set CUPTI_ENABLE_GRAPH=1 to enable)\n");
