@@ -56,7 +56,7 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 	fmt.Printf("Timestamp: %d ns\n", meta.Timestamp)
 
 	// Print context value for custom traces
-	fmt.Printf("🎯 Context Value: %d (0x%x)\n", meta.OffTime, meta.OffTime)
+	fmt.Printf("🎯 Context Value: %d (0x%x)\n", meta.ContextValue, meta.ContextValue)
 
 	// Print custom labels if any
 	if len(trace.CustomLabels) > 0 {

@@ -37,7 +37,7 @@ int main() {
         printf("  Calling report_trace with context_id = 0x%lx (%lu)\n", context_id, context_id);
 
         // Do some work
-        do_work(1000000);
+        do_work(context_id);
 
         // Report trace with the context
         report_trace(context_id);
