@@ -3,6 +3,8 @@
 
 package main
 
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target amd64 -cflags "-I/usr/include -I/usr/include/x86_64-linux-gnu" CorrelationUprobe ebpf/correlation_uprobe.ebpf.c
+
 import (
 	"context"
 	"flag"
@@ -10,8 +12,11 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	_ "strings" // Used in correlation_uprobe_attach.go
 	"time"
 
+	_ "github.com/cilium/ebpf"      // Used in correlation_uprobe_attach.go
+	_ "github.com/cilium/ebpf/link" // Used in correlation_uprobe_attach.go
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
@@ -25,14 +30,15 @@ import (
 )
 
 type Config struct {
-	cuptiLibPath string
-	outputFile   string
-	cudaLibPath  string
-	cpuOnly      bool
-	gpuOnly      bool // Now means: use uprobes for CPU/GPU correlation
-	targetBinary string
-	targetArgs   []string
-	debugDir     string // Directory to save debug output files
+	cuptiLibPath         string
+	outputFile           string
+	cudaLibPath          string
+	cpuOnly              bool
+	gpuOnly              bool // Now means: use uprobes for CPU/GPU correlation
+	useCorrelationUprobe bool // Use XpuPerfGetCorrelationId uprobe for exact matching
+	targetBinary         string
+	targetArgs           []string
+	debugDir             string // Directory to save debug output files
 }
 
 func main() {
@@ -126,7 +132,7 @@ func main() {
 	// - cpuOnly=false, gpuOnly=true: CPU/GPU correlation via uprobes
 	// - cpuOnly=false, gpuOnly=false: Merged CPU sampling + GPU samples
 	mergeMode := !cfg.cpuOnly && !cfg.gpuOnly
-	correlator := NewTraceCorrelator(cuptiParser, 10.0, samplesPerSec, cfg.cpuOnly, cfg.gpuOnly, mergeMode, cfg.debugDir)
+	correlator := NewTraceCorrelator(cuptiParser, 10.0, samplesPerSec, cfg.cpuOnly, cfg.gpuOnly, mergeMode, cfg.useCorrelationUprobe, cfg.debugDir)
 
 	// Create context with signal handling
 	ctx, cancel := signal.NotifyContext(context.Background(),
@@ -232,6 +238,19 @@ func main() {
 			// Give uprobes time to become active in the kernel
 			log.Info("Waiting 100ms for uprobes to become fully active...")
 			time.Sleep(100 * time.Millisecond)
+		}
+
+		// Attach correlation uprobe if enabled
+		var correlationUprobeState *CorrelationUprobeState
+		if cfg.useCorrelationUprobe && !cfg.cpuOnly {
+			log.Info("Attaching correlation uprobe to XpuPerfGetCorrelationId...")
+			state, err := attachCorrelationUprobe(trc, cfg.cuptiLibPath)
+			if err != nil {
+				log.Fatalf("Failed to attach correlation uprobe: %v", err)
+			}
+			correlationUprobeState = state
+			defer correlationUprobeState.Close()
+			log.Info("Correlation uprobe attached successfully!")
 		}
 
 		// Attach scheduler monitor
@@ -383,6 +402,7 @@ func parseFlags() *Config {
 	flag.StringVar(&cfg.cudaLibPath, "cuda-lib", "", "Path to CUDA runtime library (auto-detected if not specified)")
 	flag.BoolVar(&cfg.cpuOnly, "cpu-only", false, "Only collect CPU sampling traces (no GPU profiling)")
 	flag.BoolVar(&cfg.gpuOnly, "gpu-only", false, "Correlate CPU stacks with GPU kernels via uprobes")
+	flag.BoolVar(&cfg.useCorrelationUprobe, "use-correlation-id", false, "Use XpuPerfGetCorrelationId uprobe for exact correlation (requires CUPTI_ENABLE_CORRELATION_UPROBE=1)")
 	flag.StringVar(&cfg.debugDir, "debug-dir", "", "Directory to save debug output files (CUPTI, eBPF traces, correlation details)")
 
 	flag.Usage = func() {
@@ -435,12 +455,18 @@ func startTargetWithCUPTI(cfg *Config, cuptiPipe string) *exec.Cmd {
 	cmd := exec.Command(cfg.targetBinary, cfg.targetArgs...)
 
 	// Set environment variables for CUPTI injection
-	cmd.Env = append(os.Environ(),
+	envVars := []string{
 		fmt.Sprintf("CUDA_INJECTION64_PATH=%s", cfg.cuptiLibPath),
 		fmt.Sprintf("CUPTI_TRACE_OUTPUT_FILE=%s", cuptiPipe),
 		"CUPTI_ENABLE_MEMORY=1",
-	)
+	}
 
+	// Enable correlation uprobe if requested
+	if cfg.useCorrelationUprobe {
+		envVars = append(envVars, "CUPTI_ENABLE_CORRELATION_UPROBE=1")
+	}
+
+	cmd.Env = append(os.Environ(), envVars...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

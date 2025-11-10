@@ -6,3 +6,4 @@ libcupti_trace_injection.so
 *.svg
 test_*
 *.log
+*_bpfel.go

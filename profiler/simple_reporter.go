@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"go.opentelemetry.io/ebpf-profiler/libpf"
-	"go.opentelemetry.io/ebpf-profiler/libpf/pfelf"
+	_ "go.opentelemetry.io/ebpf-profiler/libpf/pfelf" // Disabled for now
 	"go.opentelemetry.io/ebpf-profiler/reporter/samples"
 	"go.opentelemetry.io/ebpf-profiler/support"
 )
@@ -20,10 +20,10 @@ type SimpleReporter struct {
 	traceCount    int
 	uprobeCount   int
 	samplingCount int
-	// Symbol cache: fileName -> SymbolMap
-	symbolCache map[string]*libpf.SymbolMap
+	// Symbol cache: fileName -> SymbolMap (disabled for now - API changed)
+	// symbolCache map[string]*libpf.SymbolMap
 	// Track files that failed to load
-	symbolMisses map[string]bool
+	// symbolMisses map[string]bool
 	// Correlator for merging CPU and GPU traces
 	correlator *TraceCorrelator
 	// Target PID to filter sampling traces (0 = all PIDs)
@@ -33,8 +33,8 @@ type SimpleReporter struct {
 // NewSimpleReporter creates a new simple reporter
 func NewSimpleReporter(correlator *TraceCorrelator) *SimpleReporter {
 	return &SimpleReporter{
-		symbolCache:  make(map[string]*libpf.SymbolMap),
-		symbolMisses: make(map[string]bool),
+		// symbolCache:  make(map[string]*libpf.SymbolMap),
+		// symbolMisses: make(map[string]bool),
 		correlator:   correlator,
 		targetPID:    0, // Will be set later
 	}
@@ -60,6 +60,9 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 		r.uprobeCount++
 	case support.TraceOriginSampling:
 		r.samplingCount++
+	case support.TraceOriginCustom:
+		// Custom traces (e.g., from correlation ID uprobe) count as uprobe traces
+		r.uprobeCount++
 	}
 
 	// Extract stack for correlation
@@ -69,8 +72,8 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 	if r.correlator != nil {
 		shouldProcess := false
 
-		if meta.Origin == support.TraceOriginUProbe && (r.correlator.gpuOnly || r.correlator.mergeMode) {
-			// Process uprobes in GPU-only mode and merge mode (for correlation)
+		if (meta.Origin == support.TraceOriginUProbe || meta.Origin == support.TraceOriginCustom) && (r.correlator.gpuOnly || r.correlator.mergeMode) {
+			// Process uprobes and custom traces in GPU-only mode and merge mode (for correlation)
 			shouldProcess = true
 		} else if meta.Origin == support.TraceOriginSampling && (r.correlator.cpuOnly || r.correlator.mergeMode) {
 			// In merge mode, only process traces from the target PID
@@ -86,15 +89,20 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 
 		if shouldProcess {
 			stack := ExtractStackFromTrace(trace, meta)
-			isUprobe := (meta.Origin == support.TraceOriginUProbe)
-			r.correlator.AddCPUTrace(
+			isUprobe := (meta.Origin == support.TraceOriginUProbe || meta.Origin == support.TraceOriginCustom)
+
+			// Extract correlation ID from ContextValue if using correlation mode
+			correlationID := uint32(meta.ContextValue)
+
+			r.correlator.AddCPUTraceWithCorrelation(
 				int64(meta.Timestamp),
 				int(meta.PID),
 				int(meta.TID),
 				int(meta.CPU),
-				meta.Comm,
+				meta.Comm.String(),
 				stack,
 				isUprobe,
+				correlationID,
 			)
 		}
 	}
@@ -113,39 +121,7 @@ func (r *SimpleReporter) GetStats() (int, int, int) {
 // internally for Python, Ruby, Node.js symbolization, but applies it to native frames.
 func (r *SimpleReporter) resolveSymbol(fileName string, addr uint64) string {
 	// Check if this file previously failed to load
-	if r.symbolMisses[fileName] {
-		return ""
-	}
-
-	// Check cache
-	syms, cached := r.symbolCache[fileName]
-	if !cached {
-		// Try to load symbols using official pfelf API
-		ef, err := pfelf.Open(fileName)
-		if err != nil {
-			r.symbolMisses[fileName] = true
-			return ""
-		}
-		defer ef.Close()
-
-		// Try to read dynamic symbols first (works with stripped binaries)
-		syms, err = ef.ReadDynamicSymbols()
-		if err != nil {
-			// Fall back to regular symbol table
-			syms, err = ef.ReadSymbols()
-			if err != nil {
-				r.symbolMisses[fileName] = true
-				return ""
-			}
-		}
-
-		r.symbolCache[fileName] = syms
-	}
-
-	// Look up symbol by address using libpf.SymbolMap
-	name, _, found := syms.LookupByAddress(libpf.SymbolValue(addr))
-	if found {
-		return string(name)
-	}
+	// Symbol resolution temporarily disabled
+	return ""
 	return ""
 }

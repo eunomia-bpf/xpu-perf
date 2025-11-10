@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/ianlancetaylor/demangle"
-	"go.opentelemetry.io/ebpf-profiler/libpf"
+	_ "go.opentelemetry.io/ebpf-profiler/libpf" // Disabled for now
 	"go.opentelemetry.io/ebpf-profiler/libpf/pfelf"
 )
 
@@ -23,7 +23,7 @@ type Symbolizer struct {
 	elfMu    sync.RWMutex
 
 	// Cache for symbol maps (both regular and dynamic)
-	symbolCache map[string]*libpf.SymbolMap
+	// symbolCache map[string]*libpf.SymbolMap
 	symbolMu    sync.RWMutex
 
 	// Track files that failed to open
@@ -35,7 +35,7 @@ type Symbolizer struct {
 func NewSymbolizer() *Symbolizer {
 	return &Symbolizer{
 		elfCache:    make(map[string]*pfelf.File),
-		symbolCache: make(map[string]*libpf.SymbolMap),
+		// symbolCache: make(map[string]*libpf.SymbolMap),
 		failedFiles: make(map[string]bool),
 	}
 }
@@ -87,61 +87,45 @@ func (s *Symbolizer) getOrOpenELF(path string) (*pfelf.File, error) {
 }
 
 // getSymbolMap loads and caches symbol map for a file
-func (s *Symbolizer) getSymbolMap(path string) (*libpf.SymbolMap, error) {
-	// Check cache first
-	s.symbolMu.RLock()
-	if symmap, ok := s.symbolCache[path]; ok {
-		s.symbolMu.RUnlock()
-		return symmap, nil
-	}
-	s.symbolMu.RUnlock()
-
-	// Open ELF file
-	ef, err := s.getOrOpenELF(path)
-	if err != nil {
-		return nil, err
-	}
-
-	// Try regular symbol table first (contains all symbols including weak/template)
-	symmap, err := ef.ReadSymbols()
-	if err != nil || symmap == nil || symmap.Len() == 0 {
-		// Fall back to dynamic symbols (for stripped binaries)
-		symmap, err = ef.ReadDynamicSymbols()
-		if err != nil || symmap == nil {
-			return nil, fmt.Errorf("no symbols available")
-		}
-	}
-
-	// Cache the symbol map
-	s.symbolMu.Lock()
-	s.symbolCache[path] = symmap
-	s.symbolMu.Unlock()
-
-	return symmap, nil
-}
-
+// func (s *Symbolizer) getSymbolMap(path string) (*libpf.SymbolMap, error) {
+// 	// Check cache first
+// 	s.symbolMu.RLock()
+// 	if symmap, ok := s.symbolCache[path]; ok {
+// 		s.symbolMu.RUnlock()
+// 		return symmap, nil
+// 	}
+// 	s.symbolMu.RUnlock()
+// 
+// 	// Open ELF file
+// 	ef, err := s.getOrOpenELF(path)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 
+// 	// Try regular symbol table first (contains all symbols including weak/template)
+// 	symmap, err := ef.ReadSymbols()
+// 	if err != nil || symmap == nil || symmap.Len() == 0 {
+// 		// Fall back to dynamic symbols (for stripped binaries)
+// 		symmap, err = ef.ReadDynamicSymbols()
+// 		if err != nil || symmap == nil {
+// 			return nil, fmt.Errorf("no symbols available")
+// 		}
+// 	}
+// 
+// 	// Cache the symbol map
+// 	s.symbolMu.Lock()
+// 	s.symbolCache[path] = symmap
+// 	s.symbolMu.Unlock()
+// 
+// 	return symmap, nil
+// }
+// 
 // Symbolize resolves an address to a symbol name with offset
 // Returns the symbolized name or empty string if not found
+// DISABLED: API changed in upstream profiler
 func (s *Symbolizer) Symbolize(fileName string, fileOffset uint64) string {
-	symmap, err := s.getSymbolMap(fileName)
-	if err != nil {
-		return ""
-	}
-
-	// Look up symbol by address
-	symbolName, offset, found := symmap.LookupByAddress(libpf.SymbolValue(fileOffset))
-	if !found || symbolName == "" {
-		return ""
-	}
-
-	// Demangle C++/Rust symbols
-	demangledName := s.demangle(string(symbolName))
-
-	// Format with offset if non-zero
-	if offset == 0 {
-		return demangledName
-	}
-	return fmt.Sprintf("%s+0x%x", demangledName, offset)
+	// Symbolization temporarily disabled
+	return ""
 }
 
 // demangle attempts to demangle C++/Rust symbol names

@@ -18,13 +18,14 @@ import (
 
 // CPUStackTrace represents a CPU stack trace from uprobe or sampling
 type CPUStackTrace struct {
-	Timestamp int64
-	PID       int
-	TID       int
-	CPU       int
-	Comm      string
-	Stack     []string
-	IsUprobe  bool // true if from uprobe, false if from sampling
+	Timestamp     int64
+	PID           int
+	TID           int
+	CPU           int
+	Comm          string
+	Stack         []string
+	IsUprobe      bool   // true if from uprobe, false if from sampling
+	CorrelationID uint32 // CUPTI correlation ID (0 if not available)
 }
 
 // MergedTrace represents a correlated CPU+GPU stack trace
@@ -36,46 +37,54 @@ type MergedTrace struct {
 
 // TraceCorrelator correlates CPU uprobe traces with GPU CUPTI events
 type TraceCorrelator struct {
-	cpuTraces       []CPUStackTrace
-	gpuParser       *CUPTIParser
-	mergedStacks    map[string]float64 // folded stack -> sample count (float to avoid rounding)
-	toleranceMs     float64
-	samplesPerSec   int                // CPU sampling frequency (Hz)
-	mu              sync.Mutex
-	cpuOnly         bool
-	gpuOnly         bool // Now means: use uprobes for correlation
-	mergeMode       bool // Merge CPU sampling + GPU samples
-	debugDir        string // Directory to save debug output files
+	cpuTraces            []CPUStackTrace
+	gpuParser            *CUPTIParser
+	mergedStacks         map[string]float64 // folded stack -> sample count (float to avoid rounding)
+	toleranceMs          float64
+	samplesPerSec        int    // CPU sampling frequency (Hz)
+	mu                   sync.Mutex
+	cpuOnly              bool
+	gpuOnly              bool   // Now means: use uprobes for correlation
+	mergeMode            bool   // Merge CPU sampling + GPU samples
+	useCorrelationID     bool   // Use correlation IDs instead of timestamps
+	debugDir             string // Directory to save debug output files
 }
 
 // NewTraceCorrelator creates a new trace correlator
-func NewTraceCorrelator(gpuParser *CUPTIParser, toleranceMs float64, samplesPerSec int, cpuOnly, gpuOnly, mergeMode bool, debugDir string) *TraceCorrelator {
+func NewTraceCorrelator(gpuParser *CUPTIParser, toleranceMs float64, samplesPerSec int, cpuOnly, gpuOnly, mergeMode, useCorrelationID bool, debugDir string) *TraceCorrelator {
 	return &TraceCorrelator{
-		cpuTraces:     make([]CPUStackTrace, 0),
-		gpuParser:     gpuParser,
-		mergedStacks:  make(map[string]float64),
-		toleranceMs:   toleranceMs,
-		samplesPerSec: samplesPerSec,
-		cpuOnly:       cpuOnly,
-		gpuOnly:       gpuOnly,
-		mergeMode:     mergeMode,
-		debugDir:      debugDir,
+		cpuTraces:        make([]CPUStackTrace, 0),
+		gpuParser:        gpuParser,
+		mergedStacks:     make(map[string]float64),
+		toleranceMs:      toleranceMs,
+		samplesPerSec:    samplesPerSec,
+		cpuOnly:          cpuOnly,
+		gpuOnly:          gpuOnly,
+		mergeMode:        mergeMode,
+		useCorrelationID: useCorrelationID,
+		debugDir:         debugDir,
 	}
 }
 
 // AddCPUTrace adds a CPU stack trace for correlation
 func (c *TraceCorrelator) AddCPUTrace(timestamp int64, pid, tid, cpu int, comm string, stack []string, isUprobe bool) {
+	c.AddCPUTraceWithCorrelation(timestamp, pid, tid, cpu, comm, stack, isUprobe, 0)
+}
+
+// AddCPUTraceWithCorrelation adds a CPU stack trace with optional correlation ID
+func (c *TraceCorrelator) AddCPUTraceWithCorrelation(timestamp int64, pid, tid, cpu int, comm string, stack []string, isUprobe bool, correlationID uint32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.cpuTraces = append(c.cpuTraces, CPUStackTrace{
-		Timestamp: timestamp,
-		PID:       pid,
-		TID:       tid,
-		CPU:       cpu,
-		Comm:      comm,
-		Stack:     stack,
-		IsUprobe:  isUprobe,
+		Timestamp:     timestamp,
+		PID:           pid,
+		TID:           tid,
+		CPU:           cpu,
+		Comm:          comm,
+		Stack:         stack,
+		IsUprobe:      isUprobe,
+		CorrelationID: correlationID,
 	})
 }
 
@@ -122,16 +131,75 @@ func (c *TraceCorrelator) CorrelateTraces() error {
 			c.mergedStacks[stackStr] += 1
 		}
 
-		// Correlate uprobes with GPU kernels (reuse gpu-only logic)
+		// Correlate uprobes with GPU kernels (use correlation ID or timestamp matching)
 		if len(uprobeTraces) > 0 {
-			c.correlateUprobesToGPU(uprobeTraces)
+			if c.useCorrelationID {
+				c.correlateByCorrelationID(uprobeTraces)
+			} else {
+				c.correlateUprobesToGPU(uprobeTraces)
+			}
 		}
 
 		return nil
 	}
 
 	// GPU-only mode: correlate CPU uprobe stacks with GPU kernels
-	c.correlateUprobesToGPU(c.cpuTraces)
+	if c.useCorrelationID {
+		c.correlateByCorrelationID(c.cpuTraces)
+	} else {
+		c.correlateUprobesToGPU(c.cpuTraces)
+	}
+	return nil
+}
+
+// correlateByCorrelationID correlates CPU traces with GPU kernels using exact correlation IDs
+// This is more accurate than timestamp matching but requires XpuPerfGetCorrelationId uprobe
+func (c *TraceCorrelator) correlateByCorrelationID(cpuTraces []CPUStackTrace) error {
+	kernels := c.gpuParser.GetKernels()
+
+	if len(cpuTraces) == 0 {
+		return fmt.Errorf("no CPU traces collected")
+	}
+
+	if len(kernels) == 0 {
+		return fmt.Errorf("no GPU kernels found in CUPTI trace")
+	}
+
+	// Build correlation ID -> kernel mapping
+	kernelByCorr := make(map[int]*GPUKernelEvent)
+	for i := range kernels {
+		kernelByCorr[kernels[i].CorrelationID] = &kernels[i]
+	}
+
+	matched := 0
+	unmatched := 0
+	noCorrelation := 0
+
+	for _, cpuTrace := range cpuTraces {
+		// Check if we have a correlation ID
+		if cpuTrace.CorrelationID == 0 {
+			noCorrelation++
+			continue
+		}
+
+		// Direct lookup by correlation ID
+		kernel := kernelByCorr[int(cpuTrace.CorrelationID)]
+
+		if kernel != nil {
+			merged := cpuTrace.Stack
+			merged = append(merged, fmt.Sprintf("[GPU_Kernel]%s", kernel.Name))
+			stackStr := strings.Join(merged, ";")
+			// Convert GPU duration (nanoseconds) to sample count using CPU sampling frequency
+			durationNs := float64(kernel.EndNs - kernel.StartNs)
+			samples := durationNs * float64(c.samplesPerSec) / 1e9
+			c.mergedStacks[stackStr] += samples
+			matched++
+		} else {
+			unmatched++
+		}
+	}
+
+	fmt.Printf("Correlation (by ID) complete: matched=%d, unmatched=%d, no_correlation=%d\n", matched, unmatched, noCorrelation)
 	return nil
 }
 
