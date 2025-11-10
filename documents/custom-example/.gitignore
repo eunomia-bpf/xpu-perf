@@ -1,2 +1,11 @@
-uprobe-profiler
-go.sum
+# Binaries
+custom-example
+test/test_program
+
+# Generated eBPF files
+exampletailcall_x86_bpfel.go
+exampletailcall_x86_bpfel.o
+vmlinux.h
+
+# Build directory
+.build/

@@ -1,0 +1,61 @@
+#!/usr/bin/env bpftrace
+
+/*
+ * Test script for XpuPerfGetCorrelationId eBPF attachment
+ * 
+ * Usage:
+ *   # Find the library path first
+ *   CUPTI_LIB=$(find /root/xpu-perf -name "libcupti_trace_injection.so" | head -1)
+ *   
+ *   # Run bpftrace
+ *   sudo bpftrace test_correlation_uprobe.bt "$CUPTI_LIB"
+ *   
+ * Then in another terminal, run your CUDA application with:
+ *   CUDA_INJECTION64_PATH=$CUPTI_LIB ./your_cuda_app
+ */
+
+BEGIN
+{
+    printf("Attaching to XpuPerfGetCorrelationId in: %s\n", str($1));
+    printf("Waiting for CUDA API calls...\n");
+    printf("%-20s %-12s %-20s\n", "TIME", "CORRELATION", "COUNTER");
+}
+
+// Attach to function entry - capture parameter
+uprobe:$1:XpuPerfGetCorrelationId
+{
+    // arg0 is the correlationId parameter (first parameter)
+    $correlation_id = arg0;
+    $timestamp = nsecs;
+    
+    printf("%-20llu %-12u ENTRY\n", $timestamp, $correlation_id);
+    
+    // Store for return probe
+    @correlation_map[tid] = $correlation_id;
+    @entry_count++;
+}
+
+// Attach to function return - capture return value
+uretprobe:$1:XpuPerfGetCorrelationId
+{
+    $correlation_id = retval;
+    $timestamp = nsecs;
+    $stored_id = @correlation_map[tid];
+    
+    printf("%-20llu %-12u RETURN (stored: %u)\n", 
+           $timestamp, $correlation_id, $stored_id);
+    
+    delete(@correlation_map[tid]);
+    @return_count++;
+}
+
+END
+{
+    printf("\n=== Summary ===\n");
+    printf("Total function calls (entry): %d\n", @entry_count);
+    printf("Total function returns: %d\n", @return_count);
+    
+    clear(@correlation_map);
+    clear(@entry_count);
+    clear(@return_count);
+}

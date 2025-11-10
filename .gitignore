@@ -11,3 +11,5 @@ wallclock_profile_pid*
 tools/tests/test_combined
 parca
 cupti_trace_output.txt
+merged_trace.folded
+output.folded

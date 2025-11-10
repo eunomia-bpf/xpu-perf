@@ -3,6 +3,8 @@
 
 package main
 
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target amd64 ExampleTailcall example_tailcall.c
+
 import (
 	"context"
 	"fmt"
@@ -10,6 +12,8 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
@@ -29,15 +33,13 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <executable:symbol> [<executable:symbol>...]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s <executable:function>\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\nExample:\n")
-		fmt.Fprintf(os.Stderr, "  %s /bin/bash:readline\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s /usr/bin/python3.12:PyEval_EvalFrameDefault\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s /lib/x86_64-linux-gnu/libc.so.6:malloc /lib/x86_64-linux-gnu/libc.so.6:free\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s ./test_program:report_trace\n", os.Args[0])
 		os.Exit(1)
 	}
 
-	uprobes := os.Args[1:]
+	targetFunction := os.Args[1]
 
 	// Set up logging
 	log.SetLevel(log.InfoLevel)
@@ -45,15 +47,15 @@ func main() {
 		FullTimestamp: true,
 	})
 
-	log.Info("Starting uprobe profiler...")
-	log.Infof("Attaching uprobes to: %v", uprobes)
+	log.Info("Starting custom trace example...")
+	log.Infof("Will attach uprobe to: %s", targetFunction)
 
 	// Create context with signal handling
 	ctx, cancel := signal.NotifyContext(context.Background(),
 		unix.SIGINT, unix.SIGTERM, unix.SIGABRT)
 	defer cancel()
 
-	// Initialize metrics (using noop meter)
+	// Initialize metrics
 	metrics.Start(noop.Meter{})
 
 	// Probe eBPF syscall support
@@ -80,7 +82,7 @@ func main() {
 	// Create our simple reporter
 	reporter := NewSimpleReporter()
 
-	// Configure the tracer with LoadProbe enabled for uprobes
+	// Configure the tracer
 	tracerCfg := &tracer.Config{
 		TraceReporter:          reporter,
 		Intervals:              intervals,
@@ -95,8 +97,7 @@ func main() {
 		ProbabilisticThreshold: 100,
 		OffCPUThreshold:        0,
 		IncludeEnvVars:         libpf.Set[string]{},
-		UProbeLinks:            uprobes,
-		LoadProbe:              true, // Important: must be true for uprobes
+		LoadProbe:              true, // Enable probe loading
 	}
 
 	// Create and load the eBPF tracer
@@ -105,11 +106,89 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create tracer: %v", err)
 	}
+	defer trc.Close()
+
+	// Get the custom__generic program FD
+	customProgFD := trc.GetCustomTraceProgramFD()
+	if customProgFD < 0 {
+		log.Fatal("custom__generic program not loaded")
+	}
+	log.Infof("Got custom__generic program FD: %d", customProgFD)
+
+	// Get the custom_context_map FD for sharing context_value
+	customContextMapFD := trc.GetCustomContextMapFD()
+	if customContextMapFD < 0 {
+		log.Fatal("custom_context_map not loaded")
+	}
+	log.Infof("Got custom_context_map FD: %d", customContextMapFD)
+
+	// Load our custom eBPF program spec
+	spec, err := LoadExampleTailcall()
+	if err != nil {
+		log.Fatalf("Failed to load example eBPF spec: %v", err)
+	}
+
+	// Reuse the custom_context_map from the profiler
+	// This allows both programs to share the same map for passing context_value
+	spec.Maps["custom_context_map"].Pinning = 0 // Don't pin, just reuse FD
+
+	// Create a Map object from the FD to reuse the profiler's custom_context_map
+	customContextMap, err := ebpf.NewMapFromFD(customContextMapFD)
+	if err != nil {
+		log.Fatalf("Failed to create map from FD: %v", err)
+	}
+	defer customContextMap.Close()
+
+	// Create RewriteOptions to reuse the profiler's custom_context_map
+	opts := &ebpf.CollectionOptions{
+		Maps: ebpf.MapOptions{
+			PinPath: "", // Don't use pinning
+		},
+		MapReplacements: map[string]*ebpf.Map{
+			"custom_context_map": customContextMap,
+		},
+	}
+
+	objs := &ExampleTailcallObjects{}
+	if err := spec.LoadAndAssign(objs, opts); err != nil {
+		log.Fatalf("Failed to load example eBPF objects: %v", err)
+	}
+	defer objs.Close()
+
+	log.Info("Successfully reused custom_context_map from profiler")
+
+	// Add custom__generic to our prog_array at index 0
+	// Both programs are uprobe type now, so cilium's Put should work
+	if err := objs.ProgArray.Put(uint32(0), uint32(customProgFD)); err != nil {
+		log.Fatalf("Failed to add custom__generic to prog_array: %v", err)
+	}
+	log.Info("Successfully added custom__generic to prog_array at index 0")
+
+	// Attach our uprobe
+	parts := splitFunctionSpec(targetFunction)
+	if len(parts) != 2 {
+		log.Fatalf("Invalid function spec: %s (expected format: executable:function)", targetFunction)
+	}
+	executable, function := parts[0], parts[1]
+
+	ex, err := link.OpenExecutable(executable)
+	if err != nil {
+		log.Fatalf("Failed to open executable %s: %v", executable, err)
+	}
+
+	up, err := ex.Uprobe(function, objs.UprobeExample, nil)
+	if err != nil {
+		log.Fatalf("Failed to attach uprobe to %s: %v", function, err)
+	}
+	defer up.Close()
+
+	log.Infof("Successfully attached uprobe to %s:%s", executable, function)
+	log.Info("The uprobe will tail call to custom__generic with context_value")
 
 	// Start PID event processor
 	trc.StartPIDEventProcessor(ctx)
 
-	// Attach tracer to perf events for regular sampling (optional)
+	// Attach tracer
 	log.Info("Attaching eBPF programs...")
 	if err := trc.AttachTracer(); err != nil {
 		log.Fatalf("Failed to attach tracer: %v", err)
@@ -119,13 +198,6 @@ func main() {
 	if err := trc.EnableProfiling(); err != nil {
 		log.Fatalf("Failed to enable profiling: %v", err)
 	}
-
-	// Attach uprobes - This is the key part!
-	log.Info("Attaching uprobes...")
-	if err := trc.AttachUProbes(uprobes); err != nil {
-		log.Fatalf("Failed to attach uprobes: %v", err)
-	}
-	log.Info("Uprobes attached successfully!")
 
 	// Attach scheduler monitor
 	if err := trc.AttachSchedMonitor(); err != nil {
@@ -155,7 +227,8 @@ func main() {
 	}()
 
 	log.Info("Profiler is running. Press Ctrl+C to stop...")
-	log.Info("Waiting for uprobe events...")
+	log.Infof("Now run: %s", executable)
+	log.Info("Traces will be collected when the function is called")
 
 	// Periodic stats
 	ticker := time.NewTicker(5 * time.Second)
@@ -167,8 +240,8 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				total, uprobe, sampling := reporter.GetStats()
-				log.Infof("Traces - Total: %d, Uprobe: %d, Sampling: %d", total, uprobe, sampling)
+				total, custom, sampling := reporter.GetStats()
+				log.Infof("Traces - Total: %d, Custom: %d, Sampling: %d", total, custom, sampling)
 			}
 		}
 	}()
@@ -177,8 +250,16 @@ func main() {
 	<-ctx.Done()
 
 	log.Info("Shutting down profiler...")
-	trc.Close()
 
-	total, uprobe, sampling := reporter.GetStats()
-	log.Infof("Final stats - Total: %d, Uprobe: %d, Sampling: %d", total, uprobe, sampling)
+	total, custom, sampling := reporter.GetStats()
+	log.Infof("Final stats - Total: %d, Custom: %d, Sampling: %d", total, custom, sampling)
+}
+
+func splitFunctionSpec(spec string) []string {
+	for i := 0; i < len(spec); i++ {
+		if spec[i] == ':' {
+			return []string{spec[:i], spec[i+1:]}
+		}
+	}
+	return []string{spec}
 }
