@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/ianlancetaylor/demangle"
-	_ "go.opentelemetry.io/ebpf-profiler/libpf" // Disabled for now
+	"go.opentelemetry.io/ebpf-profiler/libpf"
 	"go.opentelemetry.io/ebpf-profiler/libpf/pfelf"
 )
 
@@ -122,9 +122,58 @@ func (s *Symbolizer) getOrOpenELF(path string) (*pfelf.File, error) {
 // 
 // Symbolize resolves an address to a symbol name with offset
 // Returns the symbolized name or empty string if not found
-// DISABLED: API changed in upstream profiler
 func (s *Symbolizer) Symbolize(fileName string, fileOffset uint64) string {
-	// Symbolization temporarily disabled
+	// Try to open the ELF file
+	ef, err := s.getOrOpenELF(fileName)
+	if err != nil {
+		return ""
+	}
+
+	// Search through symbols to find one containing this address
+	var bestSymbol *libpf.Symbol
+	var bestOffset uint64
+
+	// Try regular symbols first (includes all symbols if not stripped)
+	_ = ef.VisitSymbols(func(sym libpf.Symbol) bool {
+		symAddr := uint64(sym.Address)
+		symEnd := symAddr + sym.Size
+
+		// Check if our offset falls within this symbol's range
+		if fileOffset >= symAddr && fileOffset < symEnd {
+			bestSymbol = &sym
+			bestOffset = fileOffset - symAddr
+			return false // Stop iteration
+		}
+		return true // Continue
+	})
+
+	// If not found in regular symbols, try dynamic symbols (for stripped binaries)
+	if bestSymbol == nil {
+		_ = ef.VisitDynamicSymbols(func(sym libpf.Symbol) bool {
+			symAddr := uint64(sym.Address)
+			symEnd := symAddr + sym.Size
+
+			if fileOffset >= symAddr && fileOffset < symEnd {
+				bestSymbol = &sym
+				bestOffset = fileOffset - symAddr
+				return false // Stop iteration
+			}
+			return true // Continue
+		})
+	}
+
+	// If we found a symbol, format it nicely
+	if bestSymbol != nil && bestSymbol.Name != "" {
+		symbolName := s.demangle(string(bestSymbol.Name))
+
+		// If there's an offset within the function, include it
+		if bestOffset > 0 {
+			return fmt.Sprintf("%s+0x%x", symbolName, bestOffset)
+		}
+		return symbolName
+	}
+
+	// No symbol found
 	return ""
 }
 

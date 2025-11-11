@@ -363,6 +363,27 @@ func (c *TraceCorrelator) WriteFoldedOutput(filename string) error {
 // Use the global symbolizer for all symbol resolution
 // (symbolCache, pidExeCache, lookupSymbol removed - now using symbolizer.go)
 
+// shouldFilterFrame determines if a frame should be filtered out from the final output
+// Returns true if the frame is internal profiler infrastructure that adds no value
+func shouldFilterFrame(frameName string) bool {
+	// Filter out libcupti.so internal frames (profiler infrastructure)
+	if strings.Contains(frameName, "libcupti.so") {
+		return true
+	}
+
+	// Filter out libcupti_trace_injection internal frames (our CUPTI wrapper)
+	if strings.Contains(frameName, "libcupti_trace_injection") {
+		return true
+	}
+
+	// Filter out XpuPerf internal callback/correlation functions
+	if strings.HasPrefix(frameName, "XpuPerf") {
+		return true
+	}
+
+	return false
+}
+
 // ExtractStackFromTrace extracts function names from a libpf.Trace
 func ExtractStackFromTrace(trace *libpf.Trace, meta *samples.TraceEventMeta) []string {
 	stack := make([]string, 0, len(trace.Frames))
@@ -414,8 +435,8 @@ func ExtractStackFromTrace(trace *libpf.Trace, meta *samples.TraceEventMeta) []s
 			frameName = fmt.Sprintf("0x%x", frame.AddressOrLineno)
 		}
 
-		// Filter out common uninteresting frames
-		if frameName == "_start" || frameName == "__libc_start_main" {
+		// Filter out uninteresting internal profiler frames
+		if shouldFilterFrame(frameName) {
 			continue
 		}
 

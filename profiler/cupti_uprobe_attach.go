@@ -13,6 +13,26 @@ import (
 	"go.opentelemetry.io/ebpf-profiler/tracer"
 )
 
+// CorrelationIdUprobeAttacher implements UprobeAttacher for correlation ID uprobes
+type CorrelationIdUprobeAttacher struct{}
+
+// Attach attaches the correlation ID uprobe
+func (a *CorrelationIdUprobeAttacher) Attach(trc *tracer.Tracer, cfg *Config) (UprobeState, error) {
+	if cfg.cpuOnly {
+		// Skip correlation uprobe in CPU-only mode
+		log.Info("CPU-only mode: skipping correlation uprobe")
+		return &CorrelationUprobeState{}, nil
+	}
+
+	log.Info("Attaching correlation uprobe to XpuPerfGetCorrelationId...")
+	state, err := attachCorrelationUprobe(trc, cfg.cuptiLibPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to attach correlation uprobe: %v", err)
+	}
+	log.Info("Correlation uprobe attached successfully!")
+	return state, nil
+}
+
 // CorrelationUprobeState holds the state for the correlation uprobe
 // We need to keep the collection alive to prevent prog_array from being destroyed
 type CorrelationUprobeState struct {

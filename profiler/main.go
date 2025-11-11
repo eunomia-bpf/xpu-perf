@@ -63,22 +63,6 @@ func main() {
 		defer CleanupEmbeddedLibrary(extractedCuptiLib)
 	}
 
-	// Determine uprobes based on mode
-	var uprobes []string
-	if cfg.gpuOnly || (!cfg.cpuOnly && !cfg.gpuOnly) {
-		// GPU-only and merge mode use uprobes for CPU/GPU correlation
-		// Default to CUDA runtime library for kernel launch tracing
-		if cfg.cudaLibPath == "" {
-			// Try to detect CUDA library from target binary first
-			cfg.cudaLibPath = detectCudaLibraryFromBinary(cfg.targetBinary)
-			if cfg.cudaLibPath == "" {
-				cfg.cudaLibPath = findCudaLibrary()
-			}
-		}
-		// Attach to CUDA launch kernel symbols actually used by the target binary
-		uprobes = buildUprobeList(cfg.cudaLibPath, cfg.targetBinary)
-	}
-
 	// Set up logging
 	log.SetLevel(log.InfoLevel)
 	log.SetFormatter(&log.TextFormatter{
@@ -144,13 +128,10 @@ func main() {
 
 	// Always set up eBPF profiler (for sampling or uprobes)
 	if true {
-		if len(uprobes) > 0 {
-			log.Infof("Will attach %d uprobes for CPU/GPU correlation:", len(uprobes))
-			for _, probe := range uprobes {
-				log.Infof("  - %s", probe)
-			}
-		} else if mergeMode {
-			log.Info("Merged mode: using CPU sampling + GPU kernel sampling (no correlation)")
+		if mergeMode {
+			log.Info("Merged mode: using CPU sampling + GPU kernel sampling")
+		} else if cfg.gpuOnly {
+			log.Info("GPU-only mode: CPU/GPU correlation via uprobes")
 		} else {
 			log.Info("CPU-only mode: using regular sampling (no GPU)")
 		}
@@ -197,12 +178,12 @@ func main() {
 			ProbabilisticThreshold: 100,
 			OffCPUThreshold:        0,
 			IncludeEnvVars:         libpf.Set[string]{},
-			UProbeLinks:            uprobes,
-			LoadProbe:              true, // Important: must be true for uprobes
+			UProbeLinks:            []string{}, // Uprobes will be attached separately via interface
+			LoadProbe:              true,       // Important: must be true for uprobes
 		}
 
-		log.Infof("Tracer config: VerboseMode=%v BPFVerifierLogLevel=%d UProbeLinks=%d",
-			tracerCfg.VerboseMode, tracerCfg.BPFVerifierLogLevel, len(tracerCfg.UProbeLinks))
+		log.Infof("Tracer config: VerboseMode=%v BPFVerifierLogLevel=%d",
+			tracerCfg.VerboseMode, tracerCfg.BPFVerifierLogLevel)
 
 		// Create and load the eBPF tracer
 		log.Info("Loading eBPF tracer...")
@@ -214,44 +195,37 @@ func main() {
 		// Start PID event processor
 		trc.StartPIDEventProcessor(ctx)
 
-		// Attach tracer to perf events for regular sampling (optional)
-		log.Info("Attaching eBPF programs...")
-		if err := trc.AttachTracer(); err != nil {
-			log.Fatalf("Failed to attach tracer: %v", err)
+		// Attach tracer to perf events for regular sampling (skip in gpu-only mode)
+		if !cfg.gpuOnly {
+			log.Info("Attaching eBPF programs to perf events...")
+			if err := trc.AttachTracer(); err != nil {
+				log.Fatalf("Failed to attach tracer: %v", err)
+			}
+
+			// Enable profiling
+			if err := trc.EnableProfiling(); err != nil {
+				log.Fatalf("Failed to enable profiling: %v", err)
+			}
+		} else {
+			log.Info("GPU-only mode: skipping perf event attachment (no CPU sampling)")
 		}
 
-		// Enable profiling
-		if err := trc.EnableProfiling(); err != nil {
-			log.Fatalf("Failed to enable profiling: %v", err)
+		// Select and attach the appropriate uprobe method
+		var uprobeAttacher UprobeAttacher
+		if cfg.useCorrelationUprobe {
+			log.Info("Using Correlation ID uprobe method for GPU/CPU correlation")
+			uprobeAttacher = &CorrelationIdUprobeAttacher{}
+		} else {
+			log.Info("Using CUDA kernel launch uprobe method for GPU/CPU correlation")
+			uprobeAttacher = &CudaKernelUprobeAttacher{}
 		}
 
-		// Attach uprobes only in merged mode for correlation
-		if len(uprobes) > 0 {
-			log.Infof("Attaching %d uprobes globally (will trigger on any process using CUDA library)", len(uprobes))
-			for i, probe := range uprobes {
-				log.Infof("  [%d] Attaching to: %s", i+1, probe)
-			}
-			if err := trc.AttachUProbes(uprobes); err != nil {
-				log.Fatalf("Failed to attach uprobes: %v", err)
-			}
-			log.Info("Uprobes attached successfully! They will fire when any process calls cudaLaunchKernel.")
-			// Give uprobes time to become active in the kernel
-			log.Info("Waiting 100ms for uprobes to become fully active...")
-			time.Sleep(100 * time.Millisecond)
+		// Attach uprobes using the selected method
+		uprobeState, err := uprobeAttacher.Attach(trc, cfg)
+		if err != nil {
+			log.Fatalf("Failed to attach uprobes: %v", err)
 		}
-
-		// Attach correlation uprobe if enabled
-		var correlationUprobeState *CorrelationUprobeState
-		if cfg.useCorrelationUprobe && !cfg.cpuOnly {
-			log.Info("Attaching correlation uprobe to XpuPerfGetCorrelationId...")
-			state, err := attachCorrelationUprobe(trc, cfg.cuptiLibPath)
-			if err != nil {
-				log.Fatalf("Failed to attach correlation uprobe: %v", err)
-			}
-			correlationUprobeState = state
-			defer correlationUprobeState.Close()
-			log.Info("Correlation uprobe attached successfully!")
-		}
+		defer uprobeState.Close()
 
 		// Attach scheduler monitor
 		if err := trc.AttachSchedMonitor(); err != nil {
@@ -402,7 +376,7 @@ func parseFlags() *Config {
 	flag.StringVar(&cfg.cudaLibPath, "cuda-lib", "", "Path to CUDA runtime library (auto-detected if not specified)")
 	flag.BoolVar(&cfg.cpuOnly, "cpu-only", false, "Only collect CPU sampling traces (no GPU profiling)")
 	flag.BoolVar(&cfg.gpuOnly, "gpu-only", false, "Correlate CPU stacks with GPU kernels via uprobes")
-	flag.BoolVar(&cfg.useCorrelationUprobe, "use-correlation-id", false, "Use XpuPerfGetCorrelationId uprobe for exact correlation (requires CUPTI_ENABLE_CORRELATION_UPROBE=1)")
+	flag.BoolVar(&cfg.useCorrelationUprobe, "use-correlation-id", true, "Use XpuPerfGetCorrelationId uprobe for exact correlation (requires CUPTI_ENABLE_CORRELATION_UPROBE=1)")
 	flag.StringVar(&cfg.debugDir, "debug-dir", "", "Directory to save debug output files (CUPTI, eBPF traces, correlation details)")
 
 	flag.Usage = func() {
