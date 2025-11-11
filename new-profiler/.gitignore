@@ -1,0 +1,7 @@
+new-xpu-perf
+libcupti_trace_injection.so
+*.folded
+*.svg
+test_*
+*.log
+*_bpfel.go
