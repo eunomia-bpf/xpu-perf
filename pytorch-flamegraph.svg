@@ -1,0 +1,1842 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="1110" onload="init(evt)" viewBox="0 0 1200 1110" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="1110.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="1093" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="1093" > </text>
+<g id="frames">
+<g >
+<title>libtorch_cuda.so+0x33adeaa (1 samples, 5.56%)</title><rect x="1058.9" y="421" width="65.5" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="1061.89" y="431.5" >libtorc..</text>
+</g>
+<g >
+<title>c10::impl::wrap_kernel_functor_unboxed_&lt;c10::impl::detail::WrapFunctionIntoFunctor_&lt;c10::CompileTimeFunctionPointer&lt;at::Tensor (c10::DispatchKeySet, at::Tensor const&amp;, at::Tensor const&amp;, at::Tensor const&amp;, std::optional&lt;at::Tensor&gt; const&amp;, long, c10::SymInt, at::Tensor const&amp;), &amp;torch::autograd::VariableType::(anonymous namespace)::nll_loss_backward&gt;, at::Tensor, c10::guts::typelist::typelist&lt;c10::DispatchKeySet, at::Tensor const&amp;, at::Tensor const&amp;, at::Tensor const&amp;, std::optional&lt;at::Tensor&gt; const&amp;, long, c10::SymInt, at::Tensor const&amp;&gt; &gt;, at::Tensor (c10::DispatchKeySet, at::Tensor const&amp;, at::Tensor const&amp;, at::Tensor const&amp;, std::optional&lt;at::Tensor&gt; const&amp;, long, c10::SymInt, at::Tensor const&amp;)&gt;::call+0x40 (4 samples, 22.22%)</title><rect x="796.7" y="869" width="262.2" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="799.67" y="879.5" >c10::impl::wrap_kernel_functor_unbo..</text>
+</g>
+<g >
+<title>python3.12+0x5a30c7 (3 samples, 16.67%)</title><rect x="10.0" y="773" width="196.7" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="13.00" y="783.5" >python3.12+0x5a30c7</text>
+</g>
+<g >
+<title>python3.12+0x581a6e (1 samples, 5.56%)</title><rect x="206.7" y="597" width="65.5" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="209.67" y="607.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x53561e0 (2 samples, 11.11%)</title><rect x="272.2" y="949" width="131.1" height="15.0" fill="rgb(245,186,44)" rx="2" ry="2" />
+<text  x="275.22" y="959.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (2 samples, 11.11%)</title><rect x="1058.9" y="1029" width="131.1" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1061.89" y="1039.5" >_PyEval_EvalFram..</text>
+</g>
+<g >
+<title>_PyObject_Call_Prepend+0xc1 (1 samples, 5.56%)</title><rect x="206.7" y="837" width="65.5" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="209.67" y="847.5" >_PyObje..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x23e2750 (2 samples, 11.11%)</title><rect x="665.6" y="885" width="131.1" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="668.56" y="895.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (2 samples, 11.11%)</title><rect x="1058.9" y="1045" width="131.1" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1061.89" y="1055.5" >python3.12+0x54c..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x22480d9 (1 samples, 5.56%)</title><rect x="206.7" y="517" width="65.5" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="209.67" y="527.5" >libtorc..</text>
+</g>
+<g >
+<title>python3.12+0x5a30c7 (1 samples, 5.56%)</title><rect x="206.7" y="853" width="65.5" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="209.67" y="863.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x138509a (2 samples, 11.11%)</title><rect x="403.3" y="725" width="131.1" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="406.33" y="735.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4c22d9a (2 samples, 11.11%)</title><rect x="534.4" y="837" width="131.2" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="537.44" y="847.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="141.1" y="357" width="65.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="144.11" y="367.5" >libcuda..</text>
+</g>
+<g >
+<title>_PyObject_Call_Prepend+0xc1 (3 samples, 16.67%)</title><rect x="10.0" y="885" width="196.7" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="13.00" y="895.5" >_PyObject_Call_Prepend+0xc1</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (2 samples, 11.11%)</title><rect x="1058.9" y="981" width="131.1" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1061.89" y="991.5" >_PyObject_MakeTp..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x26f793a (1 samples, 5.56%)</title><rect x="206.7" y="565" width="65.5" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="209.67" y="575.5" >libtorc..</text>
+</g>
+<g >
+<title>c10::impl::wrap_kernel_functor_unboxed_&lt;c10::impl::detail::WrapFunctionIntoFunctor_&lt;c10::CompileTimeFunctionPointer&lt;at::Tensor&amp; (at::Tensor&amp;), &amp;at::(anonymous namespace)::(anonymous namespace)::wrapper_CUDA__zero_&gt;, at::Tensor&amp;, c10::guts::typelist::typelist&lt;at::Tensor&amp;&gt; &gt;, at::Tensor&amp; (at::Tensor&amp;)&gt;::call+0x4a (2 samples, 11.11%)</title><rect x="927.8" y="757" width="131.1" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="930.78" y="767.5" >c10::impl::wrap_..</text>
+</g>
+<g >
+<title>python3.12+0x581a6e (2 samples, 11.11%)</title><rect x="10.0" y="645" width="131.1" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="13.00" y="655.5" >python3.12+0x581..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x5c58144 (2 samples, 11.11%)</title><rect x="403.3" y="885" width="131.1" height="15.0" fill="rgb(213,38,9)" rx="2" ry="2" />
+<text  x="406.33" y="895.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>torch::autograd::VariableType::(anonymous namespace)::nll_loss_backward+0x7bc (4 samples, 22.22%)</title><rect x="796.7" y="853" width="262.2" height="15.0" fill="rgb(253,225,53)" rx="2" ry="2" />
+<text  x="799.67" y="863.5" >torch::autograd::VariableType::(ano..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="534.4" y="549" width="65.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="537.44" y="559.5" >libcuda..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0xca482f (1 samples, 5.56%)</title><rect x="1058.9" y="341" width="65.5" height="15.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="1061.89" y="351.5" >libtorc..</text>
+</g>
+<g >
+<title>cudaMemcpy2DAsync+0x4a (1 samples, 5.56%)</title><rect x="403.3" y="693" width="65.6" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="406.33" y="703.5" >cudaMem..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0xcace5f (1 samples, 5.56%)</title><rect x="1058.9" y="373" width="65.5" height="15.0" fill="rgb(229,111,26)" rx="2" ry="2" />
+<text  x="1061.89" y="383.5" >libtorc..</text>
+</g>
+<g >
+<title>_PyObject_Call_Prepend+0xc1 (1 samples, 5.56%)</title><rect x="206.7" y="709" width="65.5" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="209.67" y="719.5" >_PyObje..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x17af8a0 (1 samples, 5.56%)</title><rect x="206.7" y="421" width="65.5" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="209.67" y="431.5" >libtorc..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native13reduce_kernelILi128ELi4ENS0_8ReduceOpIfNS0_14func_wrapper_tIfZNS0_11sum_functorIfffEclERNS_14TensorIteratorEEUlffE_EEjfLi4ELi4EEEEEvT1_ (1 samples, 5.56%)</title><rect x="337.8" y="709" width="65.5" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="340.78" y="719.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (1 samples, 5.56%)</title><rect x="206.7" y="757" width="65.5" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="209.67" y="767.5" >_PyEval..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x19ef0d5 (1 samples, 5.56%)</title><rect x="1058.9" y="645" width="65.5" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="1061.89" y="655.5" >libtorc..</text>
+</g>
+<g >
+<title>cudaMemcpy2DAsync+0x4a (1 samples, 5.56%)</title><rect x="796.7" y="757" width="65.5" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="799.67" y="767.5" >cudaMem..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x350a902 (1 samples, 5.56%)</title><rect x="141.1" y="389" width="65.6" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="144.11" y="399.5" >libtorc..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (2 samples, 11.11%)</title><rect x="1058.9" y="933" width="131.1" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1061.89" y="943.5" >_PyEval_EvalFram..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (3 samples, 16.67%)</title><rect x="10.0" y="869" width="196.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="13.00" y="879.5" >_PyEval_EvalFrameDefault+..</text>
+</g>
+<g >
+<title>libtorch_python.so+0x484f9b (1 samples, 5.56%)</title><rect x="206.7" y="581" width="65.5" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="209.67" y="591.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x34eb9d5 (1 samples, 5.56%)</title><rect x="141.1" y="405" width="65.6" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="144.11" y="415.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4a47cee (2 samples, 11.11%)</title><rect x="665.6" y="853" width="131.1" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="668.56" y="863.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>_PyObject_Call_Prepend+0xc1 (2 samples, 11.11%)</title><rect x="1058.9" y="949" width="131.1" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1061.89" y="959.5" >_PyObject_Call_P..</text>
+</g>
+<g >
+<title>cudaMemcpyFromSymbolAsync+0x25c (1 samples, 5.56%)</title><rect x="993.3" y="629" width="65.6" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="996.33" y="639.5" >cudaMem..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4b5d08f (2 samples, 11.11%)</title><rect x="272.2" y="853" width="131.1" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="275.22" y="863.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x246419a (2 samples, 11.11%)</title><rect x="272.2" y="757" width="131.1" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="275.22" y="767.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>cudaMemcpy2DAsync+0x4a (1 samples, 5.56%)</title><rect x="141.1" y="373" width="65.6" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="144.11" y="383.5" >cudaMem..</text>
+</g>
+<g >
+<title>at::_ops::zero_::call+0xa8 (2 samples, 11.11%)</title><rect x="927.8" y="773" width="131.1" height="15.0" fill="rgb(221,77,18)" rx="2" ry="2" />
+<text  x="930.78" y="783.5" >at::_ops::zero_:..</text>
+</g>
+<g >
+<title>_PyObject_Call_Prepend+0xc1 (2 samples, 11.11%)</title><rect x="1058.9" y="821" width="131.1" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1061.89" y="831.5" >_PyObject_Call_P..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xe9252d (1 samples, 5.56%)</title><rect x="1058.9" y="181" width="65.5" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="1061.89" y="191.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4a58ada (2 samples, 11.11%)</title><rect x="403.3" y="837" width="131.1" height="15.0" fill="rgb(221,77,18)" rx="2" ry="2" />
+<text  x="406.33" y="847.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="993.3" y="613" width="65.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="996.33" y="623.5" >libcuda..</text>
+</g>
+<g >
+<title>at::_ops::fill__Scalar::call+0xb3 (2 samples, 11.11%)</title><rect x="927.8" y="725" width="131.1" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="930.78" y="735.5" >at::_ops::fill__..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (1 samples, 5.56%)</title><rect x="141.1" y="581" width="65.6" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="144.11" y="591.5" >_PyEval..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xa2dd39 (1 samples, 5.56%)</title><rect x="10.0" y="101" width="65.6" height="15.0" fill="rgb(206,5,1)" rx="2" ry="2" />
+<text  x="13.00" y="111.5" >libcudn..</text>
+</g>
+<g >
+<title>libcublasLt.so.12+0x1d3965f (2 samples, 11.11%)</title><rect x="534.4" y="613" width="131.2" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="537.44" y="623.5" >libcublasLt.so.1..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x49a0ece (1 samples, 5.56%)</title><rect x="206.7" y="501" width="65.5" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="209.67" y="511.5" >libtorc..</text>
+</g>
+<g >
+<title>libcublasLt.so.12+0x7f4a43a (1 samples, 5.56%)</title><rect x="600.0" y="565" width="65.6" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="603.00" y="575.5" >libcubl..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (3 samples, 16.67%)</title><rect x="10.0" y="805" width="196.7" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="13.00" y="815.5" >_PyEval_EvalFrameDefault+..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native39_GLOBAL__N__5cd812b1_7_Loss_cu_5b0651e139nll_loss_backward_reduce_cuda_kernel_2dIflEEvPT_PKS3_PKT0_S6_S6_biill (1 samples, 5.56%)</title><rect x="862.2" y="725" width="65.6" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="865.22" y="735.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>libtorch_python.so+0x4eb653 (2 samples, 11.11%)</title><rect x="10.0" y="629" width="131.1" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="13.00" y="639.5" >libtorch_python...</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native29vectorized_elementwise_kernelILi4ENS0_11FillFunctorIfEESt5arrayIPcLm1EEEEviT0_T1_ (1 samples, 5.56%)</title><rect x="993.3" y="597" width="65.6" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="996.33" y="607.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x5e902b (1 samples, 5.56%)</title><rect x="10.0" y="181" width="65.6" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="13.00" y="191.5" >libcudn..</text>
+</g>
+<g >
+<title>python3.12+0x5a30c7 (2 samples, 11.11%)</title><rect x="1058.9" y="837" width="131.1" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="1061.89" y="847.5" >python3.12+0x5a3..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4c23371 (2 samples, 11.11%)</title><rect x="534.4" y="853" width="131.2" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="537.44" y="863.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>cudaMemcpy2DAsync+0x4a (1 samples, 5.56%)</title><rect x="665.6" y="757" width="65.5" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="668.56" y="767.5" >cudaMem..</text>
+</g>
+<g >
+<title>at::native::gpu_kernel_impl_nocast&lt;at::native::FillFunctor&lt;float&gt; &gt;+0x8f8 (2 samples, 11.11%)</title><rect x="927.8" y="645" width="131.1" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="930.78" y="655.5" >at::native::gpu_..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2b04cf8 (2 samples, 11.11%)</title><rect x="10.0" y="485" width="131.1" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="13.00" y="495.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (1 samples, 5.56%)</title><rect x="206.7" y="677" width="65.5" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="209.67" y="687.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x35c5ae0 (2 samples, 11.11%)</title><rect x="534.4" y="773" width="131.2" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="537.44" y="783.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4b5cc96 (2 samples, 11.11%)</title><rect x="272.2" y="837" width="131.1" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
+<text  x="275.22" y="847.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (1 samples, 5.56%)</title><rect x="206.7" y="821" width="65.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="209.67" y="831.5" >_PyEval..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x26c9852 (2 samples, 11.11%)</title><rect x="665.6" y="773" width="131.1" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="668.56" y="783.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (1 samples, 5.56%)</title><rect x="1124.4" y="661" width="65.6" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1127.44" y="671.5" >python3..</text>
+</g>
+<g >
+<title>at::_ops::nll_loss_backward::call+0x24f (4 samples, 22.22%)</title><rect x="796.7" y="885" width="262.2" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="799.67" y="895.5" >at::_ops::nll_loss_backward::call+0..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (2 samples, 11.11%)</title><rect x="1058.9" y="773" width="131.1" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1061.89" y="783.5" >_PyEval_EvalFram..</text>
+</g>
+<g >
+<title>torch::autograd::Node::operator()+0x16a (4 samples, 22.22%)</title><rect x="796.7" y="933" width="262.2" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="799.67" y="943.5" >torch::autograd::Node::operator()+0..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2b04cf8 (1 samples, 5.56%)</title><rect x="1058.9" y="549" width="65.5" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1061.89" y="559.5" >libtorc..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x5e902b (1 samples, 5.56%)</title><rect x="1058.9" y="245" width="65.5" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="1061.89" y="255.5" >libcudn..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xe9180e (1 samples, 5.56%)</title><rect x="1058.9" y="165" width="65.5" height="15.0" fill="rgb(234,133,31)" rx="2" ry="2" />
+<text  x="1061.89" y="175.5" >libcudn..</text>
+</g>
+<g >
+<title>python3.12+0x5a30c7 (2 samples, 11.11%)</title><rect x="1058.9" y="965" width="131.1" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="1061.89" y="975.5" >python3.12+0x5a3..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (1 samples, 5.56%)</title><rect x="141.1" y="565" width="65.6" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="144.11" y="575.5" >python3..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (2 samples, 11.11%)</title><rect x="1058.9" y="1013" width="131.1" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1061.89" y="1023.5" >python3.12+0x54c..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xa13c9a (1 samples, 5.56%)</title><rect x="10.0" y="117" width="65.6" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="13.00" y="127.5" >libcudn..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (1 samples, 5.56%)</title><rect x="1124.4" y="645" width="65.6" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1127.44" y="655.5" >_PyEval..</text>
+</g>
+<g >
+<title>cublasSspmv_v2+0x255 (2 samples, 11.11%)</title><rect x="534.4" y="725" width="131.2" height="15.0" fill="rgb(229,111,26)" rx="2" ry="2" />
+<text  x="537.44" y="735.5" >cublasSspmv_v2+0..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (3 samples, 16.67%)</title><rect x="10.0" y="981" width="196.7" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="13.00" y="991.5" >python3.12+0x54ce3c</text>
+</g>
+<g >
+<title>at::native::(anonymous namespace)::nll_loss_backward_out_cuda_template(at::Tensor const&amp;, at::Tensor const&amp;, at::Tensor const&amp;, at::Tensor const&amp;, at::Tensor const&amp;, at::Tensor const&amp;, long, long)::{lambda()#3}::operator()() const::{lambda()#2}::operator()+0x3bc (2 samples, 11.11%)</title><rect x="796.7" y="773" width="131.1" height="15.0" fill="rgb(232,124,29)" rx="2" ry="2" />
+<text  x="799.67" y="783.5" >at::native::(ano..</text>
+</g>
+<g >
+<title>libcudnn_graph.so.9+0x1caf8f (1 samples, 5.56%)</title><rect x="75.6" y="149" width="65.5" height="15.0" fill="rgb(206,8,2)" rx="2" ry="2" />
+<text  x="78.56" y="159.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x1cf62ef (1 samples, 5.56%)</title><rect x="1124.4" y="437" width="65.6" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="1127.44" y="447.5" >libtorc..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="1124.4" y="357" width="65.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="1127.44" y="367.5" >libcuda..</text>
+</g>
+<g >
+<title>_PyRun_SimpleFileObject+0x1a9 (1 samples, 5.56%)</title><rect x="206.7" y="949" width="65.5" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
+<text  x="209.67" y="959.5" >_PyRun_..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x28c8f35 (1 samples, 5.56%)</title><rect x="1124.4" y="421" width="65.6" height="15.0" fill="rgb(221,77,18)" rx="2" ry="2" />
+<text  x="1127.44" y="431.5" >libtorc..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (1 samples, 5.56%)</title><rect x="206.7" y="805" width="65.5" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="209.67" y="815.5" >python3..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x6079f8 (1 samples, 5.56%)</title><rect x="1058.9" y="261" width="65.5" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1061.89" y="271.5" >libcudn..</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (3 samples, 16.67%)</title><rect x="10.0" y="1045" width="196.7" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="13.00" y="1055.5" >_PyObject_MakeTpCall+0x74</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="468.9" y="677" width="65.5" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="471.89" y="687.5" >libcuda..</text>
+</g>
+<g >
+<title>libcublas.so.12+0x2e4fa4 (2 samples, 11.11%)</title><rect x="534.4" y="709" width="131.2" height="15.0" fill="rgb(219,66,15)" rx="2" ry="2" />
+<text  x="537.44" y="719.5" >libcublas.so.12+..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="206.7" y="389" width="65.5" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="209.67" y="399.5" >libcuda..</text>
+</g>
+<g >
+<title>torch::autograd::python::PythonEngine::thread_init+0x61 (4 samples, 22.22%)</title><rect x="796.7" y="997" width="262.2" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="799.67" y="1007.5" >torch::autograd::python::PythonEngi..</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (1 samples, 5.56%)</title><rect x="206.7" y="741" width="65.5" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="209.67" y="751.5" >_PyObje..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0xc8f5c5 (1 samples, 5.56%)</title><rect x="1058.9" y="405" width="65.5" height="15.0" fill="rgb(254,225,54)" rx="2" ry="2" />
+<text  x="1061.89" y="415.5" >libtorc..</text>
+</g>
+<g >
+<title>libcudnn_graph.so.9+0x1caf8f (1 samples, 5.56%)</title><rect x="1058.9" y="277" width="65.5" height="15.0" fill="rgb(206,8,2)" rx="2" ry="2" />
+<text  x="1061.89" y="287.5" >libcudn..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xa200bf (1 samples, 5.56%)</title><rect x="10.0" y="133" width="65.6" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="13.00" y="143.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x280ab28 (1 samples, 5.56%)</title><rect x="1124.4" y="549" width="65.6" height="15.0" fill="rgb(248,199,47)" rx="2" ry="2" />
+<text  x="1127.44" y="559.5" >libtorc..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (1 samples, 5.56%)</title><rect x="141.1" y="549" width="65.6" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="144.11" y="559.5" >_PyEval..</text>
+</g>
+<g >
+<title>cudaMemcpy2DAsync+0x4a (1 samples, 5.56%)</title><rect x="927.8" y="629" width="65.5" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="930.78" y="639.5" >cudaMem..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x5e8333 (1 samples, 5.56%)</title><rect x="75.6" y="165" width="65.5" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="78.56" y="175.5" >libcudn..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (2 samples, 11.11%)</title><rect x="1058.9" y="741" width="131.1" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="1061.89" y="751.5" >_PyEval_EvalFram..</text>
+</g>
+<g >
+<title>libcublas.so.12+0x1be2e3 (2 samples, 11.11%)</title><rect x="534.4" y="693" width="131.2" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="537.44" y="703.5" >libcublas.so.12+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x49e103f (1 samples, 5.56%)</title><rect x="1058.9" y="597" width="65.5" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1061.89" y="607.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x23b2cbb (2 samples, 11.11%)</title><rect x="403.3" y="773" width="131.1" height="15.0" fill="rgb(223,85,20)" rx="2" ry="2" />
+<text  x="406.33" y="783.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0xc8f14c (1 samples, 5.56%)</title><rect x="1058.9" y="389" width="65.5" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="1061.89" y="399.5" >libtorc..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="403.3" y="677" width="65.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="406.33" y="687.5" >libcuda..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xd0d9b7 (1 samples, 5.56%)</title><rect x="1058.9" y="133" width="65.5" height="15.0" fill="rgb(236,146,35)" rx="2" ry="2" />
+<text  x="1061.89" y="143.5" >libcudn..</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (2 samples, 11.11%)</title><rect x="1058.9" y="725" width="131.1" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1061.89" y="735.5" >_PyObject_MakeTp..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4b293af (1 samples, 5.56%)</title><rect x="1124.4" y="533" width="65.6" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="1127.44" y="543.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x5371344 (2 samples, 11.11%)</title><rect x="272.2" y="917" width="131.1" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="275.22" y="927.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_python.so+0x4fdd2c (1 samples, 5.56%)</title><rect x="1124.4" y="565" width="65.6" height="15.0" fill="rgb(253,221,53)" rx="2" ry="2" />
+<text  x="1127.44" y="575.5" >libtorc..</text>
+</g>
+<g >
+<title>torch::autograd::generated::NllLossBackward0_apply_functional+0x129 (4 samples, 22.22%)</title><rect x="796.7" y="901" width="262.2" height="15.0" fill="rgb(226,98,23)" rx="2" ry="2" />
+<text  x="799.67" y="911.5" >torch::autograd::generated::NllLoss..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN43_GLOBAL__N__b6de9c8c_10_SoftMax_cu_9f978f6321softmax_warp_backwardIfffLi10ELb1ELb0EEEvPT0_PKT_S5_iiiPKb (1 samples, 5.56%)</title><rect x="731.1" y="725" width="65.6" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="734.11" y="735.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x26e7843 (2 samples, 11.11%)</title><rect x="10.0" y="389" width="131.1" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="13.00" y="399.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="927.8" y="613" width="65.5" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="930.78" y="623.5" >libcuda..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x49e103f (2 samples, 11.11%)</title><rect x="10.0" y="533" width="131.1" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="13.00" y="543.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libcudnn.so.9+0x8be3 (1 samples, 5.56%)</title><rect x="1058.9" y="325" width="65.5" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="1061.89" y="335.5" >libcudn..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (2 samples, 11.11%)</title><rect x="1058.9" y="789" width="131.1" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1061.89" y="799.5" >python3.12+0x54c..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x5e902b (1 samples, 5.56%)</title><rect x="75.6" y="181" width="65.5" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="78.56" y="191.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x15e4184 (2 samples, 11.11%)</title><rect x="272.2" y="885" width="131.1" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="275.22" y="895.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0xcabe2a (1 samples, 5.56%)</title><rect x="1058.9" y="357" width="65.5" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="1061.89" y="367.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x19ec2e6 (1 samples, 5.56%)</title><rect x="1058.9" y="533" width="65.5" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1061.89" y="543.5" >libtorc..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (2 samples, 11.11%)</title><rect x="1058.9" y="917" width="131.1" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1061.89" y="927.5" >python3.12+0x54c..</text>
+</g>
+<g >
+<title>PyObject_Vectorcall+0x34 (1 samples, 5.56%)</title><rect x="141.1" y="533" width="65.6" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="144.11" y="543.5" >PyObjec..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (1 samples, 5.56%)</title><rect x="206.7" y="661" width="65.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="209.67" y="671.5" >_PyEval..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native29vectorized_elementwise_kernelILi2ENS0_21CUDAFunctorOnSelf_addIlEESt5arrayIPcLm2EEEEviT0_T1_ (1 samples, 5.56%)</title><rect x="141.1" y="341" width="65.6" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="144.11" y="351.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (2 samples, 11.11%)</title><rect x="1058.9" y="805" width="131.1" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1061.89" y="815.5" >_PyEval_EvalFram..</text>
+</g>
+<g >
+<title>libcudnn_graph.so.9+0x1caf8f (2 samples, 11.11%)</title><rect x="10.0" y="213" width="131.1" height="15.0" fill="rgb(206,8,2)" rx="2" ry="2" />
+<text  x="13.00" y="223.5" >libcudnn_graph.s..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_Z15fft2d_r2c_32x32IfLb0ELj1ELb1EEvP6float2PKT_iiiiiiiiiN5cudnn15reduced_divisorEb4int2ii (1 samples, 5.56%)</title><rect x="1058.9" y="69" width="65.5" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1061.89" y="79.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native52_GLOBAL__N__e57809e0_19_DilatedMaxPool2d_cu_6258b57421max_pool_forward_nchwIfEEviPKT_llliiiiiiiiiiPS3_Pl (1 samples, 5.56%)</title><rect x="206.7" y="373" width="65.5" height="15.0" fill="rgb(225,96,23)" rx="2" ry="2" />
+<text  x="209.67" y="383.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>python3.12+0x551767 (1 samples, 5.56%)</title><rect x="141.1" y="517" width="65.6" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="144.11" y="527.5" >python3..</text>
+</g>
+<g >
+<title>libstdc++.so.6.0.33+0xecdb3 (12 samples, 66.67%)</title><rect x="272.2" y="1013" width="786.7" height="15.0" fill="rgb(241,167,39)" rx="2" ry="2" />
+<text  x="275.22" y="1023.5" >libstdc++.so.6.0.33+0xecdb3</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xcf947f (1 samples, 5.56%)</title><rect x="1058.9" y="149" width="65.5" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1061.89" y="159.5" >libcudn..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xa3c1f4 (1 samples, 5.56%)</title><rect x="10.0" y="85" width="65.6" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="13.00" y="95.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x19ad206 (2 samples, 11.11%)</title><rect x="403.3" y="789" width="131.1" height="15.0" fill="rgb(248,199,47)" rx="2" ry="2" />
+<text  x="406.33" y="799.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x19f2c8d (2 samples, 11.11%)</title><rect x="10.0" y="405" width="131.1" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="13.00" y="415.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="75.6" y="69" width="65.5" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="78.56" y="79.5" >libcuda..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2b0aa24 (1 samples, 5.56%)</title><rect x="1058.9" y="565" width="65.5" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1061.89" y="575.5" >libtorc..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (1 samples, 5.56%)</title><rect x="206.7" y="645" width="65.5" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="209.67" y="655.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0xca482f (2 samples, 11.11%)</title><rect x="10.0" y="277" width="131.1" height="15.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="13.00" y="287.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (3 samples, 16.67%)</title><rect x="10.0" y="837" width="196.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="13.00" y="847.5" >_PyEval_EvalFrameDefault+..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_ (1 samples, 5.56%)</title><rect x="534.4" y="533" width="65.6" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="537.44" y="543.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x33adf76 (1 samples, 5.56%)</title><rect x="1058.9" y="437" width="65.5" height="15.0" fill="rgb(244,179,42)" rx="2" ry="2" />
+<text  x="1061.89" y="447.5" >libtorc..</text>
+</g>
+<g >
+<title>at::native::fill_out+0x251 (2 samples, 11.11%)</title><rect x="927.8" y="693" width="131.1" height="15.0" fill="rgb(245,188,45)" rx="2" ry="2" />
+<text  x="930.78" y="703.5" >at::native::fill..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2505e0b (2 samples, 11.11%)</title><rect x="272.2" y="821" width="131.1" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="275.22" y="831.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>cudaMemcpyFromSymbolAsync+0x25c (1 samples, 5.56%)</title><rect x="862.2" y="757" width="65.6" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="865.22" y="767.5" >cudaMem..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN5cudnn17winograd_nonfused24winogradForwardFilter4x4IffEEvNS0_20WinogradFilterParamsIT_T0_EE (1 samples, 5.56%)</title><rect x="75.6" y="53" width="65.5" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="78.56" y="63.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>PyEval_EvalCode+0x15a (1 samples, 5.56%)</title><rect x="206.7" y="901" width="65.5" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="209.67" y="911.5" >PyEval_..</text>
+</g>
+<g >
+<title>torch::autograd::Engine::thread_main+0x52e (4 samples, 22.22%)</title><rect x="796.7" y="965" width="262.2" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="799.67" y="975.5" >torch::autograd::Engine::thread_mai..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x1bec1f8 (1 samples, 5.56%)</title><rect x="206.7" y="533" width="65.5" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="209.67" y="543.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x28185a0 (2 samples, 11.11%)</title><rect x="10.0" y="613" width="131.1" height="15.0" fill="rgb(245,186,44)" rx="2" ry="2" />
+<text  x="13.00" y="623.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (1 samples, 5.56%)</title><rect x="1124.4" y="613" width="65.6" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="1127.44" y="623.5" >_PyEval..</text>
+</g>
+<g >
+<title>python3.12+0x581a6e (1 samples, 5.56%)</title><rect x="1058.9" y="709" width="65.5" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="1061.89" y="719.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2b0b148 (1 samples, 5.56%)</title><rect x="1058.9" y="501" width="65.5" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="1061.89" y="511.5" >libtorc..</text>
+</g>
+<g >
+<title>libc.so.6+0x9caa3 (12 samples, 66.67%)</title><rect x="272.2" y="1029" width="786.7" height="15.0" fill="rgb(208,15,3)" rx="2" ry="2" />
+<text  x="275.22" y="1039.5" >libc.so.6+0x9caa3</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (1 samples, 5.56%)</title><rect x="206.7" y="629" width="65.5" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="209.67" y="639.5" >_PyEval..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x474912f (2 samples, 11.11%)</title><rect x="403.3" y="901" width="131.1" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="406.33" y="911.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>_PyObject_Call_Prepend+0xc1 (3 samples, 16.67%)</title><rect x="10.0" y="757" width="196.7" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="13.00" y="767.5" >_PyObject_Call_Prepend+0xc1</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0xc8f5c5 (2 samples, 11.11%)</title><rect x="10.0" y="341" width="131.1" height="15.0" fill="rgb(254,225,54)" rx="2" ry="2" />
+<text  x="13.00" y="351.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x26d2a34 (2 samples, 11.11%)</title><rect x="665.6" y="789" width="131.1" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="668.56" y="799.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x53568f5 (6 samples, 33.33%)</title><rect x="403.3" y="949" width="393.4" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="406.33" y="959.5" >libtorch_cpu.so+0x53568f5</text>
+</g>
+<g >
+<title>at::native::fill_kernel_cuda(at::TensorIterator&amp;, c10::Scalar const&amp;)::{lambda()#1}::operator()+0x1046 (2 samples, 11.11%)</title><rect x="927.8" y="661" width="131.1" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="930.78" y="671.5" >at::native::fill..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="337.8" y="725" width="65.5" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="340.78" y="735.5" >libcuda..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2bff6ef (2 samples, 11.11%)</title><rect x="10.0" y="597" width="131.1" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="13.00" y="607.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x21e0b23 (1 samples, 5.56%)</title><rect x="206.7" y="469" width="65.5" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="209.67" y="479.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x49e1926 (2 samples, 11.11%)</title><rect x="10.0" y="549" width="131.1" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="13.00" y="559.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="665.6" y="741" width="65.5" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="668.56" y="751.5" >libcuda..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xe89cda (1 samples, 5.56%)</title><rect x="75.6" y="133" width="65.5" height="15.0" fill="rgb(251,211,50)" rx="2" ry="2" />
+<text  x="78.56" y="143.5" >libcudn..</text>
+</g>
+<g >
+<title>at::native::structured_nll_loss_backward_out_cuda::impl+0x39 (2 samples, 11.11%)</title><rect x="927.8" y="789" width="131.1" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="930.78" y="799.5" >at::native::stru..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x5e8333 (1 samples, 5.56%)</title><rect x="1058.9" y="229" width="65.5" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1061.89" y="239.5" >libcudn..</text>
+</g>
+<g >
+<title>at::native::zero_+0xc6 (2 samples, 11.11%)</title><rect x="927.8" y="741" width="131.1" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="930.78" y="751.5" >at::native::zero..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4bdd8f1 (1 samples, 5.56%)</title><rect x="141.1" y="469" width="65.6" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="144.11" y="479.5" >libtorc..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="862.2" y="741" width="65.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="865.22" y="751.5" >libcuda..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x222e181 (1 samples, 5.56%)</title><rect x="1058.9" y="517" width="65.5" height="15.0" fill="rgb(221,75,18)" rx="2" ry="2" />
+<text  x="1061.89" y="527.5" >libtorc..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x5e8848 (1 samples, 5.56%)</title><rect x="10.0" y="165" width="65.6" height="15.0" fill="rgb(229,112,27)" rx="2" ry="2" />
+<text  x="13.00" y="175.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2b0b148 (2 samples, 11.11%)</title><rect x="10.0" y="437" width="131.1" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="13.00" y="447.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>torch::autograd::Engine::evaluate_function+0x10b5 (4 samples, 22.22%)</title><rect x="796.7" y="949" width="262.2" height="15.0" fill="rgb(243,174,41)" rx="2" ry="2" />
+<text  x="799.67" y="959.5" >torch::autograd::Engine::evaluate_f..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (1 samples, 5.56%)</title><rect x="1124.4" y="629" width="65.6" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1127.44" y="639.5" >python3..</text>
+</g>
+<g >
+<title>c10::impl::wrap_kernel_functor_unboxed_&lt;c10::impl::detail::WrapFunctionIntoFunctor_&lt;c10::CompileTimeFunctionPointer&lt;at::Tensor (at::Tensor const&amp;, at::Tensor const&amp;, at::Tensor const&amp;, std::optional&lt;at::Tensor&gt; const&amp;, long, long, at::Tensor const&amp;), &amp;at::(anonymous namespace)::wrapper_CUDA_nll_loss_backward&gt;, at::Tensor, c10::guts::typelist::typelist&lt;at::Tensor const&amp;, at::Tensor const&amp;, at::Tensor const&amp;, std::optional&lt;at::Tensor&gt; const&amp;, long, long, at::Tensor const&amp;&gt; &gt;, at::Tensor (at::Tensor const&amp;, at::Tensor const&amp;, at::Tensor const&amp;, std::optional&lt;at::Tensor&gt; const&amp;, long, long, at::Tensor const&amp;)&gt;::call+0x23 (4 samples, 22.22%)</title><rect x="796.7" y="821" width="262.2" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="799.67" y="831.5" >c10::impl::wrap_kernel_functor_unbo..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x5c4a4ba (2 samples, 11.11%)</title><rect x="534.4" y="885" width="131.2" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="537.44" y="895.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x19ec2e6 (2 samples, 11.11%)</title><rect x="10.0" y="469" width="131.1" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="13.00" y="479.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (2 samples, 11.11%)</title><rect x="1058.9" y="901" width="131.1" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1061.89" y="911.5" >_PyEval_EvalFram..</text>
+</g>
+<g >
+<title>python3.12+0x607fc1 (1 samples, 5.56%)</title><rect x="206.7" y="917" width="65.5" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="209.67" y="927.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x537103a (2 samples, 11.11%)</title><rect x="272.2" y="901" width="131.1" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="275.22" y="911.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native18elementwise_kernelILi128ELi2EZNS0_22gpu_kernel_impl_nocastINS0_13BUnaryFunctorIfffNS0_15binary_internal10MulFunctorIfEEEEEEvRNS_18TensorIteratorBaseERKT_EUliE_EEviT1_ (1 samples, 5.56%)</title><rect x="403.3" y="661" width="65.6" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="406.33" y="671.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x329fc62 (1 samples, 5.56%)</title><rect x="206.7" y="437" width="65.5" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="209.67" y="447.5" >libtorc..</text>
+</g>
+<g >
+<title>cudaMemcpyFromSymbolAsync+0x25c (1 samples, 5.56%)</title><rect x="337.8" y="741" width="65.5" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="340.78" y="751.5" >cudaMem..</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (3 samples, 16.67%)</title><rect x="10.0" y="917" width="196.7" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="13.00" y="927.5" >_PyObject_MakeTpCall+0x74</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x49a088f (1 samples, 5.56%)</title><rect x="206.7" y="485" width="65.5" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="209.67" y="495.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0xcace5f (2 samples, 11.11%)</title><rect x="10.0" y="309" width="131.1" height="15.0" fill="rgb(229,111,26)" rx="2" ry="2" />
+<text  x="13.00" y="319.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (3 samples, 16.67%)</title><rect x="10.0" y="725" width="196.7" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="13.00" y="735.5" >python3.12+0x54ce3c</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x1c35896 (2 samples, 11.11%)</title><rect x="272.2" y="773" width="131.1" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="275.22" y="783.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x535c43a (6 samples, 33.33%)</title><rect x="403.3" y="933" width="393.4" height="15.0" fill="rgb(241,170,40)" rx="2" ry="2" />
+<text  x="406.33" y="943.5" >libtorch_cpu.so+0x535c43a</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native29vectorized_elementwise_kernelILi4EZZZNS0_49_GLOBAL__N__d2ba64fb_16_TensorCompare_cu_71e06f4e19launch_clamp_scalarERNS_18TensorIteratorBaseEN3c106ScalarES6_NS0_6detail11ClampLimitsEENKUlvE_clEvENKUlvE5_clEvEUlfE_St5arrayIPcLm2EEEEviT0_T1_ (1 samples, 5.56%)</title><rect x="1124.4" y="341" width="65.6" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="1127.44" y="351.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (3 samples, 16.67%)</title><rect x="10.0" y="821" width="196.7" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="13.00" y="831.5" >python3.12+0x54ce3c</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x337f04a (1 samples, 5.56%)</title><rect x="1124.4" y="501" width="65.6" height="15.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="1127.44" y="511.5" >libtorc..</text>
+</g>
+<g >
+<title>all (18 samples, 100%)</title><rect x="10.0" y="1061" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="1071.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (3 samples, 16.67%)</title><rect x="10.0" y="933" width="196.7" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="13.00" y="943.5" >_PyEval_EvalFrameDefault+..</text>
+</g>
+<g >
+<title>libcudnn.so.9+0x8be3 (2 samples, 11.11%)</title><rect x="10.0" y="261" width="131.1" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="13.00" y="271.5" >libcudnn.so.9+0x..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (3 samples, 16.67%)</title><rect x="10.0" y="853" width="196.7" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="13.00" y="863.5" >python3.12+0x54ce3c</text>
+</g>
+<g >
+<title>torch::autograd::Engine::thread_init+0x329 (4 samples, 22.22%)</title><rect x="796.7" y="981" width="262.2" height="15.0" fill="rgb(218,62,14)" rx="2" ry="2" />
+<text  x="799.67" y="991.5" >torch::autograd::Engine::thread_ini..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x60f8b8 (1 samples, 5.56%)</title><rect x="75.6" y="197" width="65.5" height="15.0" fill="rgb(221,74,17)" rx="2" ry="2" />
+<text  x="78.56" y="207.5" >libcudn..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (1 samples, 5.56%)</title><rect x="206.7" y="773" width="65.5" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="209.67" y="783.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x21ef4d4 (2 samples, 11.11%)</title><rect x="10.0" y="517" width="131.1" height="15.0" fill="rgb(218,64,15)" rx="2" ry="2" />
+<text  x="13.00" y="527.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libc.so.6+0x2a1c9 (1 samples, 5.56%)</title><rect x="206.7" y="1013" width="65.5" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
+<text  x="209.67" y="1023.5" >libc.so..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x21ef4d4 (1 samples, 5.56%)</title><rect x="1058.9" y="581" width="65.5" height="15.0" fill="rgb(218,64,15)" rx="2" ry="2" />
+<text  x="1061.89" y="591.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x53576ce (8 samples, 44.44%)</title><rect x="272.2" y="965" width="524.5" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="275.22" y="975.5" >libtorch_cpu.so+0x53576ce</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (3 samples, 16.67%)</title><rect x="10.0" y="677" width="196.7" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="13.00" y="687.5" >_PyEval_EvalFrameDefault+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x19ef0d5 (2 samples, 11.11%)</title><rect x="10.0" y="581" width="131.1" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="13.00" y="591.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x32c0e7c (2 samples, 11.11%)</title><rect x="665.6" y="805" width="131.1" height="15.0" fill="rgb(239,157,37)" rx="2" ry="2" />
+<text  x="668.56" y="815.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="600.0" y="549" width="65.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="603.00" y="559.5" >libcuda..</text>
+</g>
+<g >
+<title>libcublasLt.so.12+0x10cfa43 (2 samples, 11.11%)</title><rect x="534.4" y="661" width="131.2" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="537.44" y="671.5" >libcublasLt.so.1..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x33adf76 (2 samples, 11.11%)</title><rect x="10.0" y="373" width="131.1" height="15.0" fill="rgb(244,179,42)" rx="2" ry="2" />
+<text  x="13.00" y="383.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x473b0e8 (2 samples, 11.11%)</title><rect x="534.4" y="901" width="131.2" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="537.44" y="911.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x28185a0 (1 samples, 5.56%)</title><rect x="1058.9" y="677" width="65.5" height="15.0" fill="rgb(245,186,44)" rx="2" ry="2" />
+<text  x="1061.89" y="687.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2be4371 (1 samples, 5.56%)</title><rect x="206.7" y="549" width="65.5" height="15.0" fill="rgb(241,170,40)" rx="2" ry="2" />
+<text  x="209.67" y="559.5" >libtorc..</text>
+</g>
+<g >
+<title>libcudnn_graph.so.9+0x171ee5 (1 samples, 5.56%)</title><rect x="1058.9" y="309" width="65.5" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="1061.89" y="319.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x50ef17a (1 samples, 5.56%)</title><rect x="141.1" y="453" width="65.6" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="144.11" y="463.5" >libtorc..</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (3 samples, 16.67%)</title><rect x="10.0" y="661" width="196.7" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="13.00" y="671.5" >_PyObject_MakeTpCall+0x74</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="1058.9" y="85" width="65.5" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="1061.89" y="95.5" >libcuda..</text>
+</g>
+<g >
+<title>libcublasLt.so.12+0x1a9cc12 (2 samples, 11.11%)</title><rect x="534.4" y="597" width="131.2" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="537.44" y="607.5" >libcublasLt.so.1..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (3 samples, 16.67%)</title><rect x="10.0" y="949" width="196.7" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="13.00" y="959.5" >python3.12+0x54ce3c</text>
+</g>
+<g >
+<title>_PyObject_Call_Prepend+0xc1 (1 samples, 5.56%)</title><rect x="1124.4" y="693" width="65.6" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1127.44" y="703.5" >_PyObje..</text>
+</g>
+<g >
+<title>python3.12+0x5a30c7 (3 samples, 16.67%)</title><rect x="10.0" y="1029" width="196.7" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="13.00" y="1039.5" >python3.12+0x5a30c7</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (2 samples, 11.11%)</title><rect x="1058.9" y="997" width="131.1" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="1061.89" y="1007.5" >_PyEval_EvalFram..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (2 samples, 11.11%)</title><rect x="1058.9" y="757" width="131.1" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1061.89" y="767.5" >python3.12+0x54c..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x32b204b (2 samples, 11.11%)</title><rect x="403.3" y="741" width="131.1" height="15.0" fill="rgb(251,211,50)" rx="2" ry="2" />
+<text  x="406.33" y="751.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x192a8df (1 samples, 5.56%)</title><rect x="1124.4" y="485" width="65.6" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1127.44" y="495.5" >libtorc..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (2 samples, 11.11%)</title><rect x="1058.9" y="869" width="131.1" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="1061.89" y="879.5" >_PyEval_EvalFram..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x32b20de (2 samples, 11.11%)</title><rect x="403.3" y="757" width="131.1" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="406.33" y="767.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (1 samples, 5.56%)</title><rect x="141.1" y="597" width="65.6" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="144.11" y="607.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x34ec4f8 (1 samples, 5.56%)</title><rect x="141.1" y="421" width="65.6" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="144.11" y="431.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x222d2bd (2 samples, 11.11%)</title><rect x="10.0" y="565" width="131.1" height="15.0" fill="rgb(220,72,17)" rx="2" ry="2" />
+<text  x="13.00" y="575.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (1 samples, 5.56%)</title><rect x="206.7" y="789" width="65.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="209.67" y="799.5" >_PyEval..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x33adeaa (2 samples, 11.11%)</title><rect x="10.0" y="357" width="131.1" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="13.00" y="367.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN43_GLOBAL__N__b6de9c8c_10_SoftMax_cu_9f978f6321softmax_warp_backwardIfffLi10ELb1ELb0EEEvPT0_PKT_S5_iiiPKb (1 samples, 5.56%)</title><rect x="665.6" y="725" width="65.5" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="668.56" y="735.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x236d73c (2 samples, 11.11%)</title><rect x="665.6" y="837" width="131.1" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="668.56" y="847.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>__libc_start_main+0x8a (1 samples, 5.56%)</title><rect x="206.7" y="1029" width="65.5" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="209.67" y="1039.5" >__libc_..</text>
+</g>
+<g >
+<title>_PyRun_AnyFileObject+0x4e (1 samples, 5.56%)</title><rect x="206.7" y="965" width="65.5" height="15.0" fill="rgb(228,105,25)" rx="2" ry="2" />
+<text  x="209.67" y="975.5" >_PyRun_..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x329fd1e (1 samples, 5.56%)</title><rect x="206.7" y="453" width="65.5" height="15.0" fill="rgb(244,179,42)" rx="2" ry="2" />
+<text  x="209.67" y="463.5" >libtorc..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x5e80ff (1 samples, 5.56%)</title><rect x="10.0" y="149" width="65.6" height="15.0" fill="rgb(211,27,6)" rx="2" ry="2" />
+<text  x="13.00" y="159.5" >libcudn..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (3 samples, 16.67%)</title><rect x="10.0" y="741" width="196.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="13.00" y="751.5" >_PyEval_EvalFrameDefault+..</text>
+</g>
+<g >
+<title>_PyObject_Call_Prepend+0xc1 (3 samples, 16.67%)</title><rect x="10.0" y="1013" width="196.7" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="13.00" y="1023.5" >_PyObject_Call_Prepend+0xc1</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (1 samples, 5.56%)</title><rect x="141.1" y="613" width="65.6" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="144.11" y="623.5" >_PyEval..</text>
+</g>
+<g >
+<title>_start+0x24 (1 samples, 5.56%)</title><rect x="206.7" y="1045" width="65.5" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="209.67" y="1055.5" >_start+..</text>
+</g>
+<g >
+<title>libtorch_python.so+0x4eb653 (1 samples, 5.56%)</title><rect x="1058.9" y="693" width="65.5" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1061.89" y="703.5" >libtorc..</text>
+</g>
+<g >
+<title>libcublas.so.12+0x1bc929 (2 samples, 11.11%)</title><rect x="534.4" y="677" width="131.2" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="537.44" y="687.5" >libcublas.so.12+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2af45be (2 samples, 11.11%)</title><rect x="403.3" y="805" width="131.1" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="406.33" y="815.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x32bcc22 (2 samples, 11.11%)</title><rect x="534.4" y="789" width="131.2" height="15.0" fill="rgb(228,105,25)" rx="2" ry="2" />
+<text  x="537.44" y="799.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>c10::impl::wrap_kernel_functor_unboxed_&lt;c10::impl::detail::WrapFunctionIntoFunctor_&lt;c10::CompileTimeFunctionPointer&lt;at::Tensor&amp; (at::Tensor&amp;, c10::Scalar const&amp;), &amp;at::(anonymous namespace)::(anonymous namespace)::wrapper_CUDA_Scalar_fill_&gt;, at::Tensor&amp;, c10::guts::typelist::typelist&lt;at::Tensor&amp;, c10::Scalar const&amp;&gt; &gt;, at::Tensor&amp; (at::Tensor&amp;, c10::Scalar const&amp;)&gt;::call+0x52 (2 samples, 11.11%)</title><rect x="927.8" y="709" width="131.1" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="930.78" y="719.5" >c10::impl::wrap_..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x222e181 (2 samples, 11.11%)</title><rect x="10.0" y="453" width="131.1" height="15.0" fill="rgb(221,75,18)" rx="2" ry="2" />
+<text  x="13.00" y="463.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x32c0ee7 (2 samples, 11.11%)</title><rect x="665.6" y="821" width="131.1" height="15.0" fill="rgb(226,98,23)" rx="2" ry="2" />
+<text  x="668.56" y="831.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>at::(anonymous namespace)::wrapper_CUDA_nll_loss_backward+0x14f (4 samples, 22.22%)</title><rect x="796.7" y="805" width="262.2" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="799.67" y="815.5" >at::(anonymous namespace)::wrapper_..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_ (1 samples, 5.56%)</title><rect x="600.0" y="533" width="65.6" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="603.00" y="543.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>at::_ops::nll_loss_backward::redispatch+0x17f (4 samples, 22.22%)</title><rect x="796.7" y="837" width="262.2" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="799.67" y="847.5" >at::_ops::nll_loss_backward::redisp..</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (2 samples, 11.11%)</title><rect x="1058.9" y="853" width="131.1" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1061.89" y="863.5" >_PyObject_MakeTp..</text>
+</g>
+<g >
+<title>libtorch_python.so+0x69d641 (8 samples, 44.44%)</title><rect x="272.2" y="997" width="524.5" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="275.22" y="1007.5" >libtorch_python.so+0x69d641</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (1 samples, 5.56%)</title><rect x="206.7" y="869" width="65.5" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="209.67" y="879.5" >_PyObje..</text>
+</g>
+<g >
+<title>libtorch_python.so+0x3d7354 (1 samples, 5.56%)</title><rect x="141.1" y="501" width="65.6" height="15.0" fill="rgb(214,41,9)" rx="2" ry="2" />
+<text  x="144.11" y="511.5" >libtorc..</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (1 samples, 5.56%)</title><rect x="1124.4" y="597" width="65.6" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1127.44" y="607.5" >_PyObje..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (3 samples, 16.67%)</title><rect x="10.0" y="965" width="196.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="13.00" y="975.5" >_PyEval_EvalFrameDefault+..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x2911b51 (1 samples, 5.56%)</title><rect x="1124.4" y="389" width="65.6" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="1127.44" y="399.5" >libtorc..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xb35568 (1 samples, 5.56%)</title><rect x="75.6" y="117" width="65.5" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="78.56" y="127.5" >libcudn..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (2 samples, 11.11%)</title><rect x="1058.9" y="885" width="131.1" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1061.89" y="895.5" >python3.12+0x54c..</text>
+</g>
+<g >
+<title>_PyObject_Call_Prepend+0xc1 (1 samples, 5.56%)</title><rect x="141.1" y="629" width="65.6" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="144.11" y="639.5" >_PyObje..</text>
+</g>
+<g >
+<title>libcudnn_graph.so.9+0x171db6 (1 samples, 5.56%)</title><rect x="1058.9" y="293" width="65.5" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
+<text  x="1061.89" y="303.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4754554 (2 samples, 11.11%)</title><rect x="665.6" y="901" width="131.1" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="668.56" y="911.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4a58ea1 (2 samples, 11.11%)</title><rect x="403.3" y="853" width="131.1" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="406.33" y="863.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x222d2bd (1 samples, 5.56%)</title><rect x="1058.9" y="629" width="65.5" height="15.0" fill="rgb(220,72,17)" rx="2" ry="2" />
+<text  x="1061.89" y="639.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x49e1926 (1 samples, 5.56%)</title><rect x="1058.9" y="613" width="65.5" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="1061.89" y="623.5" >libtorc..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x323776c (1 samples, 5.56%)</title><rect x="10.0" y="69" width="65.6" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="13.00" y="79.5" >libcudn..</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (3 samples, 16.67%)</title><rect x="10.0" y="789" width="196.7" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="13.00" y="799.5" >_PyObject_MakeTpCall+0x74</text>
+</g>
+<g >
+<title>libcudnn_graph.so.9+0x1caf8f (1 samples, 5.56%)</title><rect x="1058.9" y="197" width="65.5" height="15.0" fill="rgb(206,8,2)" rx="2" ry="2" />
+<text  x="1061.89" y="207.5" >libcudn..</text>
+</g>
+<g >
+<title>cudaMemcpy2DAsync+0x4a (1 samples, 5.56%)</title><rect x="272.2" y="741" width="65.6" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="275.22" y="751.5" >cudaMem..</text>
+</g>
+<g >
+<title>python3.12+0x5a30c7 (1 samples, 5.56%)</title><rect x="1124.4" y="709" width="65.6" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="1127.44" y="719.5" >python3..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0xade (1 samples, 5.56%)</title><rect x="206.7" y="885" width="65.5" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="209.67" y="895.5" >_PyEval..</text>
+</g>
+<g >
+<title>libc.so.6+0x129c6b (12 samples, 66.67%)</title><rect x="272.2" y="1045" width="786.7" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="275.22" y="1055.5" >libc.so.6+0x129c6b</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="10.0" y="53" width="65.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="13.00" y="63.5" >libcuda..</text>
+</g>
+<g >
+<title>cudaMemcpy2DAsync+0x4a (1 samples, 5.56%)</title><rect x="206.7" y="405" width="65.5" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="209.67" y="415.5" >cudaMem..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native13reduce_kernelILi128ELi4ENS0_8ReduceOpIfNS0_14func_wrapper_tIfZNS0_11sum_functorIfffEclERNS_14TensorIteratorEEUlffE_EEjfLi4ELi4EEEEEvT1_ (1 samples, 5.56%)</title><rect x="272.2" y="709" width="65.6" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="275.22" y="719.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x60aab8 (1 samples, 5.56%)</title><rect x="10.0" y="197" width="65.6" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="13.00" y="207.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x47608ae (2 samples, 11.11%)</title><rect x="534.4" y="917" width="131.2" height="15.0" fill="rgb(246,192,45)" rx="2" ry="2" />
+<text  x="537.44" y="927.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x50f373a (1 samples, 5.56%)</title><rect x="1124.4" y="517" width="65.6" height="15.0" fill="rgb(235,140,33)" rx="2" ry="2" />
+<text  x="1127.44" y="527.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x26e7843 (1 samples, 5.56%)</title><rect x="1058.9" y="453" width="65.5" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="1061.89" y="463.5" >libtorc..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="272.2" y="725" width="65.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="275.22" y="735.5" >libcuda..</text>
+</g>
+<g >
+<title>Py_BytesMain+0x2c (1 samples, 5.56%)</title><rect x="206.7" y="997" width="65.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="209.67" y="1007.5" >Py_Byte..</text>
+</g>
+<g >
+<title>libcublasLt.so.12+0x1a715f9 (2 samples, 11.11%)</title><rect x="534.4" y="581" width="131.2" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="537.44" y="591.5" >libcublasLt.so.1..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native39_GLOBAL__N__5cd812b1_7_Loss_cu_5b0651e139nll_loss_backward_reduce_cuda_kernel_2dIflEEvPT_PKS3_PKT0_S6_S6_biill (1 samples, 5.56%)</title><rect x="796.7" y="725" width="65.5" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="799.67" y="735.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>python3.12+0x5a30c7 (1 samples, 5.56%)</title><rect x="141.1" y="645" width="65.6" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="144.11" y="655.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x26ce0fb (2 samples, 11.11%)</title><rect x="534.4" y="869" width="131.2" height="15.0" fill="rgb(221,77,18)" rx="2" ry="2" />
+<text  x="537.44" y="879.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libcudnn_graph.so.9+0x1caf8f (1 samples, 5.56%)</title><rect x="1058.9" y="213" width="65.5" height="15.0" fill="rgb(206,8,2)" rx="2" ry="2" />
+<text  x="1061.89" y="223.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x35c3baa (2 samples, 11.11%)</title><rect x="534.4" y="757" width="131.2" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="537.44" y="767.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall+0x74 (1 samples, 5.56%)</title><rect x="206.7" y="613" width="65.5" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="209.67" y="623.5" >_PyObje..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="731.1" y="741" width="65.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="734.11" y="751.5" >libcuda..</text>
+</g>
+<g >
+<title>torch::autograd::generated::NllLossBackward0::apply+0x157 (4 samples, 22.22%)</title><rect x="796.7" y="917" width="262.2" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="799.67" y="927.5" >torch::autograd::generated::NllLoss..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x26dfc51 (1 samples, 5.56%)</title><rect x="1124.4" y="469" width="65.6" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="1127.44" y="479.5" >libtorc..</text>
+</g>
+<g >
+<title>python3.12+0x581a6e (1 samples, 5.56%)</title><rect x="1124.4" y="581" width="65.6" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="1127.44" y="591.5" >python3..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (3 samples, 16.67%)</title><rect x="10.0" y="997" width="196.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="13.00" y="1007.5" >_PyEval_EvalFrameDefault+..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (1 samples, 5.56%)</title><rect x="1124.4" y="677" width="65.6" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1127.44" y="687.5" >_PyEval..</text>
+</g>
+<g >
+<title>libcublasLt.so.12+0xf81c1d (2 samples, 11.11%)</title><rect x="534.4" y="629" width="131.2" height="15.0" fill="rgb(222,80,19)" rx="2" ry="2" />
+<text  x="537.44" y="639.5" >libcublasLt.so.1..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x323776c (1 samples, 5.56%)</title><rect x="1058.9" y="101" width="65.5" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="1061.89" y="111.5" >libcudn..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x534ea75 (2 samples, 11.11%)</title><rect x="272.2" y="933" width="131.1" height="15.0" fill="rgb(253,221,53)" rx="2" ry="2" />
+<text  x="275.22" y="943.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x23cee95 (2 samples, 11.11%)</title><rect x="403.3" y="869" width="131.1" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
+<text  x="406.33" y="879.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x28c8c62 (1 samples, 5.56%)</title><rect x="1124.4" y="405" width="65.6" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1127.44" y="415.5" >libtorc..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native18elementwise_kernelILi128ELi2EZNS0_22gpu_kernel_impl_nocastINS0_13BUnaryFunctorIfffNS0_15binary_internal10MulFunctorIfEEEEEEvRNS_18TensorIteratorBaseERKT_EUliE_EEviT1_ (1 samples, 5.56%)</title><rect x="468.9" y="661" width="65.5" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="471.89" y="671.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0x323776c (1 samples, 5.56%)</title><rect x="75.6" y="85" width="65.5" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="78.56" y="95.5" >libcudn..</text>
+</g>
+<g >
+<title>at::native::fill_kernel_cuda+0x8 (2 samples, 11.11%)</title><rect x="927.8" y="677" width="131.1" height="15.0" fill="rgb(215,50,12)" rx="2" ry="2" />
+<text  x="930.78" y="687.5" >at::native::fill..</text>
+</g>
+<g >
+<title>python3.12+0x6b4392 (1 samples, 5.56%)</title><rect x="206.7" y="933" width="65.5" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="209.67" y="943.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x353f5a3 (2 samples, 11.11%)</title><rect x="534.4" y="741" width="131.2" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="537.44" y="751.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0xc8f14c (2 samples, 11.11%)</title><rect x="10.0" y="325" width="131.1" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="13.00" y="335.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x138ff11 (2 samples, 11.11%)</title><rect x="403.3" y="709" width="131.1" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="406.33" y="719.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xd056b6 (1 samples, 5.56%)</title><rect x="1058.9" y="117" width="65.5" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="1061.89" y="127.5" >libcudn..</text>
+</g>
+<g >
+<title>libcudnn_engines_precompiled.so.9+0xb2fe54 (1 samples, 5.56%)</title><rect x="75.6" y="101" width="65.5" height="15.0" fill="rgb(249,206,49)" rx="2" ry="2" />
+<text  x="78.56" y="111.5" >libcudn..</text>
+</g>
+<g >
+<title>cudaMemcpyFromSymbolAsync+0x25c (1 samples, 5.56%)</title><rect x="468.9" y="693" width="65.5" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="471.89" y="703.5" >cudaMem..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2b0aa24 (2 samples, 11.11%)</title><rect x="10.0" y="501" width="131.1" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="13.00" y="511.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x331e714 (1 samples, 5.56%)</title><rect x="141.1" y="437" width="65.6" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
+<text  x="144.11" y="447.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2b0515b (1 samples, 5.56%)</title><rect x="1058.9" y="485" width="65.5" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="1061.89" y="495.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x238b518 (2 samples, 11.11%)</title><rect x="403.3" y="821" width="131.1" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="406.33" y="831.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (1 samples, 5.56%)</title><rect x="206.7" y="693" width="65.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="209.67" y="703.5" >_PyEval..</text>
+</g>
+<g >
+<title>Py_RunMain+0x3b4 (1 samples, 5.56%)</title><rect x="206.7" y="981" width="65.5" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="209.67" y="991.5" >Py_RunM..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x32b5c49 (2 samples, 11.11%)</title><rect x="272.2" y="789" width="131.1" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
+<text  x="275.22" y="799.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x33151d9 (1 samples, 5.56%)</title><rect x="1124.4" y="453" width="65.6" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="1127.44" y="463.5" >libtorc..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x32b5cca (2 samples, 11.11%)</title><rect x="272.2" y="805" width="131.1" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="275.22" y="815.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>cudaMemcpyFromSymbolAsync+0x25c (1 samples, 5.56%)</title><rect x="1124.4" y="373" width="65.6" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="1127.44" y="383.5" >cudaMem..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault+0x4caf (3 samples, 16.67%)</title><rect x="10.0" y="709" width="196.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="13.00" y="719.5" >_PyEval_EvalFrameDefault+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x268c9b8 (2 samples, 11.11%)</title><rect x="534.4" y="821" width="131.2" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="537.44" y="831.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>python3.12+0x5a30c7 (3 samples, 16.67%)</title><rect x="10.0" y="901" width="196.7" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="13.00" y="911.5" >python3.12+0x5a30c7</text>
+</g>
+<g >
+<title>libcublasLt.so.12+0x7f4a3cc (1 samples, 5.56%)</title><rect x="534.4" y="565" width="65.6" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="537.44" y="575.5" >libcubl..</text>
+</g>
+<g >
+<title>libcudnn_graph.so.9+0x171ee5 (2 samples, 11.11%)</title><rect x="10.0" y="245" width="131.1" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="13.00" y="255.5" >libcudnn_graph.s..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2b0515b (2 samples, 11.11%)</title><rect x="10.0" y="421" width="131.1" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="13.00" y="431.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2584c57 (2 samples, 11.11%)</title><rect x="272.2" y="869" width="131.1" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="275.22" y="879.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN5cudnn19engines_precompiled16nchwToNhwcKernelIfffLb0ELb1EL21cudnnKernelDataType_t2EEEvNS0_18nchw2nhwc_params_tIT1_EEPKT_PT0_ (1 samples, 5.56%)</title><rect x="10.0" y="37" width="65.6" height="15.0" fill="rgb(254,225,53)" rx="2" ry="2" />
+<text  x="13.00" y="47.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x4a4804a (2 samples, 11.11%)</title><rect x="665.6" y="869" width="131.1" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="668.56" y="879.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2bff6ef (1 samples, 5.56%)</title><rect x="1058.9" y="661" width="65.5" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="1061.89" y="671.5" >libtorc..</text>
+</g>
+<g >
+<title>libcublasLt.so.12+0x10c0b58 (2 samples, 11.11%)</title><rect x="534.4" y="645" width="131.2" height="15.0" fill="rgb(248,199,47)" rx="2" ry="2" />
+<text  x="537.44" y="655.5" >libcublasLt.so.1..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x19f2c8d (1 samples, 5.56%)</title><rect x="1058.9" y="469" width="65.5" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="1061.89" y="479.5" >libtorc..</text>
+</g>
+<g >
+<title>at::native::(anonymous namespace)::nll_loss_backward_out_cuda_template+0x4ee (2 samples, 11.11%)</title><rect x="796.7" y="789" width="131.1" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="799.67" y="799.5" >at::native::(ano..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x47491da (2 samples, 11.11%)</title><rect x="403.3" y="917" width="131.1" height="15.0" fill="rgb(253,221,53)" rx="2" ry="2" />
+<text  x="406.33" y="927.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0xcabe2a (2 samples, 11.11%)</title><rect x="10.0" y="293" width="131.1" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="13.00" y="303.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>libcuda.so.575.57.08+0x51ccb5 (1 samples, 5.56%)</title><rect x="796.7" y="741" width="65.5" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="799.67" y="751.5" >libcuda..</text>
+</g>
+<g >
+<title>libcudnn_graph.so.9+0x171db6 (2 samples, 11.11%)</title><rect x="10.0" y="229" width="131.1" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
+<text  x="13.00" y="239.5" >libcudnn_graph.s..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x534db49 (8 samples, 44.44%)</title><rect x="272.2" y="981" width="524.5" height="15.0" fill="rgb(246,192,45)" rx="2" ry="2" />
+<text  x="275.22" y="991.5" >libtorch_cpu.so+0x534db49</text>
+</g>
+<g >
+<title>[GPU_Kernel]_ZN2at6native29vectorized_elementwise_kernelILi4ENS0_11FillFunctorIfEESt5arrayIPcLm1EEEEviT0_T1_ (1 samples, 5.56%)</title><rect x="927.8" y="597" width="65.5" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="930.78" y="607.5" >[GPU_Ke..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x477031d (2 samples, 11.11%)</title><rect x="665.6" y="917" width="131.1" height="15.0" fill="rgb(239,157,37)" rx="2" ry="2" />
+<text  x="668.56" y="927.5" >libtorch_cpu.so+..</text>
+</g>
+<g >
+<title>libtorch_cpu.so+0x2540575 (1 samples, 5.56%)</title><rect x="141.1" y="485" width="65.6" height="15.0" fill="rgb(236,143,34)" rx="2" ry="2" />
+<text  x="144.11" y="495.5" >libtorc..</text>
+</g>
+<g >
+<title>python3.12+0x5a30c7 (1 samples, 5.56%)</title><rect x="206.7" y="725" width="65.5" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="209.67" y="735.5" >python3..</text>
+</g>
+<g >
+<title>libtorch_cuda.so+0x32bcc7e (2 samples, 11.11%)</title><rect x="534.4" y="805" width="131.2" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="537.44" y="815.5" >libtorch_cuda.so..</text>
+</g>
+<g >
+<title>python3.12+0x54ce3c (3 samples, 16.67%)</title><rect x="10.0" y="693" width="196.7" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="13.00" y="703.5" >python3.12+0x54ce3c</text>
+</g>
+<g >
+<title>cudaMemcpyFromSymbolAsync+0x25c (1 samples, 5.56%)</title><rect x="731.1" y="757" width="65.6" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="734.11" y="767.5" >cudaMem..</text>
+</g>
+</g>
+</svg>
