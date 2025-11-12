@@ -91,6 +91,13 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 			stack := ExtractStackFromTrace(trace, meta)
 			isUprobe := (meta.Origin == support.TraceOriginUProbe || meta.Origin == support.TraceOriginCustom)
 
+			// Filter: Drop uprobes without stack frames
+			// Empty stacks don't provide useful correlation information
+			if isUprobe && len(stack) == 0 {
+				// Skip this uprobe - no stack to correlate
+				return nil
+			}
+
 			// Extract correlation ID from ContextValue if using correlation mode
 			correlationID := uint32(meta.ContextValue)
 
