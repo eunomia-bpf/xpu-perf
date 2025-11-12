@@ -417,8 +417,23 @@ func ExtractStackFromTrace(trace *libpf.Trace, meta *samples.TraceEventMeta) []s
 				// For now, try AddressOrLineno directly (it might already be a file offset)
 				fileOffset := uint64(frame.AddressOrLineno)
 
-				// Resolve basename to full path using PID
-				fullPath := ResolveExecutablePath(int(meta.PID), baseName)
+				// Determine full path for symbolization
+				var fullPath string
+
+				// For the main executable, use meta.ExecutablePath directly
+				execPath := meta.ExecutablePath.String()
+				if execPath != "" && filepath.Base(execPath) == baseName {
+					fullPath = execPath
+				} else {
+					// For libraries, resolve using /proc or common paths
+					fullPath = ResolveExecutablePath(int(meta.PID), baseName)
+				}
+
+				// Debug: log path resolution for first few frames
+				if false { // Set to false to disable debugging
+					fmt.Printf("DEBUG: baseName=%s meta.ExecutablePath=%s fullPath=%s fileOffset=0x%x\n",
+						baseName, meta.ExecutablePath.String(), fullPath, fileOffset)
+				}
 
 				// Try to resolve symbol from ELF using the file offset
 				symbol := symbolizer.Symbolize(fullPath, fileOffset)
