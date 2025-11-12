@@ -68,23 +68,44 @@ For CUDA applications, use the integrated profiler with three modes:
 
 ```bash
 # Build the profiler
-cd profiler && make
+make
 
 # Default (Merge): CPU sampling + GPU kernels with call stacks
-sudo ./xpu-perf -o merged_trace.folded ./your_cuda_app
+sudo ./profiler/xpu-perf -o merged_trace.folded ./your_cuda_app
 
 # GPU-only: CPU→GPU causality (shows which CPU code launched kernels)
-sudo ./xpu-perf -gpu-only -o gpu_trace.folded ./your_cuda_app
+sudo ./profiler/xpu-perf --gpu-only -o gpu_trace.folded ./your_cuda_app
 
 # CPU-only: Pure CPU sampling without GPU overhead
-sudo ./xpu-perf -cpu-only -o cpu_trace.folded ./your_cuda_app
+sudo ./profiler/xpu-perf --cpu-only -o cpu_trace.folded ./your_cuda_app
 
 # Generate flamegraph
-flamegraph.pl merged_trace.folded > flamegraph.svg
+perl profiler/flamegraph.pl merged_trace.folded > flamegraph.svg
 
 # View detailed documentation
 cat profiler/README.md
 ```
+
+## Testing
+
+Test the profiler with included examples:
+
+```bash
+# Test with simple CUDA vectorAdd program
+sudo -E env "PATH=$PATH" ./profiler/xpu-perf --gpu-only -o vectoradd.folded test/mock-app/vectorAdd
+perl profiler/flamegraph.pl vectoradd.folded > vectoradd-flamegraph.svg
+
+# Test with PyTorch workload (requires Python with PyTorch)
+sudo -E env "PATH=$PATH" ./profiler/xpu-perf --gpu-only -o pytorch.folded python3 test/pytorch/pytorch_longer.py
+perl profiler/flamegraph.pl pytorch.folded > pytorch-flamegraph.svg
+```
+
+The output flamegraphs show:
+- Complete CPU→GPU call chains with symbolized function names
+- Python interpreter frames and user code (for PyTorch)
+- PyTorch/libtorch C++ function symbols
+- CUDA runtime and driver function calls
+- GPU kernel names and execution times
 
 
 ## Architecture
