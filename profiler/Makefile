@@ -1,4 +1,4 @@
-.PHONY: all build clean test cupti
+.PHONY: all build clean test cupti generate
 
 BINARY_NAME=xpu-perf
 CUPTI_LIB=../cupti_trace/libcupti_trace_injection.so
@@ -6,8 +6,14 @@ CUPTI_LIB_LOCAL=libcupti_trace_injection.so
 
 all: build
 
+# Generate eBPF Go bindings
+generate:
+	@echo "Generating eBPF Go bindings..."
+	go generate ./...
+	@echo "eBPF code generation complete"
+
 # Build the CUPTI library first, then copy it and build the profiler
-build: cupti
+build: generate cupti
 	@echo "Building xpu-perf profiler..."
 	go build -o $(BINARY_NAME) .
 	@echo "Build complete: $(BINARY_NAME)"
@@ -25,6 +31,7 @@ clean:
 	rm -f $(BINARY_NAME)
 	rm -f $(CUPTI_LIB_LOCAL)
 	rm -f *.folded *.svg
+	rm -f correlationuprobe_*.go correlationuprobe_*.o
 	$(MAKE) -C ../cupti_trace clean
 	@echo "Clean complete"
 
@@ -53,8 +60,9 @@ help:
 	@echo "XPU Performance Profiler - Makefile"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  make           - Build everything (CUPTI library + profiler)"
+	@echo "  make           - Build everything (eBPF generation + CUPTI library + profiler)"
 	@echo "  make build     - Build profiler with embedded CUPTI library"
+	@echo "  make generate  - Generate eBPF Go bindings from eBPF C code"
 	@echo "  make cupti     - Build only CUPTI library and copy to profiler dir"
 	@echo "  make clean     - Clean all build artifacts"
 	@echo "  make test      - Run basic functionality test"
