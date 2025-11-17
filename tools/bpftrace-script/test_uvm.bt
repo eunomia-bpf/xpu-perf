@@ -1,10 +1,11 @@
 #!/usr/bin/env bpftrace
 /*
- * Test kprobe:uvm_* functions
+ * Test ALL uvm_* functions (monolithic version)
+ * WARNING: This attaches to ~1300 probes - may fail or be slow
  */
 
 BEGIN {
-    printf("Tracing uvm_* functions...\n");
+    printf("Tracing ALL uvm_* functions...\n");
 }
 
 kprobe:uvm_*
@@ -13,7 +14,7 @@ kprobe:uvm_*
 }
 
 END {
-    printf("\n=== uvm_* Function Calls ===\n");
+    printf("\n=== ALL uvm_* Function Calls ===\n");
     print(@calls);
     clear(@calls);
 }

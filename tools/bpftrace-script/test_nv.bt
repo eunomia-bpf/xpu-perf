@@ -1,10 +1,11 @@
 #!/usr/bin/env bpftrace
 /*
- * Test kprobe:nv_* functions
+ * Test ALL nv_* functions (monolithic version)
+ * WARNING: This attaches to ~530 probes - may fail or be slow
  */
 
 BEGIN {
-    printf("Tracing nv_* functions...\n");
+    printf("Tracing ALL nv_* functions...\n");
 }
 
 kprobe:nv_*
@@ -13,7 +14,7 @@ kprobe:nv_*
 }
 
 END {
-    printf("\n=== nv_* Function Calls ===\n");
+    printf("\n=== ALL nv_* Function Calls ===\n");
     print(@calls);
     clear(@calls);
 }

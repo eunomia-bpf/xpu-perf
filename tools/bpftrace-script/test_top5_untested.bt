@@ -1,0 +1,39 @@
+#!/usr/bin/env bpftrace
+/*
+ * Test Top 5 Untested NVIDIA Function Categories
+ * Based on analysis from find_untested_functions.py
+ *
+ * Categories included:
+ * 1. nvswitch_os_* (42 functions) - NVSwitch OS abstraction layer
+ * 2. libspdm_x509_* (24 functions) - SPDM X.509 certificate handling
+ * 3. os_get_* (23 functions) - OS getter functions
+ * 4. libspdm_hmac_* (21 functions) - SPDM HMAC crypto operations
+ * 5. block_gpu_* (21 functions) - UVM GPU block operations
+ *
+ * Total coverage: ~131 functions
+ */
+
+BEGIN {
+    printf("Tracing Top 5 Untested NVIDIA Function Categories...\n");
+    printf("Category 1: nvswitch_os_* (NVSwitch OS layer)\n");
+    printf("Category 2: libspdm_x509_* (X.509 certificates)\n");
+    printf("Category 3: os_get_* (OS getter functions)\n");
+    printf("Category 4: libspdm_hmac_* (HMAC crypto)\n");
+    printf("Category 5: block_gpu_* (GPU block ops)\n");
+    printf("NOTE: These may require special hardware/features\n\n");
+}
+
+kprobe:nvswitch_os_*,
+kprobe:libspdm_x509_*,
+kprobe:os_get_*,
+kprobe:libspdm_hmac_*,
+kprobe:block_gpu_*
+{
+    @calls[probe] = count();
+}
+
+END {
+    printf("\n=== Top 5 Untested Function Categories - Call Summary ===\n");
+    print(@calls);
+    clear(@calls);
+}
