@@ -1,1 +1,0 @@
-_start+0x24;__libc_start_main+0x8a;libc.so.6+0x2a1c9;main+0x3ba;vectorAdd+0x31;__device_stub__Z9vectorAddPKfS0_Pfi+0x151;cudaLaunchKernel;libcuda.so.575.57.08+0x51ccb5;[GPU_Kernel]_Z9vectorAddPKfS0_Pfi 1

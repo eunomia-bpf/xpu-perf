@@ -66,7 +66,7 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 	}
 
 	// Extract stack for correlation
-	// - CPU-only mode: process all sampling traces
+	// - CPU-only mode: process sampling traces from target PID only
 	// - Merge mode: process sampling traces from target PID only (correlate with GPU)
 	// - GPU-only mode: process uprobe traces (for CPU/GPU correlation)
 	if r.correlator != nil {
@@ -76,13 +76,8 @@ func (r *SimpleReporter) ReportTraceEvent(trace *libpf.Trace, meta *samples.Trac
 			// Process uprobes and custom traces in GPU-only mode and merge mode (for correlation)
 			shouldProcess = true
 		} else if meta.Origin == support.TraceOriginSampling && (r.correlator.cpuOnly || r.correlator.mergeMode) {
-			// In merge mode, only process traces from the target PID
-			if r.correlator.mergeMode {
-				if r.targetPID > 0 && int(meta.PID) == r.targetPID {
-					shouldProcess = true
-				}
-			} else {
-				// CPU-only mode: process all sampling traces
+			// Both CPU-only and merge mode: filter by target PID
+			if r.targetPID > 0 && int(meta.PID) == r.targetPID {
 				shouldProcess = true
 			}
 		}

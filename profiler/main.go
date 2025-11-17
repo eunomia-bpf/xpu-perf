@@ -274,10 +274,14 @@ func main() {
 		}
 		log.Infof("Target process PID: %d", targetCmd.Process.Pid)
 
-		// In merge mode, set target PID for filtering
-		if mergeMode && reporter != nil {
+		// Set target PID for filtering in CPU-only and merge modes
+		if (cfg.cpuOnly || mergeMode) && reporter != nil {
 			reporter.SetTargetPID(targetCmd.Process.Pid)
-			log.Infof("Merge mode: filtering CPU samples for PID %d", targetCmd.Process.Pid)
+			if cfg.cpuOnly {
+				log.Infof("CPU-only mode: filtering CPU samples for PID %d", targetCmd.Process.Pid)
+			} else {
+				log.Infof("Merge mode: filtering CPU samples for PID %d", targetCmd.Process.Pid)
+			}
 		}
 
 		log.Info("Profiler is running. Press Ctrl+C to stop...")

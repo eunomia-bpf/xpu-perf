@@ -92,11 +92,11 @@ Test the profiler with included examples:
 
 ```bash
 # Test with simple CUDA vectorAdd program
-sudo -E env "PATH=$PATH" ./profiler/xpu-perf --gpu-only -o vectoradd.folded test/mock-app/vectorAdd
+sudo -E env "PATH=$PATH" ./profiler/xpu-perf --cpu-only -o vectoradd.folded test/mock-app/vectorAdd
 perl profiler/flamegraph.pl vectoradd.folded > vectoradd-flamegraph.svg
 
 # Test with PyTorch workload (requires Python with PyTorch)
-sudo -E env "PATH=$PATH" ./profiler/xpu-perf --gpu-only -o pytorch.folded python3 test/pytorch/pytorch_longer.py
+sudo -E env "PATH=$PATH" ./profiler/xpu-perf --cpu-only -o pytorch.folded python3 test/pytorch/pytorch_longer.py
 perl profiler/flamegraph.pl pytorch.folded > pytorch-flamegraph.svg
 ```
 
