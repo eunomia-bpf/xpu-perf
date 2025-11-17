@@ -26,6 +26,9 @@ TEST_SCRIPTS_SPLIT = [
     "test_uvm_4.bt",
     "test_nvkms.bt",
     "test_nvuvm.bt",
+    "test_top5_untested.bt",
+    "test_untested_1.bt",
+    "test_untested_2.bt",
 ]
 
 # Monolithic versions (use with --monolithic flag)
@@ -36,6 +39,9 @@ TEST_SCRIPTS_MONOLITHIC = [
     "test_uvm.bt",       # Monolithic uvm_* test
     "test_nvkms.bt",
     "test_nvuvm.bt",
+    "test_top5_untested.bt",
+    "test_untested_1.bt",
+    "test_untested_2.bt",
 ]
 
 def run_test(script_name):
@@ -53,7 +59,7 @@ def run_test(script_name):
     if script_name in ["test_nv.bt", "test_uvm.bt"]:
         env["BPFTRACE_MAX_BPF_PROGS"] = "3000"
         env["BPFTRACE_MAX_PROBES"] = "3000"
-    elif "uvm" in script_name or "nv_" in script_name:
+    elif "uvm" in script_name or "nv_" in script_name or "untested" in script_name:
         env["BPFTRACE_MAX_BPF_PROGS"] = "1000"
         env["BPFTRACE_MAX_PROBES"] = "1000"
 
@@ -70,7 +76,7 @@ def run_test(script_name):
                 "BPFTRACE_MAX_BPF_PROGS=3000",
                 "BPFTRACE_MAX_PROBES=3000"
             ])
-        elif "uvm" in script_name or "nv_" in script_name:
+        elif "uvm" in script_name or "nv_" in script_name or "untested" in script_name:
             cmd.extend([
                 "BPFTRACE_MAX_BPF_PROGS=1000",
                 "BPFTRACE_MAX_PROBES=1000"
