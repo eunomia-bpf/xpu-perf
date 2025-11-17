@@ -48,7 +48,7 @@ cd profiler && make
 
 ```bash
 # Profile a CUDA application (merge mode: CPU + GPU)
-sudo ./profiler/xpu-perf -o output.folded ./your_cuda_app
+sudo ./profiler/xpu-perf merge -o output.folded ./your_cuda_app
 
 # Generate flamegraph
 flamegraph.pl output.folded > output.svg
@@ -70,14 +70,14 @@ For CUDA applications, use the integrated profiler with three modes:
 # Build the profiler
 make
 
-# Default (Merge): CPU sampling + GPU kernels with call stacks
-sudo ./profiler/xpu-perf -o merged_trace.folded ./your_cuda_app
+# Merge mode: CPU sampling + GPU kernels with call stacks
+sudo ./profiler/xpu-perf merge -o merged_trace.folded ./your_cuda_app
 
 # GPU-only: CPU→GPU causality (shows which CPU code launched kernels)
-sudo ./profiler/xpu-perf --gpu-only -o gpu_trace.folded ./your_cuda_app
+sudo ./profiler/xpu-perf gpu -o gpu_trace.folded ./your_cuda_app
 
 # CPU-only: Pure CPU sampling without GPU overhead
-sudo ./profiler/xpu-perf --cpu-only -o cpu_trace.folded ./your_cuda_app
+sudo ./profiler/xpu-perf cpu -o cpu_trace.folded ./your_cuda_app
 
 # Generate flamegraph
 perl profiler/flamegraph.pl merged_trace.folded > flamegraph.svg
@@ -92,11 +92,11 @@ Test the profiler with included examples:
 
 ```bash
 # Test with simple CUDA vectorAdd program
-sudo -E env "PATH=$PATH" ./profiler/xpu-perf --cpu-only -o vectoradd.folded test/mock-app/vectorAdd
+sudo -E env "PATH=$PATH" ./profiler/xpu-perf cpu -o vectoradd.folded test/mock-app/vectorAdd
 perl profiler/flamegraph.pl vectoradd.folded > vectoradd-flamegraph.svg
 
 # Test with PyTorch workload (requires Python with PyTorch)
-sudo -E env "PATH=$PATH" ./profiler/xpu-perf --cpu-only -o pytorch.folded python3 test/pytorch/pytorch_longer.py
+sudo -E env "PATH=$PATH" ./profiler/xpu-perf cpu -o pytorch.folded python3 test/pytorch/pytorch_longer.py
 perl profiler/flamegraph.pl pytorch.folded > pytorch-flamegraph.svg
 ```
 

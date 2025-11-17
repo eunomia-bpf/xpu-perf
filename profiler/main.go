@@ -42,13 +42,13 @@ type Config struct {
 }
 
 func main() {
+	// Parse command-line flags first (allows help to work without root)
+	cfg := parseFlags()
+
 	if os.Geteuid() != 0 {
 		fmt.Fprintf(os.Stderr, "Error: This profiler must be run as root\n")
 		os.Exit(1)
 	}
-
-	// Parse command-line flags
-	cfg := parseFlags()
 
 	// Extract embedded CUPTI library if not specified
 	var extractedCuptiLib string
@@ -375,41 +375,87 @@ func main() {
 func parseFlags() *Config {
 	cfg := &Config{}
 
-	flag.StringVar(&cfg.cuptiLibPath, "cupti-lib", "", "Path to CUPTI trace injection library (uses embedded library if not specified)")
-	flag.StringVar(&cfg.outputFile, "o", "merged_trace.folded", "Output file for folded stack traces")
-	flag.StringVar(&cfg.cudaLibPath, "cuda-lib", "", "Path to CUDA runtime library (auto-detected if not specified)")
-	flag.BoolVar(&cfg.cpuOnly, "cpu-only", false, "Only collect CPU sampling traces (no GPU profiling)")
-	flag.BoolVar(&cfg.gpuOnly, "gpu-only", false, "Correlate CPU stacks with GPU kernels via uprobes")
-	flag.BoolVar(&cfg.useCorrelationUprobe, "use-correlation-id", true, "Use XpuPerfGetCorrelationId uprobe for exact correlation (requires CUPTI_ENABLE_CORRELATION_UPROBE=1)")
-	flag.StringVar(&cfg.debugDir, "debug-dir", "", "Directory to save debug output files (CUPTI, eBPF traces, correlation details)")
-
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [options] <target_binary> [args...]\n\n", os.Args[0])
+	// Print usage for main command
+	printUsage := func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s <command> [options] <target_binary> [args...]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "GPU+CPU Performance Profiler\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nModes:\n")
-		fmt.Fprintf(os.Stderr, "  Default: Merge CPU sampling + GPU time (converted to sample counts)\n")
-		fmt.Fprintf(os.Stderr, "  -cpu-only: Only CPU sampling traces (no GPU)\n")
-		fmt.Fprintf(os.Stderr, "  -gpu-only: CPU→GPU causality via uprobes (shows which CPU code launched which GPU kernel)\n")
+		fmt.Fprintf(os.Stderr, "Commands:\n")
+		fmt.Fprintf(os.Stderr, "  cpu     CPU-only sampling (no GPU profiling)\n")
+		fmt.Fprintf(os.Stderr, "  gpu     GPU-only causality via uprobes (shows which CPU code launched GPU kernels)\n")
+		fmt.Fprintf(os.Stderr, "  merge   Merge CPU sampling + GPU time (default, full profiling)\n")
+		fmt.Fprintf(os.Stderr, "\nCommon Options:\n")
+		fmt.Fprintf(os.Stderr, "  -o <file>          Output file for folded stack traces (default: merged_trace.folded)\n")
+		fmt.Fprintf(os.Stderr, "  -cupti-lib <path>  Path to CUPTI trace injection library (uses embedded if not specified)\n")
+		fmt.Fprintf(os.Stderr, "  -cuda-lib <path>   Path to CUDA runtime library (auto-detected if not specified)\n")
+		fmt.Fprintf(os.Stderr, "  -debug-dir <dir>   Directory to save debug output files\n")
+		fmt.Fprintf(os.Stderr, "\nGPU/Merge Options:\n")
+		fmt.Fprintf(os.Stderr, "  -use-correlation-id  Use XpuPerfGetCorrelationId uprobe for exact correlation (default: true)\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  # Full CPU+GPU profiling (merged view with correct time proportions)\n")
-		fmt.Fprintf(os.Stderr, "  %s -o trace.folded ./my_cuda_app\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s merge -o trace.folded ./my_cuda_app\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # CPU only sampling (no GPU)\n")
-		fmt.Fprintf(os.Stderr, "  %s -cpu-only -o cpu_trace.folded ./my_cuda_app\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s cpu -o cpu_trace.folded ./my_cuda_app\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # CPU/GPU correlation (shows full call path to GPU kernels)\n")
-		fmt.Fprintf(os.Stderr, "  %s -gpu-only -o correlated_trace.folded ./my_cuda_app\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s gpu -o correlated_trace.folded ./my_cuda_app\n\n", os.Args[0])
 	}
 
-	flag.Parse()
-
-	if flag.NArg() < 1 {
-		flag.Usage()
+	// Check if we have at least one argument (the command)
+	if len(os.Args) < 2 {
+		printUsage()
 		os.Exit(1)
 	}
 
-	cfg.targetBinary = flag.Arg(0)
-	cfg.targetArgs = flag.Args()[1:]
+	// Parse subcommand
+	subcommand := os.Args[1]
+
+	// Validate subcommand
+	switch subcommand {
+	case "cpu":
+		cfg.cpuOnly = true
+		cfg.gpuOnly = false
+	case "gpu":
+		cfg.cpuOnly = false
+		cfg.gpuOnly = true
+	case "merge":
+		cfg.cpuOnly = false
+		cfg.gpuOnly = false
+	case "-h", "--help", "help":
+		printUsage()
+		os.Exit(0)
+	default:
+		fmt.Fprintf(os.Stderr, "Error: Unknown command '%s'\n\n", subcommand)
+		printUsage()
+		os.Exit(1)
+	}
+
+	// Create a new FlagSet for the subcommand
+	fs := flag.NewFlagSet(subcommand, flag.ExitOnError)
+
+	// Common flags
+	fs.StringVar(&cfg.cuptiLibPath, "cupti-lib", "", "Path to CUPTI trace injection library (uses embedded library if not specified)")
+	fs.StringVar(&cfg.outputFile, "o", "merged_trace.folded", "Output file for folded stack traces")
+	fs.StringVar(&cfg.cudaLibPath, "cuda-lib", "", "Path to CUDA runtime library (auto-detected if not specified)")
+	fs.StringVar(&cfg.debugDir, "debug-dir", "", "Directory to save debug output files (CUPTI, eBPF traces, correlation details)")
+
+	// GPU/merge-specific flags
+	if !cfg.cpuOnly {
+		fs.BoolVar(&cfg.useCorrelationUprobe, "use-correlation-id", true, "Use XpuPerfGetCorrelationId uprobe for exact correlation (requires CUPTI_ENABLE_CORRELATION_UPROBE=1)")
+	} else {
+		cfg.useCorrelationUprobe = false
+	}
+
+	// Parse flags after the subcommand
+	fs.Parse(os.Args[2:])
+
+	// Get target binary and args
+	if fs.NArg() < 1 {
+		fmt.Fprintf(os.Stderr, "Error: No target binary specified\n\n")
+		printUsage()
+		os.Exit(1)
+	}
+
+	cfg.targetBinary = fs.Arg(0)
+	cfg.targetArgs = fs.Args()[1:]
 
 	return cfg
 }
