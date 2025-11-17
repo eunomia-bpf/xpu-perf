@@ -1,0 +1,19 @@
+#!/usr/bin/env bpftrace
+/*
+ * Test kprobe:nvidia_* functions
+ */
+
+BEGIN {
+    printf("Tracing nvidia_* functions...\n");
+}
+
+kprobe:nvidia_*
+{
+    @calls[probe] = count();
+}
+
+END {
+    printf("\n=== nvidia_* Function Calls ===\n");
+    print(@calls);
+    clear(@calls);
+}

@@ -1,0 +1,47 @@
+#!/usr/bin/env bpftrace
+/*
+ * Test remaining uvm_* functions
+ * ~300 probes (remaining: mem, tools, api, ioctl, fault, etc.)
+ */
+
+BEGIN {
+    printf("Tracing remaining uvm_* functions...\n");
+}
+
+kprobe:uvm_mem_*,
+kprobe:uvm_tools_*,
+kprobe:uvm_api_*,
+kprobe:uvm_parent_*,
+kprobe:uvm_ioctl*,
+kprobe:uvm_open*,
+kprobe:uvm_mmap*,
+kprobe:uvm_release*,
+kprobe:uvm_rb_*,
+kprobe:uvm_tlb_*,
+kprobe:uvm_pte_*,
+kprobe:uvm_fault_*,
+kprobe:uvm_ats_*,
+kprobe:uvm_deferred_*,
+kprobe:uvm_processor_*,
+kprobe:uvm_thread_*,
+kprobe:uvm_user_*,
+kprobe:uvm_vma_*,
+kprobe:uvm_migrate_*,
+kprobe:uvm_populate_*,
+kprobe:uvm_access_*,
+kprobe:uvm_service_*,
+kprobe:uvm_spin_*,
+kprobe:uvm_rm_*,
+kprobe:uvm_pushbuffer_*,
+kprobe:uvm_uuid_*,
+kprobe:uvm_sub_*,
+kprobe:uvm_unlocked_*
+{
+    @calls[probe] = count();
+}
+
+END {
+    printf("\n=== Remaining uvm_* Function Calls ===\n");
+    print(@calls);
+    clear(@calls);
+}

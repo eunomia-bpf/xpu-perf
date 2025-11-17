@@ -1,0 +1,21 @@
+#!/usr/bin/env bpftrace
+/*
+ * Test nv_acpi_* and nv_drm_* functions
+ * ~157 probes (ACPI and DRM subsystems)
+ */
+
+BEGIN {
+    printf("Tracing nv_acpi_* and nv_drm_* functions...\n");
+}
+
+kprobe:nv_acpi_*,
+kprobe:nv_drm_*
+{
+    @calls[probe] = count();
+}
+
+END {
+    printf("\n=== nv_acpi_*/nv_drm_* Function Calls ===\n");
+    print(@calls);
+    clear(@calls);
+}

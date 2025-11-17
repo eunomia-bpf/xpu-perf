@@ -1,0 +1,51 @@
+#!/usr/bin/env bpftrace
+/*
+ * Test core nv_* functions (excluding nv_acpi_* and nv_drm_*)
+ * ~374 probes (core driver operations, memory, DMA, procfs, etc.)
+ */
+
+BEGIN {
+    printf("Tracing core nv_* functions...\n");
+}
+
+kprobe:nv_alloc_*,
+kprobe:nv_free_*,
+kprobe:nv_dma_*,
+kprobe:nv_procfs_*,
+kprobe:nv_get_*,
+kprobe:nv_put_*,
+kprobe:nv_add_*,
+kprobe:nv_open_*,
+kprobe:nv_close_*,
+kprobe:nv_cap*,
+kprobe:nv_check_*,
+kprobe:nv_compute_*,
+kprobe:nv_create_*,
+kprobe:nv_destroy_*,
+kprobe:nv_encode_*,
+kprobe:nv_is_*,
+kprobe:nv_kthread_*,
+kprobe:nv_map_*,
+kprobe:nv_match_*,
+kprobe:nv_post_*,
+kprobe:nv_printf*,
+kprobe:nv_register_*,
+kprobe:nv_release_*,
+kprobe:nv_requires_*,
+kprobe:nv_unmap_*,
+kprobe:nv_unregister_*,
+kprobe:nv_uvm_*,
+kprobe:nv_vm_*,
+kprobe:nv_acquire_*,
+kprobe:nv_alias_*,
+kprobe:nv_dsi_*,
+kprobe:nv_gpio_*
+{
+    @calls[probe] = count();
+}
+
+END {
+    printf("\n=== Core nv_* Function Calls ===\n");
+    print(@calls);
+    clear(@calls);
+}

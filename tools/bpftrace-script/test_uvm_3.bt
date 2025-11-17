@@ -1,0 +1,24 @@
+#!/usr/bin/env bpftrace
+/*
+ * Test uvm_pmm_*, uvm_hmm_*, uvm_page_*, uvm_range_*, uvm_tracker_* functions
+ * ~300 probes (memory management, HMM, pages, ranges, trackers)
+ */
+
+BEGIN {
+    printf("Tracing uvm_pmm_*/uvm_hmm_*/uvm_page_*/uvm_range_*/uvm_tracker_* functions...\n");
+}
+
+kprobe:uvm_pmm_*,
+kprobe:uvm_hmm_*,
+kprobe:uvm_page_*,
+kprobe:uvm_range_*,
+kprobe:uvm_tracker_*
+{
+    @calls[probe] = count();
+}
+
+END {
+    printf("\n=== uvm_pmm_*/uvm_hmm_*/uvm_page_*/uvm_range_*/uvm_tracker_* Function Calls ===\n");
+    print(@calls);
+    clear(@calls);
+}

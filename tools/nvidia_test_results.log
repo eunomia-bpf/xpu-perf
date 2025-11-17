@@ -1,0 +1,504 @@
+================================================================================
+NVIDIA Kernel Function Test Results
+Date: 2025-11-16 20:30:38
+Test Application: /home/yunwei37/workspace/xpu-perf/test/mock-app/vectorAdd
+================================================================================
+
+================================================================================
+TEST: test_nv_drm.bt
+Status: PASSED
+Elapsed: 4.18 seconds
+================================================================================
+Tracing __nv_drm_* functions...
+[Vector Addition Test]
+Vector size: 50000 elements
+Copy input data from host to device
+CUDA kernel launch with 196 blocks of 256 threads
+Copy output data from device to host
+Test PASSED
+Done
+
+=== __nv_drm_* Function Calls ===
+
+
+
+
+
+================================================================================
+TEST: test_nv_1.bt
+Status: PASSED
+Elapsed: 12.40 seconds
+================================================================================
+Tracing nv_acpi_* and nv_drm_* functions...
+[Vector Addition Test]
+Vector size: 50000 elements
+Copy input data from host to device
+CUDA kernel launch with 196 blocks of 256 threads
+Copy output data from device to host
+Test PASSED
+Done
+
+=== nv_acpi_*/nv_drm_* Function Calls ===
+
+
+
+
+
+================================================================================
+TEST: test_nv_2.bt
+Status: PASSED
+Elapsed: 19.29 seconds
+================================================================================
+Tracing core nv_* functions...
+[Vector Addition Test]
+Vector size: 50000 elements
+Copy input data from host to device
+CUDA kernel launch with 196 blocks of 256 threads
+Copy output data from device to host
+Test PASSED
+Done
+
+=== Core nv_* Function Calls ===
+@calls[kprobe:nv_caps_imex_channel_count]: 1
+@calls[kprobe:nv_is_gpu_accessible]: 2
+@calls[kprobe:nv_check_usermap_access_params]: 3
+@calls[kprobe:nv_register_user_pages]: 4
+@calls[kprobe:nv_unregister_user_pages]: 4
+@calls[kprobe:nv_procfs_release_params]: 5
+@calls[kprobe:nv_procfs_read_lock_params]: 5
+@calls[kprobe:nv_procfs_open_params]: 5
+@calls[kprobe:nv_procfs_read_params]: 5
+@calls[kprobe:nv_free_contig_pages]: 6
+@calls[kprobe:nv_alloc_contig_pages]: 6
+@calls[kprobe:nv_vm_unmap_pages]: 6
+@calls[kprobe:nv_vm_map_pages]: 6
+@calls[kprobe:nv_unmap_dma_map_scatterlist]: 10
+@calls[kprobe:nv_map_dma_map_scatterlist]: 10
+@calls[kprobe:nv_dma_map_scatterlist.constprop.0]: 10
+@calls[kprobe:nv_destroy_dma_map_scatterlist]: 10
+@calls[kprobe:nv_create_dma_map_scatterlist]: 10
+@calls[kprobe:nv_close_device]: 14
+@calls[kprobe:nv_open_device]: 14
+@calls[kprobe:nv_is_uuid_in_gpu_exclusion_list]: 14
+@calls[kprobe:nv_free_kernel_mapping]: 22
+@calls[kprobe:nv_alloc_kernel_mapping]: 22
+@calls[kprobe:nv_alloc_system_pages]: 22
+@calls[kprobe:nv_free_system_pages]: 22
+@calls[kprobe:nv_free_user_mapping]: 23
+@calls[kprobe:nv_alloc_user_mapping]: 23
+@calls[kprobe:nv_match_dev_state]: 24
+@calls[kprobe:nv_add_mapping_context_to_file]: 26
+@calls[kprobe:nv_requires_dma_remap]: 28
+@calls[kprobe:nv_alloc_pages]: 28
+@calls[kprobe:nv_compute_gfp_mask]: 28
+@calls[kprobe:nv_free_pages]: 28
+@calls[kprobe:nv_dma_unmap_alloc]: 32
+@calls[kprobe:nv_dma_map_alloc]: 32
+@calls[kprobe:nv_put_file_private]: 36
+@calls[kprobe:nv_get_file_private]: 36
+@calls[kprobe:nv_free_file_private]: 39
+@calls[kprobe:nv_encode_caching]: 53
+@calls[kprobe:nv_get_ctl_state]: 56
+@calls[kprobe:nv_printf]: 785
+@calls[kprobe:nv_get_kern_phys_address]: 15892
+
+
+
+
+================================================================================
+TEST: test_nvidia.bt
+Status: PASSED
+Elapsed: 5.09 seconds
+================================================================================
+Tracing nvidia_* functions...
+[Vector Addition Test]
+Vector size: 50000 elements
+Copy input data from host to device
+CUDA kernel launch with 196 blocks of 256 threads
+Copy output data from device to host
+Test PASSED
+Done
+
+=== nvidia_* Function Calls ===
+@calls[kprobe:nvidia_rc_timer_callback]: 1
+@calls[kprobe:nvidia_close_callback]: 14
+@calls[kprobe:nvidia_mmap]: 26
+@calls[kprobe:nvidia_vma_release]: 26
+@calls[kprobe:nvidia_mmap_helper]: 26
+@calls[kprobe:nvidia_close]: 39
+@calls[kprobe:nvidia_open]: 39
+@calls[kprobe:nvidia_poll]: 82
+@calls[kprobe:nvidia_unlocked_ioctl]: 333
+
+
+
+
+================================================================================
+TEST: test_uvm_1.bt
+Status: PASSED
+Elapsed: 28.68 seconds
+================================================================================
+Tracing uvm_hal_*, uvm_test_*, uvm_perf_* functions...
+[Vector Addition Test]
+Vector size: 50000 elements
+Copy input data from host to device
+CUDA kernel launch with 196 blocks of 256 threads
+Copy output data from device to host
+Test PASSED
+Done
+
+=== uvm_hal_*/uvm_test_*/uvm_perf_* Function Calls ===
+@calls[kprobe:uvm_perf_destroy_va_space_events]: 1
+@calls[kprobe:uvm_perf_heuristics_register_gpu]: 1
+@calls[kprobe:uvm_perf_heuristics_load]: 1
+@calls[kprobe:uvm_perf_thrashing_unload]: 1
+@calls[kprobe:uvm_perf_init_va_space_events]: 1
+@calls[kprobe:uvm_perf_thrashing_load]: 1
+@calls[kprobe:uvm_perf_access_counters_load]: 1
+@calls[kprobe:uvm_perf_thrashing_register_gpu]: 1
+@calls[kprobe:uvm_perf_heuristics_stop]: 1
+@calls[kprobe:uvm_perf_event_notify]: 1
+@calls[kprobe:uvm_perf_access_counters_unload]: 1
+@calls[kprobe:uvm_perf_heuristics_unload]: 1
+@calls[kprobe:uvm_perf_thrashing_stop]: 1
+@calls[kprobe:uvm_perf_module_load]: 2
+@calls[kprobe:uvm_hal_volta_fault_buffer_write_get]: 2
+@calls[kprobe:uvm_perf_module_type_unset_data]: 2
+@calls[kprobe:uvm_hal_mmu_mode_hopper]: 2
+@calls[kprobe:uvm_hal_volta_replay_faults]: 2
+@calls[kprobe:uvm_perf_module_type_set_data]: 2
+@calls[kprobe:uvm_hal_turing_disable_replayable_faults]: 2
+@calls[kprobe:uvm_hal_volta_fault_buffer_read_put]: 2
+@calls[kprobe:uvm_hal_pascal_enable_replayable_faults]: 2
+@calls[kprobe:uvm_perf_module_unload]: 2
+@calls[kprobe:uvm_hal_turing_clear_replayable_faults]: 2
+@calls[kprobe:uvm_perf_register_event_callback]: 6
+@calls[kprobe:uvm_perf_unregister_event_callback_locked]: 6
+@calls[kprobe:uvm_perf_unregister_event_callback]: 6
+@calls[kprobe:uvm_hal_blackwell_host_tlb_invalidate_va]: 80
+@calls[kprobe:uvm_hal_blackwell_host_tlb_invalidate_all]: 91
+@calls[kprobe:uvm_hal_downgrade_membar_type]: 94
+@calls[kprobe:uvm_hal_hopper_ce_offset_out]: 111
+@calls[kprobe:uvm_hal_hopper_ce_memset_8]: 111
+@calls[kprobe:uvm_hal_ce_memcopy_patch_src_stub]: 191
+@calls[kprobe:uvm_hal_ampere_ce_phys_mode]: 191
+@calls[kprobe:uvm_hal_hopper_ce_memcopy_copy_type]: 191
+@calls[kprobe:uvm_hal_volta_ce_memcopy]: 191
+@calls[kprobe:uvm_hal_maxwell_host_noop]: 191
+@calls[kprobe:uvm_hal_hopper_ce_offset_in_out]: 191
+@calls[kprobe:uvm_hal_volta_host_write_gpu_put]: 202
+@calls[kprobe:uvm_hal_hopper_ce_semaphore_release]: 202
+@calls[kprobe:uvm_hal_hopper_host_set_gpfifo_entry]: 202
+@calls[kprobe:uvm_hal_maxwell_host_wait_for_idle]: 245
+@calls[kprobe:uvm_hal_pascal_host_membar_gpu]: 245
+@calls[kprobe:uvm_hal_ampere_ce_plc_mode_c7b5]: 504
+
+
+
+
+================================================================================
+TEST: test_uvm_2.bt
+Status: PASSED
+Elapsed: 23.34 seconds
+================================================================================
+Tracing uvm_va_*/uvm_gpu_*/uvm_channel_*/uvm_push_* functions...
+[Vector Addition Test]
+Vector size: 50000 elements
+Copy input data from host to device
+CUDA kernel launch with 196 blocks of 256 threads
+Copy output data from device to host
+Test PASSED
+Done
+
+=== uvm_va_*/uvm_gpu_*/uvm_channel_*/uvm_push_* Function Calls ===
+@calls[kprobe:uvm_va_range_create_sked_reflected]: 1
+@calls[kprobe:uvm_va_range_block_next]: 1
+@calls[kprobe:uvm_va_space_create]: 1
+@calls[kprobe:uvm_va_space_register_gpu]: 1
+@calls[kprobe:uvm_gpu_va_space_unset_page_dir]: 1
+@calls[kprobe:uvm_va_space_stop_all_user_channels]: 1
+@calls[kprobe:uvm_va_space_mm_unregister]: 1
+@calls[kprobe:uvm_gpu_retain_by_uuid]: 1
+@calls[kprobe:uvm_va_range_create_mmap]: 1
+@calls[kprobe:uvm_va_range_create_semaphore_pool]: 1
+@calls[kprobe:uvm_channel_tracking_semaphore_get_gpu_va_in_channel]: 1
+@calls[kprobe:uvm_va_space_mm_shutdown]: 1
+@calls[kprobe:uvm_va_range_alloc_managed]: 1
+@calls[kprobe:uvm_gpu_access_counters_disable]: 1
+@calls[kprobe:uvm_gpu_init_va_space]: 1
+@calls[kprobe:uvm_va_space_destroy]: 1
+@calls[kprobe:uvm_va_space_mm_register]: 1
+@calls[kprobe:uvm_va_space_register_gpu_va_space]: 1
+@calls[kprobe:uvm_push_end_and_wait]: 1
+@calls[kprobe:uvm_va_space_single_gpu_in_parent]: 2
+@calls[kprobe:uvm_va_block_context_alloc]: 2
+@calls[kprobe:uvm_va_block_context_free]: 2
+@calls[kprobe:uvm_va_space_detach_all_user_channels]: 2
+@calls[kprobe:uvm_channel_manager_check_errors]: 2
+@calls[kprobe:uvm_gpu_fault_buffer_flush]: 2
+@calls[kprobe:uvm_va_space_pageable_mem_access_supported]: 3
+@calls[kprobe:uvm_va_block_context_init]: 4
+@calls[kprobe:uvm_channel_manager_update_progress]: 6
+@calls[kprobe:uvm_va_range_create_channel]: 10
+@calls[kprobe:uvm_gpu_va_space_release]: 16
+@calls[kprobe:uvm_va_space_get_gpu_by_mem_info]: 27
+@calls[kprobe:uvm_va_range_create_external]: 27
+@calls[kprobe:uvm_gpu_can_address]: 29
+@calls[kprobe:uvm_va_range_find]: 31
+@calls[kprobe:uvm_channel_update_progress_with_max]: 37
+@calls[kprobe:uvm_va_range_map_rm_allocation]: 37
+@calls[kprobe:uvm_va_range_destroy]: 40
+@calls[kprobe:uvm_gpu_release]: 44
+@calls[kprobe:uvm_va_space_get_gpu_by_uuid_with_gpu_va_space]: 44
+@calls[kprobe:uvm_va_space_mm_or_current_release]: 46
+@calls[kprobe:uvm_va_space_mm_release]: 46
+@calls[kprobe:uvm_gpu_retain]: 46
+@calls[kprobe:uvm_va_space_mm_or_current_retain]: 46
+@calls[kprobe:uvm_va_space_mm_enabled_system]: 47
+@calls[kprobe:uvm_va_space_get_gpu_by_uuid]: 47
+@calls[kprobe:uvm_gpu_release_locked]: 47
+@calls[kprobe:uvm_va_space_mm_enabled]: 54
+@calls[kprobe:uvm_va_space_iter_first]: 57
+@calls[kprobe:uvm_push_inline_data_end]: 191
+@calls[kprobe:uvm_gpu_address_is_peer]: 191
+@calls[kprobe:uvm_push_end]: 201
+@calls[kprobe:uvm_channel_end_push]: 202
+@calls[kprobe:uvm_channel_pool_uses_mutex]: 202
+@calls[kprobe:uvm_channel_begin_push]: 202
+@calls[kprobe:uvm_channel_reserve_type]: 202
+@calls[kprobe:uvm_gpu_semaphore_get_gpu_va]: 203
+@calls[kprobe:uvm_gpu_va_space_get]: 217
+@calls[kprobe:uvm_gpu_map_cpu_pages]: 512
+@calls[kprobe:uvm_push_inline_data_add]: 1089
+@calls[kprobe:uvm_channel_get_status]: 3400
+@calls[kprobe:uvm_channel_check_errors]: 3400
+@calls[kprobe:uvm_gpu_semaphore_get_cpu_va]: 3712
+@calls[kprobe:uvm_gpu_tracking_semaphore_update_completed_value]: 3712
+@calls[kprobe:uvm_channel_is_value_completed]: 3722
+@calls[kprobe:uvm_gpu_tracking_semaphore_is_value_completed]: 3722
+@calls[kprobe:uvm_push_inline_data_get]: 6577
+
+
+
+
+================================================================================
+TEST: test_uvm_3.bt
+Status: PASSED
+Elapsed: 13.19 seconds
+================================================================================
+Tracing uvm_pmm_*/uvm_hmm_*/uvm_page_*/uvm_range_*/uvm_tracker_* functions...
+[Vector Addition Test]
+Vector size: 50000 elements
+Copy input data from host to device
+CUDA kernel launch with 196 blocks of 256 threads
+Copy output data from device to host
+Test PASSED
+Done
+
+=== uvm_pmm_*/uvm_hmm_*/uvm_page_*/uvm_range_*/uvm_tracker_* Function Calls ===
+@calls[kprobe:uvm_tracker_wait_for_entry]: 1
+@calls[kprobe:uvm_hmm_va_space_initialize]: 1
+@calls[kprobe:uvm_range_tree_merge_next]: 1
+@calls[kprobe:uvm_range_allocator_free]: 1
+@calls[kprobe:uvm_page_tree_init]: 1
+@calls[kprobe:uvm_range_tree_merge_prev]: 1
+@calls[kprobe:uvm_hmm_remove_gpu_va_space]: 1
+@calls[kprobe:uvm_range_group_radix_tree_destroy]: 1
+@calls[kprobe:uvm_range_allocator_alloc]: 1
+@calls[kprobe:uvm_range_group_assign_range]: 1
+@calls[kprobe:uvm_range_tree_shrink_node]: 1
+@calls[kprobe:uvm_hmm_unregister_gpu]: 1
+@calls[kprobe:uvm_page_tree_deinit]: 1
+@calls[kprobe:uvm_hmm_va_space_destroy]: 1
+@calls[kprobe:uvm_page_table_range_vec_destroy]: 2
+@calls[kprobe:uvm_page_table_range_vec_create]: 2
+@calls[kprobe:uvm_tracker_add_push_safe]: 2
+@calls[kprobe:uvm_page_table_range_vec_write_ptes]: 3
+@calls[kprobe:uvm_page_table_range_vec_write_ptes_gpu]: 3
+@calls[kprobe:uvm_range_group_destroy]: 8
+@calls[kprobe:uvm_range_tree_find]: 32
+@calls[kprobe:uvm_page_table_range_vec_init]: 40
+@calls[kprobe:uvm_page_table_range_vec_clear_ptes_gpu]: 40
+@calls[kprobe:uvm_page_table_range_vec_deinit]: 40
+@calls[kprobe:uvm_page_table_range_vec_clear_ptes]: 40
+@calls[kprobe:uvm_hmm_va_block_reclaim]: 40
+@calls[kprobe:uvm_hmm_is_enabled]: 47
+@calls[kprobe:uvm_pmm_gpu_free]: 56
+@calls[kprobe:uvm_pmm_gpu_alloc_kernel]: 56
+@calls[kprobe:uvm_tracker_wait_for_other_gpus]: 56
+@calls[kprobe:uvm_page_tree_get_ptes_async]: 68
+@calls[kprobe:uvm_range_tree_add]: 68
+@calls[kprobe:uvm_page_tree_put_ptes_async]: 68
+@calls[kprobe:uvm_tracker_add_entry]: 93
+@calls[kprobe:uvm_range_tree_iter_first]: 153
+@calls[kprobe:uvm_tracker_add_tracker_safe]: 168
+@calls[kprobe:uvm_tracker_overwrite_with_push]: 199
+@calls[kprobe:uvm_tracker_add_tracker]: 205
+@calls[kprobe:uvm_tracker_wait]: 269
+@calls[kprobe:uvm_tracker_deinit]: 280
+@calls[kprobe:uvm_tracker_reserve]: 338
+@calls[kprobe:uvm_tracker_get_entries]: 481
+@calls[kprobe:uvm_range_tree_init]: 6915
+@calls[kprobe:uvm_tracker_remove_completed]: 10793
+@calls[kprobe:uvm_pmm_devmem_page_to_va_space]: 8220305
+
+
+
+
+================================================================================
+TEST: test_uvm_4.bt
+Status: PASSED
+Elapsed: 21.32 seconds
+================================================================================
+Tracing remaining uvm_* functions...
+[Vector Addition Test]
+Vector size: 50000 elements
+Copy input data from host to device
+CUDA kernel launch with 196 blocks of 256 threads
+Copy output data from device to host
+Test PASSED
+Done
+
+=== Remaining uvm_* Function Calls ===
+@calls[kprobe:uvm_mem_translate_gpu_attributes]: 1
+@calls[kprobe:uvm_mem_map_cpu_user]: 1
+@calls[kprobe:uvm_vma_wrapper_alloc]: 1
+@calls[kprobe:uvm_mem_unmap_gpu_phys]: 1
+@calls[kprobe:uvm_mem_map_gpu_kernel]: 1
+@calls[kprobe:uvm_mmap_entry]: 1
+@calls[kprobe:uvm_ats_bind_gpu]: 1
+@calls[kprobe:uvm_ats_register_gpu_va_space]: 1
+@calls[kprobe:uvm_mem_alloc]: 1
+@calls[kprobe:uvm_mem_map_cpu_kernel]: 1
+@calls[kprobe:uvm_mmap]: 1
+@calls[kprobe:uvm_parent_gpu_access_counters_required]: 1
+@calls[kprobe:uvm_api_alloc_semaphore_pool]: 1
+@calls[kprobe:uvm_tools_flush_events]: 1
+@calls[kprobe:uvm_api_register_gpu]: 1
+@calls[kprobe:uvm_api_validate_va_range]: 1
+@calls[kprobe:uvm_api_free]: 1
+@calls[kprobe:uvm_api_pageable_mem_access_on_gpu]: 1
+@calls[kprobe:uvm_parent_gpu_get_by_uuid_locked]: 1
+@calls[kprobe:uvm_mem_map_gpu_user]: 1
+@calls[kprobe:uvm_api_map_dynamic_parallelism_region]: 1
+@calls[kprobe:uvm_vma_wrapper_destroy]: 1
+@calls[kprobe:uvm_ats_unregister_gpu_va_space]: 1
+@calls[kprobe:uvm_mem_free]: 1
+@calls[kprobe:uvm_ats_unbind_gpu]: 1
+@calls[kprobe:uvm_api_register_gpu_va_space]: 1
+@calls[kprobe:uvm_parent_gpu_replayable_faults_isr_lock]: 2
+@calls[kprobe:uvm_mem_unmap_gpu_kernel]: 2
+@calls[kprobe:uvm_parent_gpu_replayable_faults_isr_unlock]: 2
+@calls[kprobe:uvm_mem_unmap_gpu_user]: 2
+@calls[kprobe:uvm_mem_map_gpu_phys]: 2
+@calls[kprobe:uvm_open]: 2
+@calls[kprobe:uvm_release_entry]: 2
+@calls[kprobe:uvm_mem_unmap_cpu_user]: 2
+@calls[kprobe:uvm_open_entry]: 2
+@calls[kprobe:uvm_sub_processor_mask_from_processor_mask]: 2
+@calls[kprobe:uvm_release.isra.0]: 2
+@calls[kprobe:uvm_parent_gpu_replayable_faults_intr_disable]: 2
+@calls[kprobe:uvm_deferred_free_object_list]: 3
+@calls[kprobe:uvm_api_create_range_group]: 8
+@calls[kprobe:uvm_rb_tree_find]: 8
+@calls[kprobe:uvm_parent_gpu_remove_user_channel]: 16
+@calls[kprobe:uvm_user_channel_destroy_detached]: 16
+@calls[kprobe:uvm_api_register_channel]: 16
+@calls[kprobe:uvm_user_channel_stop]: 16
+@calls[kprobe:uvm_user_channel_detach]: 16
+@calls[kprobe:uvm_parent_gpu_add_user_channel]: 16
+@calls[kprobe:uvm_rb_tree_insert]: 17
+@calls[kprobe:uvm_api_map_external_allocation]: 27
+@calls[kprobe:uvm_api_create_external_range]: 27
+@calls[kprobe:uvm_tlb_batch_single_invalidate.constprop.0]: 37
+@calls[kprobe:uvm_tlb_batch_single_invalidate]: 43
+@calls[kprobe:uvm_processor_mask_cache_alloc]: 55
+@calls[kprobe:uvm_processor_mask_cache_free]: 56
+@calls[kprobe:uvm_pte_batch_write_ptes]: 65
+@calls[kprobe:uvm_pte_batch_clear_ptes]: 68
+@calls[kprobe:uvm_tlb_batch_end]: 80
+@calls[kprobe:uvm_tlb_batch_invalidate]: 80
+@calls[kprobe:uvm_tlb_batch_begin]: 80
+@calls[kprobe:uvm_unlocked_ioctl_entry]: 88
+@calls[kprobe:uvm_ioctl]: 88
+@calls[kprobe:uvm_thread_context_remove]: 93
+@calls[kprobe:uvm_thread_context_wrapper_is_used]: 94
+@calls[kprobe:uvm_thread_context_add]: 94
+@calls[kprobe:uvm_pte_batch_end]: 108
+@calls[kprobe:uvm_pte_batch_begin]: 108
+@calls[kprobe:uvm_pushbuffer_end_push]: 202
+@calls[kprobe:uvm_pushbuffer_get_offset_for_push]: 202
+@calls[kprobe:uvm_pushbuffer_begin_push]: 202
+@calls[kprobe:uvm_pushbuffer_mark_completed]: 232
+@calls[kprobe:uvm_pushbuffer_get_gpu_va_for_push]: 393
+@calls[kprobe:uvm_parent_gpu_unmap_cpu_pages]: 512
+@calls[kprobe:uvm_rm_mem_get_gpu_va]: 595
+@calls[kprobe:uvm_mem_gpu_physical]: 1024
+@calls[kprobe:uvm_pte_batch_write_pte]: 1025
+@calls[kprobe:uvm_spin_loop]: 7159
+@calls[kprobe:uvm_rm_mem_get_cpu_va]: 8269
+
+
+
+
+================================================================================
+TEST: test_nvkms.bt
+Status: PASSED
+Elapsed: 1.35 seconds
+================================================================================
+Tracing nvKms* functions...
+[Vector Addition Test]
+Vector size: 50000 elements
+Copy input data from host to device
+CUDA kernel launch with 196 blocks of 256 threads
+Copy output data from device to host
+Test PASSED
+Done
+
+=== nvKms* Function Calls ===
+
+
+
+
+
+================================================================================
+TEST: test_nvuvm.bt
+Status: PASSED
+Elapsed: 6.29 seconds
+================================================================================
+Tracing nvUvm* functions...
+[Vector Addition Test]
+Vector size: 50000 elements
+Copy input data from host to device
+CUDA kernel launch with 196 blocks of 256 threads
+Copy output data from device to host
+Test PASSED
+Done
+
+=== nvUvm* Function Calls ===
+@calls[kprobe:nvUvmInterfaceAddressSpaceDestroy]: 1
+@calls[kprobe:nvUvmInterfaceUnsetPageDirectory]: 1
+@calls[kprobe:nvUvmInterfaceSetPageDirectory]: 1
+@calls[kprobe:nvUvmInterfaceDupAddressSpace]: 1
+@calls[kprobe:nvUvmInterfaceGetGpuInfo]: 1
+@calls[kprobe:nvUvmInterfaceGetChannelResourcePtes]: 10
+@calls[kprobe:nvUvmInterfaceRetainChannel]: 16
+@calls[kprobe:nvUvmInterfaceBindChannelResources]: 16
+@calls[kprobe:nvUvmInterfaceReleaseChannel]: 16
+@calls[kprobe:nvUvmInterfaceStopChannel]: 16
+@calls[kprobe:nvUvmInterfaceFreeDupedHandle]: 27
+@calls[kprobe:nvUvmInterfaceDupMemory]: 27
+@calls[kprobe:nvUvmInterfaceGetExternalAllocPtes]: 27
+@calls[kprobe:nvUvmGetSafeStack]: 61
+
+
+
+
+
+================================================================================
+SUMMARY
+================================================================================
+Total Tests: 10
+Passed: 10
+Failed: 0
+Errors: 0

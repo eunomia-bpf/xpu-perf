@@ -1,0 +1,22 @@
+#!/usr/bin/env bpftrace
+/*
+ * Test uvm_hal_*, uvm_test_*, uvm_perf_* functions
+ * ~383 probes (HAL layer, tests, performance counters)
+ */
+
+BEGIN {
+    printf("Tracing uvm_hal_*, uvm_test_*, uvm_perf_* functions...\n");
+}
+
+kprobe:uvm_hal_*,
+kprobe:uvm_test_*,
+kprobe:uvm_perf_*
+{
+    @calls[probe] = count();
+}
+
+END {
+    printf("\n=== uvm_hal_*/uvm_test_*/uvm_perf_* Function Calls ===\n");
+    print(@calls);
+    clear(@calls);
+}

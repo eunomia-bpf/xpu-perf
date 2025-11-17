@@ -1,0 +1,23 @@
+#!/usr/bin/env bpftrace
+/*
+ * Test uvm_va_*, uvm_gpu_*, uvm_channel_*, uvm_push_* functions
+ * ~300 probes (VA space, GPU operations, channels, push operations)
+ */
+
+BEGIN {
+    printf("Tracing uvm_va_*/uvm_gpu_*/uvm_channel_*/uvm_push_* functions...\n");
+}
+
+kprobe:uvm_va_*,
+kprobe:uvm_gpu_*,
+kprobe:uvm_channel_*,
+kprobe:uvm_push_*
+{
+    @calls[probe] = count();
+}
+
+END {
+    printf("\n=== uvm_va_*/uvm_gpu_*/uvm_channel_*/uvm_push_* Function Calls ===\n");
+    print(@calls);
+    clear(@calls);
+}

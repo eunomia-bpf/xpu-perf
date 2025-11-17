@@ -1,0 +1,19 @@
+#!/usr/bin/env bpftrace
+/*
+ * Test kprobe:nvUvm* functions
+ */
+
+BEGIN {
+    printf("Tracing nvUvm* functions...\n");
+}
+
+kprobe:nvUvm*
+{
+    @calls[probe] = count();
+}
+
+END {
+    printf("\n=== nvUvm* Function Calls ===\n");
+    print(@calls);
+    clear(@calls);
+}
