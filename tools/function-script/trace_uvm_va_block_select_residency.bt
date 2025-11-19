@@ -1,0 +1,148 @@
+#!/usr/bin/env bpftrace
+/*
+ * Trace uvm_va_block_select_residency function with argument capture
+ *
+ * Function signature:
+ * uvm_processor_id_t uvm_va_block_select_residency(
+ *     uvm_va_block_t *va_block,                      // arg0
+ *     uvm_va_block_context_t *va_block_context,      // arg1
+ *     uvm_page_index_t page_index,                   // arg2
+ *     uvm_processor_id_t processor_id,               // arg3
+ *     NvU32 access_type_mask,                        // arg4
+ *     const uvm_va_policy_t *policy,                 // arg5
+ *     const uvm_perf_thrashing_hint_t *thrashing_hint, // arg6
+ *     uvm_service_operation_t operation,             // arg7
+ *     const bool hmm_migratable,                     // arg8
+ *     bool *read_duplicate)                          // arg9
+ *
+ * Service operations:
+ *   0 = REPLAYABLE_FAULTS
+ *   1 = NON_REPLAYABLE_FAULTS
+ *   2 = ACCESS_COUNTERS
+ */
+
+BEGIN {
+    printf("Tracing uvm_va_block_select_residency function...\n");
+    printf("Timestamp: %s\n\n", strftime("%Y-%m-%d %H:%M:%S", nsecs));
+    @operation_names[0] = "REPLAYABLE_FAULTS";
+    @operation_names[1] = "NON_REPLAYABLE_FAULTS";
+    @operation_names[2] = "ACCESS_COUNTERS";
+}
+
+kprobe:uvm_va_block_select_residency {
+    @start[tid] = nsecs;
+
+    // Capture arguments (x86_64 only supports arg0-arg5, rest are on stack)
+    $page_index = arg2;
+    $processor_id = arg3;
+    $access_type_mask = arg4;
+    // arg5 is policy pointer
+    // For args beyond arg5, we'll read from stack
+    // Stack layout on x86_64: args 7+ are at specific offsets from the stack pointer
+
+    // Store arguments for correlation with return
+    @args_page_index[tid] = $page_index;
+    @args_processor_id[tid] = $processor_id;
+    @args_access_type_mask[tid] = $access_type_mask;
+}
+
+kretprobe:uvm_va_block_select_residency /@start[tid]/ {
+    $duration_ns = nsecs - @start[tid];
+    $new_residency = retval;
+
+    // Retrieve stored arguments
+    $page_index = @args_page_index[tid];
+    $processor_id = @args_processor_id[tid];
+    $access_type_mask = @args_access_type_mask[tid];
+
+    // Aggregate statistics
+    @call_count = count();
+    @latency_ns = hist($duration_ns);
+
+    // Track processor ID statistics
+    @processor_id_dist[$processor_id] = count();
+    @new_residency_dist[$new_residency] = count();
+
+    // Track access type mask patterns
+    @access_type_mask_dist[$access_type_mask] = count();
+
+    // Track page index ranges
+    @page_index_hist = hist($page_index);
+
+    // Track migrations (when processor_id != new_residency)
+    if ($processor_id != $new_residency) {
+        @migrations[$processor_id, $new_residency] = count();
+    } else {
+        @no_migration = count();
+    }
+
+    // Detailed trace (optional, can be commented out for less verbosity)
+    // Uncomment the following lines for detailed per-call tracing:
+    /*
+    printf("%lu: page_idx=%d proc_id=%d->%d access=0x%x lat=%dus\n",
+           elapsed / 1000000,
+           $page_index,
+           $processor_id,
+           $new_residency,
+           $access_type_mask,
+           $duration_ns / 1000);
+    */
+
+    // Cleanup
+    delete(@start[tid]);
+    delete(@args_page_index[tid]);
+    delete(@args_processor_id[tid]);
+    delete(@args_access_type_mask[tid]);
+}
+
+END {
+    printf("\n=== Summary Statistics ===\n");
+    printf("Total calls:\n");
+    print(@call_count);
+    printf("\n");
+
+    printf("=== Overall Latency Distribution (nanoseconds) ===\n");
+    print(@latency_ns);
+    printf("\n");
+
+
+    printf("=== Processor ID Distribution (Requester) ===\n");
+    print(@processor_id_dist);
+    printf("\n");
+
+    printf("=== New Residency Distribution (Destination) ===\n");
+    print(@new_residency_dist);
+    printf("\n");
+
+    printf("=== Access Type Mask Distribution ===\n");
+    print(@access_type_mask_dist);
+    printf("\nCommon masks: 0x1=READ, 0x2=WRITE, 0x8=ATOMIC, 0x10=PREFETCH\n\n");
+
+
+    printf("=== Page Index Distribution ===\n");
+    print(@page_index_hist);
+    printf("\n");
+
+    printf("=== Migration Patterns (processor_id -> new_residency) ===\n");
+    print(@migrations);
+    printf("\n");
+
+    printf("=== No Migration (same processor) ===\n");
+    print(@no_migration);
+    printf("\n");
+
+    // Cleanup all maps
+    clear(@start);
+    clear(@call_count);
+    clear(@latency_ns);
+    clear(@processor_id_dist);
+    clear(@new_residency_dist);
+    clear(@access_type_mask_dist);
+    clear(@page_index_hist);
+    clear(@no_migration);
+    clear(@migrations);
+    clear(@operation_names);
+    clear(@args_page_index);
+    clear(@args_processor_id);
+    clear(@args_access_type_mask);
+}
