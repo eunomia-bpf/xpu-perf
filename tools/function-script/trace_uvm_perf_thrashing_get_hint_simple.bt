@@ -1,0 +1,77 @@
+#!/usr/bin/env bpftrace
+/*
+ * Trace uvm_perf_thrashing_get_hint - Thrashing detection (simplified version)
+ *
+ * This script traces the thrashing detection function entry points and provides:
+ * - Which processors are experiencing thrashing
+ * - VA block addresses experiencing thrashing
+ * - Distribution of fault addresses
+ * - Call frequency per VA block
+ *
+ * Note: This simplified version only traces function entry, not return values,
+ * since struct return values can be difficult to capture reliably in bpftrace.
+ */
+
+kprobe:uvm_perf_thrashing_get_hint
+{
+    // Parameters:
+    // arg0: uvm_va_block_t *va_block
+    // arg1: uvm_va_block_context_t *va_block_context
+    // arg2: NvU64 address
+    // arg3: uvm_processor_id_t requester
+
+    $va_block = arg0;
+    $address = arg2;
+    $requester = (uint8)arg3;
+
+    // Track which VA blocks are experiencing thrashing
+    @thrashing_va_blocks[$va_block] = count();
+
+    // Track which processors are requesting hints
+    @requests_per_processor[$requester] = count();
+
+    // Combined: processor + VA block
+    @processor_va_block[$requester, $va_block] = count();
+
+    // Distribution of fault addresses
+    @fault_address_hist = hist($address);
+
+    // Addresses per VA block (top addresses within each block)
+    @address_per_va_block[$va_block, $address] = count();
+
+    // Total calls
+    @total_calls = count();
+}
+
+interval:s:5
+{
+    time();
+    printf("\n=== Thrashing Hint Statistics (5s interval) ===\n");
+
+    printf("Total calls:\n");
+    print(@total_calls);
+
+    printf("\nRequests per processor:\n");
+    print(@requests_per_processor);
+
+    printf("\nTop 15 VA blocks experiencing thrashing:\n");
+    print(@thrashing_va_blocks, 15);
+
+    printf("\nTop 20 processor + VA block combinations:\n");
+    print(@processor_va_block, 20);
+
+    printf("\nFault address distribution:\n");
+    print(@fault_address_hist);
+
+    printf("\n");
+}
+
+END
+{
+    clear(@thrashing_va_blocks);
+    clear(@requests_per_processor);
+    clear(@processor_va_block);
+    clear(@fault_address_hist);
+    clear(@address_per_va_block);
+    clear(@total_calls);
+}

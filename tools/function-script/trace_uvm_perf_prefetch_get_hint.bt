@@ -1,0 +1,97 @@
+#!/usr/bin/env bpftrace
+/*
+ * Trace uvm_perf_prefetch_get_hint_va_block - Prefetch hint generation for VA blocks
+ *
+ * This script traces the prefetch hint generation function and provides detailed
+ * statistics about:
+ * - Which processors are requesting prefetches
+ * - VA block addresses being accessed
+ * - Faulted region sizes
+ * - Distribution of new residency processors
+ */
+
+kprobe:uvm_perf_prefetch_get_hint_va_block
+{
+    // Parameters:
+    // arg0: uvm_va_block_t *va_block
+    // arg1: uvm_va_block_context_t *va_block_context
+    // arg2: uvm_processor_id_t new_residency
+    // arg3: const uvm_page_mask_t *faulted_pages
+    // arg4: uvm_va_block_region_t faulted_region (struct with first/outer fields)
+    // arg5: uvm_perf_prefetch_bitmap_tree_t *bitmap_tree
+    // arg6: uvm_perf_prefetch_hint_t *out_hint
+
+    @va_block_addr[tid] = arg0;
+    @new_residency[tid] = arg2;
+
+    // Store faulted_region (it's passed by value as two NvU16 fields)
+    // The region contains 'first' and 'outer' page indices
+    @faulted_region_first[tid] = (uint16)arg4;
+    @faulted_region_outer[tid] = (uint16)(arg4 >> 16);
+}
+
+kretprobe:uvm_perf_prefetch_get_hint_va_block
+{
+    $va_block = @va_block_addr[tid];
+    $new_residency = @new_residency[tid];
+    $region_first = @faulted_region_first[tid];
+    $region_outer = @faulted_region_outer[tid];
+    $region_size = $region_outer - $region_first;
+
+    // Count calls per processor
+    @prefetch_calls_per_processor[$new_residency] = count();
+
+    // Track VA blocks being accessed
+    @va_blocks_accessed[$va_block] = count();
+
+    // Distribution of faulted region sizes
+    @faulted_region_size_dist = hist($region_size);
+
+    // Combined stats: processor + region size
+    @processor_region_stats[$new_residency] = stats($region_size);
+
+    // Total calls
+    @total_calls = count();
+
+    // Cleanup thread-local storage
+    delete(@va_block_addr[tid]);
+    delete(@new_residency[tid]);
+    delete(@faulted_region_first[tid]);
+    delete(@faulted_region_outer[tid]);
+}
+
+interval:s:5
+{
+    time();
+    printf("\n=== Prefetch Hint Statistics (5s interval) ===\n");
+
+    printf("Top 10 VA blocks accessed:\n");
+    print(@va_blocks_accessed, 10);
+
+    printf("\nCalls per processor (new_residency):\n");
+    print(@prefetch_calls_per_processor);
+
+    printf("\nFaulted region size distribution (pages):\n");
+    print(@faulted_region_size_dist);
+
+    printf("\nProcessor region size statistics:\n");
+    print(@processor_region_stats);
+
+    printf("\nTotal calls:\n");
+    print(@total_calls);
+
+    printf("\n");
+}
+
+END
+{
+    clear(@va_block_addr);
+    clear(@new_residency);
+    clear(@faulted_region_first);
+    clear(@faulted_region_outer);
+    clear(@va_blocks_accessed);
+    clear(@prefetch_calls_per_processor);
+    clear(@faulted_region_size_dist);
+    clear(@processor_region_stats);
+    clear(@total_calls);
+}
