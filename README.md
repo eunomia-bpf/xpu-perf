@@ -96,7 +96,7 @@ sudo -E env "PATH=$PATH" ./profiler/xpu-perf cpu -o vectoradd.folded test/mock-a
 perl profiler/flamegraph.pl vectoradd.folded > vectoradd-flamegraph.svg
 
 # Test with PyTorch workload (requires Python with PyTorch)
-sudo -E env "PATH=$PATH" ./profiler/xpu-perf cpu -o pytorch.folded python3 test/pytorch/pytorch_longer.py
+sudo -E env "PATH=$PATH" ./profiler/xpu-perf gpu -o pytorch.folded python3 test/pytorch/pytorch_longer.py
 perl profiler/flamegraph.pl pytorch.folded > pytorch-flamegraph.svg
 ```
 
