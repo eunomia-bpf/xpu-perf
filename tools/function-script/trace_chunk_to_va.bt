@@ -1,0 +1,230 @@
+ #!/usr/bin/env bpftrace
+
+/*
+ * Trace Chunk → VA Block → VA Page Mapping
+ *
+ * This script traces BPF hooks and attempts to extract:
+ * - Chunk physical address
+ * - VA block pointer (chunk->va_block)
+ * - VA block start/end addresses
+ * - VA block page index (chunk->va_block_page_index)
+ *
+ * Based on uvm_gpu_chunk_t structure:
+ *   struct uvm_gpu_chunk_t {
+ *       NvU64 address;                    // +0: Physical address
+ *       ... (bitfields)
+ *       uvm_page_index_t va_block_page_index;  // Offset varies due to bitfields
+ *       ...
+ *       struct list_head list;            // +24 (approx)
+ *       uvm_va_block_t *va_block;         // +40 (approx, pointer)
+ *       ...
+ *   }
+ *
+ * Based on uvm_va_block_t structure:
+ *   struct uvm_va_block_t {
+ *       nv_kref_t kref;                   // +0
+ *       uvm_mutex_t lock;                 // +8
+ *       ...
+ *       NvU64 start;                      // Offset varies
+ *       NvU64 end;
+ *       ...
+ *   }
+ */
+
+BEGIN
+{
+    printf("Tracing BPF hooks and VA block mapping...\n");
+    printf("%-10s %-20s %-18s %-18s %-18s %-18s %-6s\n",
+           "TIME(ms)", "HOOK", "CHUNK_ADDR", "VA_BLOCK", "VA_START", "VA_END", "PG_IDX");
+}
+
+/* Hook 1: Activate */
+kprobe:uvm_bpf_call_pmm_chunk_activate
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+
+    // Try to read va_block pointer from chunk
+    // Offset estimation: address(8) + bitfields(~16) + list(16) + padding
+    // Total offset to va_block: ~40-48 bytes (depends on bitfield packing)
+    // Let's try offset 40 first
+    $va_block = *(uint64*)($chunk + 40);
+
+    // Try to read va_block_page_index from bitfields
+    // This is tricky because it's in a bitfield
+    // For now, we'll just try to capture what we can
+
+    if ($va_block != 0) {
+        // Try to read VA block start and end
+        // In uvm_va_block_t: kref(8) + lock(varies) + managed_range(8) + start(8) + end(8)
+        // Approximating: start at offset ~24-32, end at ~32-40
+        $va_start = *(uint64*)($va_block + 24);
+        $va_end = *(uint64*)($va_block + 32);
+
+        printf("%-10u %-20s 0x%-16lx 0x%-16lx 0x%-16lx 0x%-16lx %6s\n",
+               elapsed / 1000000,
+               "ACTIVATE",
+               $chunk,
+               $va_block,
+               $va_start,
+               $va_end,
+               "?");
+
+        @activate_with_va++;
+    } else {
+        printf("%-10u %-20s 0x%-16lx %-18s %-18s %-18s %6s\n",
+               elapsed / 1000000,
+               "ACTIVATE",
+               $chunk,
+               "NULL",
+               "---",
+               "---",
+               "---");
+
+        @activate_no_va++;
+    }
+}
+
+/* Hook 2: Populate */
+kprobe:uvm_bpf_call_pmm_chunk_populate
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+
+    // Try to read va_block pointer
+    $va_block = *(uint64*)($chunk + 40);
+
+    if ($va_block != 0) {
+        $va_start = *(uint64*)($va_block + 24);
+        $va_end = *(uint64*)($va_block + 32);
+
+        printf("%-10u %-20s 0x%-16lx 0x%-16lx 0x%-16lx 0x%-16lx %6s\n",
+               elapsed / 1000000,
+               "POPULATE",
+               $chunk,
+               $va_block,
+               $va_start,
+               $va_end,
+               "?");
+
+        @populate_with_va++;
+    } else {
+        printf("%-10u %-20s 0x%-16lx %-18s %-18s %-18s %6s\n",
+               elapsed / 1000000,
+               "POPULATE",
+               $chunk,
+               "NULL",
+               "---",
+               "---",
+               "---");
+
+        @populate_no_va++;
+    }
+}
+
+/* Hook 3: Depopulate */
+kprobe:uvm_bpf_call_pmm_chunk_depopulate
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+
+    $va_block = *(uint64*)($chunk + 40);
+
+    if ($va_block != 0) {
+        $va_start = *(uint64*)($va_block + 24);
+        $va_end = *(uint64*)($va_block + 32);
+
+        printf("%-10u %-20s 0x%-16lx 0x%-16lx 0x%-16lx 0x%-16lx %6s\n",
+               elapsed / 1000000,
+               "DEPOPULATE",
+               $chunk,
+               $va_block,
+               $va_start,
+               $va_end,
+               "?");
+
+        @depopulate_with_va++;
+    } else {
+        printf("%-10u %-20s 0x%-16lx %-18s %-18s %-18s %6s\n",
+               elapsed / 1000000,
+               "DEPOPULATE",
+               $chunk,
+               "NULL",
+               "---",
+               "---",
+               "---");
+
+        @depopulate_no_va++;
+    }
+}
+
+/* Hook 4: Eviction Prepare */
+kprobe:uvm_bpf_call_pmm_eviction_prepare
+{
+    $pmm = (uint64)arg0;
+    $used_list = (uint64)arg1;
+    $unused_list = (uint64)arg2;
+
+    printf("%-10u %-20s %-18s 0x%-16lx %-18s %-18s %6s\n",
+           elapsed / 1000000,
+           "EVICTION_PREPARE",
+           "---",
+           $used_list,
+           "---",
+           "---",
+           "---");
+
+    @eviction_prepare_count++;
+}
+
+END
+{
+    printf("\n");
+    printf("================================================================================\n");
+    printf("VA BLOCK TRACKING SUMMARY\n");
+    printf("================================================================================\n");
+    printf("\n");
+
+    printf("ACTIVATE:\n");
+    printf("  With VA block:    %10d\n", @activate_with_va);
+    printf("  Without VA block: %10d\n", @activate_no_va);
+
+    printf("\nPOPULATE:\n");
+    printf("  With VA block:    %10d\n", @populate_with_va);
+    printf("  Without VA block: %10d\n", @populate_no_va);
+
+    printf("\nDEPOPULATE:\n");
+    printf("  With VA block:    %10d\n", @depopulate_with_va);
+    printf("  Without VA block: %10d\n", @depopulate_no_va);
+
+    printf("\nEVICTION_PREPARE: %10d\n", @eviction_prepare_count);
+
+    printf("\n");
+    printf("================================================================================\n");
+
+    if (@activate_with_va == 0 && @populate_with_va == 0) {
+        printf("⚠️  WARNING: No VA blocks detected!\n");
+        printf("   This likely means the struct offset is incorrect.\n");
+        printf("   Expected offset to va_block: ~40-48 bytes from chunk base\n");
+        printf("   Try adjusting the offset in the script.\n");
+    } else {
+        printf("✓ VA blocks successfully tracked!\n");
+        printf("  Coverage: ACTIVATE %.1f%%, POPULATE %.1f%%\n",
+               @activate_with_va * 100.0 / (@activate_with_va + @activate_no_va),
+               @populate_with_va * 100.0 / (@populate_with_va + @populate_no_va));
+    }
+
+    printf("================================================================================\n");
+
+    // Cleanup
+    clear(@activate_with_va);
+    clear(@activate_no_va);
+    clear(@populate_with_va);
+    clear(@populate_no_va);
+    clear(@depopulate_with_va);
+    clear(@depopulate_no_va);
+    clear(@eviction_prepare_count);
+}
