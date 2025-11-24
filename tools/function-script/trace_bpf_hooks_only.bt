@@ -1,0 +1,104 @@
+#!/usr/bin/env bpftrace
+
+/*
+ * Trace ONLY BPF Hook Calls
+ *
+ * This script traces only the BPF hook wrapper functions to see
+ * which hooks are actually being called and how often.
+ */
+
+BEGIN
+{
+    printf("Tracing BPF hooks only...\n");
+    printf("%-10s %-30s %-18s %-15s\n", "TIME(ms)", "HOOK", "CHUNK_ADDR", "LIST_ADDR");
+}
+
+/* Hook 1: Activate (chunk becomes evictable) */
+kprobe:uvm_bpf_call_pmm_chunk_activate
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+
+    printf("%-10u %-30s 0x%-16lx 0x%lx\n",
+           elapsed / 1000000,
+           "ACTIVATE",
+           $chunk,
+           $list);
+
+    @activate_count++;
+}
+
+/* Hook 2: Populate (chunk gets first resident page) */
+kprobe:uvm_bpf_call_pmm_chunk_populate
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+
+    printf("%-10u %-30s 0x%-16lx 0x%lx\n",
+           elapsed / 1000000,
+           "POPULATE",
+           $chunk,
+           $list);
+
+    @populate_count++;
+}
+
+/* Hook 3: Depopulate (chunk loses all resident pages) */
+kprobe:uvm_bpf_call_pmm_chunk_depopulate
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+
+    printf("%-10u %-30s 0x%-16lx 0x%lx\n",
+           elapsed / 1000000,
+           "DEPOPULATE",
+           $chunk,
+           $list);
+
+    @depopulate_count++;
+}
+
+/* Hook 4: Eviction prepare (before selecting chunk to evict) */
+kprobe:uvm_bpf_call_pmm_eviction_prepare
+{
+    $pmm = (uint64)arg0;
+    $used_list = (uint64)arg1;
+    $unused_list = (uint64)arg2;
+
+    printf("%-10u %-30s %-18s used=0x%lx unused=0x%lx\n",
+           elapsed / 1000000,
+           "EVICTION_PREPARE",
+           "---",
+           $used_list,
+           $unused_list);
+
+    @eviction_prepare_count++;
+}
+
+END
+{
+    printf("\n");
+    printf("================================================================================\n");
+    printf("BPF HOOK SUMMARY (5 seconds)\n");
+    printf("================================================================================\n");
+    printf("\n");
+    printf("Hook                         Calls       Calls/sec\n");
+    printf("--------------------------------------------------------------------------------\n");
+    printf("ACTIVATE                  %8d     %8d\n", @activate_count, @activate_count / 5);
+    printf("POPULATE                  %8d     %8d\n", @populate_count, @populate_count / 5);
+    printf("DEPOPULATE                %8d     %8d\n", @depopulate_count, @depopulate_count / 5);
+    printf("EVICTION_PREPARE          %8d     %8d\n", @eviction_prepare_count, @eviction_prepare_count / 5);
+    printf("--------------------------------------------------------------------------------\n");
+    printf("TOTAL                     %8d     %8d\n",
+           @activate_count + @populate_count + @depopulate_count + @eviction_prepare_count,
+           (@activate_count + @populate_count + @depopulate_count + @eviction_prepare_count) / 5);
+    printf("================================================================================\n");
+
+    clear(@activate_count);
+    clear(@populate_count);
+    clear(@depopulate_count);
+    clear(@eviction_prepare_count);
+}

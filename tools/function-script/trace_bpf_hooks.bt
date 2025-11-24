@@ -1,0 +1,242 @@
+#!/usr/bin/env bpftrace
+
+/*
+ * Trace BPF Hook Calls vs Actual List Operations
+ *
+ * This script specifically tracks:
+ * 1. BPF hook wrapper functions (uvm_bpf_call_*)
+ * 2. The underlying list operation functions
+ *
+ * Goal: Understand the discrepancy between:
+ *   - Function calls (e.g., mark_root_chunk_used called 1.6M times)
+ *   - Actual list operations (e.g., populate events only 379K times)
+ */
+
+BEGIN
+{
+    printf("Tracing BPF hooks and list operations...\n");
+    printf("%-10s %-30s %-18s %-15s\n", "TIME(ms)", "EVENT", "CHUNK_ADDR", "INFO");
+}
+
+/* ==================== BPF Hook Wrappers ==================== */
+
+/* Hook 1: Activate (chunk becomes evictable) */
+kprobe:uvm_bpf_call_pmm_chunk_activate
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+
+    printf("%-10u %-30s 0x%-16lx list=0x%lx\n",
+           elapsed / 1000000,
+           "BPF_HOOK_ACTIVATE",
+           $chunk,
+           $list);
+
+    @bpf_activate_count++;
+}
+
+/* Hook 2: Populate (chunk gets first resident page) */
+kprobe:uvm_bpf_call_pmm_chunk_populate
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+
+    printf("%-10u %-30s 0x%-16lx list=0x%lx\n",
+           elapsed / 1000000,
+           "BPF_HOOK_POPULATE",
+           $chunk,
+           $list);
+
+    @bpf_populate_count++;
+}
+
+/* Hook 3: Depopulate (chunk loses all resident pages) */
+kprobe:uvm_bpf_call_pmm_chunk_depopulate
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+
+    printf("%-10u %-30s 0x%-16lx list=0x%lx\n",
+           elapsed / 1000000,
+           "BPF_HOOK_DEPOPULATE",
+           $chunk,
+           $list);
+
+    @bpf_depopulate_count++;
+}
+
+/* Hook 4: Eviction prepare (before selecting chunk to evict) */
+kprobe:uvm_bpf_call_pmm_eviction_prepare
+{
+    $pmm = (uint64)arg0;
+    $used_list = (uint64)arg1;
+    $unused_list = (uint64)arg2;
+
+    printf("%-10u %-30s %-18s used=0x%lx\n",
+           elapsed / 1000000,
+           "BPF_HOOK_EVICTION_PREPARE",
+           "---",
+           $used_list);
+
+    @bpf_eviction_prepare_count++;
+}
+
+/* ==================== Underlying Functions ==================== */
+
+/* Function that triggers activate hook */
+kprobe:chunk_update_lists_locked
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+
+    printf("%-10u %-30s 0x%-16lx pmm=0x%lx\n",
+           elapsed / 1000000,
+           "FUNC_chunk_update_lists",
+           $chunk,
+           $pmm);
+
+    @func_chunk_update_count++;
+}
+
+/* Function that triggers populate hook */
+kprobe:uvm_pmm_gpu_mark_root_chunk_used
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+
+    printf("%-10u %-30s 0x%-16lx pmm=0x%lx\n",
+           elapsed / 1000000,
+           "FUNC_mark_root_chunk_used",
+           $chunk,
+           $pmm);
+
+    @func_mark_used_count++;
+}
+
+/* Function that triggers depopulate hook */
+kprobe:uvm_pmm_gpu_mark_root_chunk_unused
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+
+    printf("%-10u %-30s 0x%-16lx pmm=0x%lx\n",
+           elapsed / 1000000,
+           "FUNC_mark_root_chunk_unused",
+           $chunk,
+           $pmm);
+
+    @func_mark_unused_count++;
+}
+
+/* ==================== List Operation Internals ==================== */
+
+/* Track root_chunk_update_eviction_list - the actual list mover */
+kprobe:root_chunk_update_eviction_list
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+    $bpf_hook = (uint64)arg3;
+
+    printf("%-10u %-30s 0x%-16lx list=0x%lx\n",
+           elapsed / 1000000,
+           "LIST_root_chunk_update",
+           $chunk,
+           $list);
+
+    @list_update_count++;
+}
+
+/* ==================== Residency Tracking ==================== */
+
+/* Track residency changes - these trigger populate/depopulate */
+kprobe:block_set_resident_processor
+{
+    $block = (uint64)arg0;
+    $id = (uint64)arg1;
+
+    @block_set_resident_count++;
+}
+
+kprobe:block_clear_resident_processor
+{
+    $block = (uint64)arg0;
+    $id = (uint64)arg1;
+
+    @block_clear_resident_count++;
+}
+
+/* ==================== Summary Statistics ==================== */
+
+END
+{
+    printf("\n");
+    printf("================================================================================\n");
+    printf("BPF HOOK vs FUNCTION CALL ANALYSIS\n");
+    printf("================================================================================\n");
+
+    printf("\n[1] Activate Path\n");
+    printf("    FUNC chunk_update_lists_locked:  %10d calls\n", @func_chunk_update_count);
+    printf("    BPF  activate hook:               %10d calls\n", @bpf_activate_count);
+    printf("    Difference:                       %10d calls skipped\n",
+           @func_chunk_update_count - @bpf_activate_count);
+
+    printf("\n[2] Populate Path\n");
+    printf("    FUNC mark_root_chunk_used:        %10d calls\n", @func_mark_used_count);
+    printf("    BPF  populate hook:               %10d calls\n", @bpf_populate_count);
+    printf("    Difference:                       %10d calls skipped\n",
+           @func_mark_used_count - @bpf_populate_count);
+    printf("    List updates (actual moves):      %10d ops\n", @list_update_count);
+
+    printf("\n[3] Depopulate Path\n");
+    printf("    FUNC mark_root_chunk_unused:      %10d calls\n", @func_mark_unused_count);
+    printf("    BPF  depopulate hook:             %10d calls\n", @bpf_depopulate_count);
+    printf("    Difference:                       %10d calls skipped\n",
+           @func_mark_unused_count - @bpf_depopulate_count);
+
+    printf("\n[4] Eviction Prepare Path\n");
+    printf("    BPF  eviction_prepare hook:       %10d calls\n", @bpf_eviction_prepare_count);
+
+    printf("\n[5] Residency Tracking (Triggers for populate/depopulate)\n");
+    printf("    block_set_resident_processor:     %10d calls\n", @block_set_resident_count);
+    printf("    block_clear_resident_processor:   %10d calls\n", @block_clear_resident_count);
+
+    printf("\n[6] Key Insights\n");
+
+    if (@func_mark_used_count > @bpf_populate_count) {
+        printf("    ⚠️  %d mark_used calls did NOT trigger BPF hook!\n",
+               @func_mark_used_count - @bpf_populate_count);
+        printf("        Likely reasons:\n");
+        printf("        - Chunk was pinned\n");
+        printf("        - Chunk was in eviction\n");
+        printf("        - Chunk was not in any list\n");
+    }
+
+    if (@func_chunk_update_count > @bpf_activate_count) {
+        printf("    ⚠️  %d chunk_update_lists calls did NOT trigger BPF hook!\n",
+               @func_chunk_update_count - @bpf_activate_count);
+        printf("        Likely reasons:\n");
+        printf("        - Chunk was pinned (moved to pinned list)\n");
+        printf("        - Chunk was freed (moved to free list)\n");
+    }
+
+    printf("\n");
+    printf("================================================================================\n");
+    printf("ANALYSIS COMPLETE\n");
+    printf("================================================================================\n");
+
+    // Cleanup
+    clear(@bpf_activate_count);
+    clear(@bpf_populate_count);
+    clear(@bpf_depopulate_count);
+    clear(@bpf_eviction_prepare_count);
+    clear(@func_chunk_update_count);
+    clear(@func_mark_used_count);
+    clear(@func_mark_unused_count);
+    clear(@list_update_count);
+    clear(@block_set_resident_count);
+    clear(@block_clear_resident_count);
+}

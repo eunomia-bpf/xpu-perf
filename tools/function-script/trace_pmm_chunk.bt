@@ -1,0 +1,167 @@
+#!/usr/bin/env bpftrace
+
+/*
+ * Trace UVM PMM chunk lifecycle only
+ *
+ * This script tracks:
+ * - chunk_update_lists_locked: chunk activation
+ * - uvm_pmm_gpu_mark_root_chunk_used: chunk populate
+ * - uvm_pmm_gpu_mark_root_chunk_unused: chunk depopulate
+ * - pick_root_chunk_to_evict: eviction selection
+ * - root_chunk_update_eviction_list: list update function
+ */
+
+BEGIN
+{
+    printf("Tracing UVM PMM chunk lifecycle...\n");
+    printf("%-10s %-20s %-18s %-10s\n", "TIME(ms)", "EVENT", "CHUNK_ADDR", "INFO");
+}
+
+/* Track root_chunk_update_eviction_list - this is where list operations happen */
+kprobe:root_chunk_update_eviction_list
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+    $list = (uint64)arg2;
+    $bpf_hook = (uint64)arg3;
+
+    printf("%-10u %-20s 0x%-16lx list=0x%lx hook=%d\n",
+           elapsed / 1000000,
+           "list_update",
+           $chunk,
+           $list,
+           $bpf_hook != 0 ? 1 : 0);
+
+    @list_update_count++;
+}
+
+/* Track chunk activation (becomes evictable) */
+kprobe:chunk_update_lists_locked
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+
+    printf("%-10u %-20s 0x%-16lx pmm=0x%lx\n",
+           elapsed / 1000000,
+           "activate",
+           $chunk,
+           $pmm);
+
+    @chunk_activate_count++;
+}
+
+/* Track chunk marked as used (populate) */
+kprobe:uvm_pmm_gpu_mark_root_chunk_used
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+
+    printf("%-10u %-20s 0x%-16lx pmm=0x%lx\n",
+           elapsed / 1000000,
+           "populate_used",
+           $chunk,
+           $pmm);
+
+    @chunk_populate_count++;
+
+    // Track first time we see this chunk
+    if (@chunk_first_seen[$chunk] == 0) {
+        @chunk_first_seen[$chunk] = nsecs;
+        @chunk_alloc_count++;
+    }
+}
+
+/* Track chunk marked as unused (depopulate) */
+kprobe:uvm_pmm_gpu_mark_root_chunk_unused
+{
+    $pmm = (uint64)arg0;
+    $chunk = (uint64)arg1;
+
+    printf("%-10u %-20s 0x%-16lx pmm=0x%lx\n",
+           elapsed / 1000000,
+           "depopulate_unused",
+           $chunk,
+           $pmm);
+
+    @chunk_depopulate_count++;
+}
+
+/* Track eviction candidate selection start */
+kprobe:pick_root_chunk_to_evict
+{
+    $pmm = (uint64)arg0;
+
+    printf("%-10u %-20s %-18s pmm=0x%lx\n",
+           elapsed / 1000000,
+           "evict_pick_start",
+           "---",
+           $pmm);
+
+    @eviction_pick_count++;
+}
+
+/* Track eviction result */
+kretprobe:pick_root_chunk_to_evict
+{
+    $chunk = (uint64)retval;
+
+    if ($chunk != 0) {
+        $age_ns = (uint64)0;
+        if (@chunk_first_seen[$chunk] > 0) {
+            $age_ns = (uint64)(nsecs - @chunk_first_seen[$chunk]);
+        }
+
+        printf("%-10u %-20s 0x%-16lx age=%lums\n",
+               elapsed / 1000000,
+               "evict_selected",
+               $chunk,
+               $age_ns / 1000000);
+
+        @evicted_chunks = hist($age_ns / 1000000);
+        @chunk_evicted_count++;
+
+        // Clear the tracking for this chunk
+        delete(@chunk_first_seen[$chunk]);
+    } else {
+        printf("%-10u %-20s %-18s (no chunk)\n",
+               elapsed / 1000000,
+               "evict_selected",
+               "NULL");
+        @eviction_failed_count++;
+    }
+}
+
+/* PMA functions are inlined, cannot trace */
+
+/* Ctrl-C handler */
+END
+{
+    printf("\n=== Chunk Lifecycle Summary ===\n");
+    printf("Chunk allocations (first seen): %d\n", @chunk_alloc_count);
+    printf("Chunk activations:              %d\n", @chunk_activate_count);
+    printf("Chunk populates:                %d\n", @chunk_populate_count);
+    printf("Chunk depopulates:              %d\n", @chunk_depopulate_count);
+    printf("List updates:                   %d\n", @list_update_count);
+    printf("Eviction picks:                 %d\n", @eviction_pick_count);
+    printf("Chunks evicted:                 %d\n", @chunk_evicted_count);
+    printf("Eviction failures:              %d\n", @eviction_failed_count);
+
+    printf("\n=== Evicted Chunk Age Distribution (ms) ===\n");
+    print(@evicted_chunks);
+
+    printf("\n=== Active Chunks (not yet evicted) ===\n");
+    printf("Count: %d chunks still tracked\n",
+           @chunk_populate_count - @chunk_evicted_count);
+
+    // Cleanup
+    clear(@chunk_alloc_count);
+    clear(@chunk_activate_count);
+    clear(@chunk_populate_count);
+    clear(@chunk_depopulate_count);
+    clear(@list_update_count);
+    clear(@eviction_pick_count);
+    clear(@chunk_evicted_count);
+    clear(@eviction_failed_count);
+    clear(@evicted_chunks);
+    clear(@chunk_first_seen);
+}
